@@ -134,6 +134,7 @@ h1 small{font-size:13px;font-weight:500;color:var(--mute);letter-spacing:.3em}
   <label>반응 세기<input type="range" id="gain" min="1" max="10" step="1"></label>
   <label class="row"><span>거울 모드 (좌우 반전)</span><input type="checkbox" id="mirror"></label>
   <label class="row"><span>움직임 데이터 보기</span><input type="checkbox" id="debug"></label>
+  <label class="row"><span>감지 방식</span><select id="detect"><option value="motion">움직이는 것만</option><option value="presence">사람 실루엣 (배경 분리)</option></select></label>
   <label class="row"><span>자동 모드 전환</span><select id="auto"><option value="0">끄기</option><option value="20">20초</option><option value="45">45초</option><option value="90">90초</option></select></label>
   <label>활자 커튼 문장 (줄바꿈으로 구분)<textarea id="text" rows="4"></textarea></label>
   <div class="btns">
@@ -204,6 +205,7 @@ h1 small{font-size:13px;font-weight:500;color:var(--mute);letter-spacing:.3em}
       <div class="minor">
         <button id="sFlip">카메라 전환</button>
         <button id="sMirror">좌우 반전</button>
+        <button id="sDetect">감지: 움직임만</button>
         <button id="sBg">배경 다시 잡기</button>
         <button id="sLeave">연결 끊기</button>
       </div>
@@ -245,7 +247,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={mode:0,pal:0,sens:6,trail:6,gain:5,mirror:true,auto:0,debug:false,facing:'user',
+const DEF={mode:0,pal:0,sens:6,trail:6,gain:5,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',
   text:'움직임은 결이 되고\nMOVEMENT BECOMES TEXTURE\n빛은 기억이 된다\nLIGHT TURNS INTO MEMORY\n여기 있는 당신의 흔적\nTRACES OF YOU HERE'};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
@@ -358,10 +360,17 @@ function analyze(){
   const thr=40-S.sens*3.4, inv=1/50, er=A.er,e=A.e,hot=A.hot; let hotN=0,total=0;
   for(let i=0;i<n;i++){let v=(d[i]-thr)*inv;v=v<0?0:(v>1?1:v);er[i]=v;const s=e[i]*0.7+v*0.3;e[i]=s;total+=s;if(v>0.45)hot[hotN++]=i;}
   A.hotN=hotN; A.level+=(clamp(total/(n*0.05),0,1)-A.level)*0.2;
-  // presence (background subtraction)
-  const bg=A.bg,pr=A.p,pres=A.pres,tP=30-S.sens*1.3,invP=1/35; let presN=0;
-  for(let i=0;i<n;i++){let x=g[i]-bg[i];d[i]=x<0?-x:x;} blur3(d,A.tmp,w,h);
-  for(let i=0;i<n;i++){let v=(d[i]-tP)*invP;v=v<0?0:(v>1?1:v);const s=pr[i]*0.55+v*0.45;pr[i]=s;if(s>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*(v>0.25?0.0004:0.02);}
+  // presence: either "moving things only" (motion energy, spread and held briefly) or background subtraction
+  const bg=A.bg,pr=A.p,pres=A.pres; let presN=0;
+  if(S.detect==='motion'){
+    for(let i=0;i<n;i++)d[i]=er[i]; blur3(d,A.tmp,w,h); blur3(d,A.tmp,w,h);
+    const hold=lerp(0.82,0.95,(S.trail-1)/9);
+    for(let i=0;i<n;i++){let v=d[i]*2.4;v=v>1?1:v;const s=v>pr[i]?v:pr[i]*hold;pr[i]=s;if(s>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
+  }else{
+    const tP=30-S.sens*1.3,invP=1/35;
+    for(let i=0;i<n;i++){let x=g[i]-bg[i];d[i]=x<0?-x:x;} blur3(d,A.tmp,w,h);
+    for(let i=0;i<n;i++){let v=(d[i]-tP)*invP;v=v<0?0:(v>1?1:v);const s=pr[i]*0.55+v*0.45;pr[i]=s;if(s>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*(v>0.25?0.0004:0.02);}
+  }
   A.presN=presN;
   flowLK(g,p,w,h);
   return true;
@@ -564,8 +573,9 @@ function hideUI(){if(panelOpen||!intro.hidden)return;document.body.classList.rem
 function openPanel(o){panelOpen=o;panel.hidden=!o;$('#gear').setAttribute('aria-expanded',o?'true':'false');if(o)showUI();}
 $('#gear').addEventListener('click',()=>openPanel(!panelOpen));
 $('#closePanel').addEventListener('click',()=>openPanel(false));
-const ctl={sens:$('#sens'),trail:$('#trail'),gain:$('#gain'),mirror:$('#mirror'),debug:$('#debug'),auto:$('#auto'),text:$('#text'),sSens:$('#sSens')};
-function syncCtl(){ctl.sens.value=S.sens;ctl.sSens.value=S.sens;ctl.trail.value=S.trail;ctl.gain.value=S.gain;ctl.mirror.checked=!!S.mirror;ctl.debug.checked=!!S.debug;ctl.auto.value=String(S.auto);ctl.text.value=S.text;}
+const ctl={sens:$('#sens'),trail:$('#trail'),gain:$('#gain'),mirror:$('#mirror'),debug:$('#debug'),auto:$('#auto'),text:$('#text'),sSens:$('#sSens'),detect:$('#detect')};
+function syncCtl(){ctl.sens.value=S.sens;ctl.sSens.value=S.sens;ctl.trail.value=S.trail;ctl.gain.value=S.gain;ctl.mirror.checked=!!S.mirror;ctl.debug.checked=!!S.debug;ctl.auto.value=String(S.auto);ctl.text.value=S.text;ctl.detect.value=S.detect;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 실루엣';}
+ctl.detect.addEventListener('change',()=>{S.detect=ctl.detect.value;resetBackground();save();toast(S.detect==='motion'?'움직이는 것만 감지해요':'정지한 사람도 실루엣으로 잡아요. 카메라 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
 ['sens','trail','gain'].forEach(k=>ctl[k].addEventListener('input',()=>{S[k]=+ctl[k].value;if(k==='sens')ctl.sSens.value=S.sens;save();}));
 ctl.sSens.addEventListener('input',()=>{S.sens=+ctl.sSens.value;ctl.sens.value=S.sens;save();});
 ctl.mirror.addEventListener('change',()=>{S.mirror=ctl.mirror.checked;resetAnalysis();save();});
@@ -666,6 +676,7 @@ $('#btnSensorHome').addEventListener('click',()=>{leaveSensor();showIntro('');})
 $('#sLeave').addEventListener('click',()=>{leaveSensor();showIntro('');});
 $('#sFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'environment':'user';try{await startCamera(f);try{conn&&conn.open&&conn.send(JSON.stringify({type:'info',facing:f}));}catch(e){}}catch(e){sMsg(camError(e));}});
 $('#sMirror').addEventListener('click',()=>{S.mirror=!S.mirror;resetAnalysis();save();toast(S.mirror?'좌우 반전 켬':'좌우 반전 끔');});
+$('#sDetect').addEventListener('click',()=>{S.detect=S.detect==='motion'?'presence':'motion';resetBackground();save();syncCtl();toast(S.detect==='motion'?'움직이는 것만 감지해요':'정지한 사람도 잡아요 (카메라 앞을 비우고 배경 다시 잡기)');});
 $('#sBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
 function leaveSensor(){if(conn){try{conn.close();}catch(e){}conn=null;}if(peer){try{peer.destroy();}catch(e){}peer=null;}stopStream();role='solo';document.body.classList.remove('role-sensor');sensorOv.hidden=true;useDemo();setupAnalyzer();if(mode)mode.init();}
 function drawSensorPreview(now){const w=A.w,h=A.h;if(!w)return;const cv=sensorView;if(cv.width!==w*4||cv.height!==h*4){cv.width=w*4;cv.height=h*4;cv.style.aspectRatio=w+' / '+h;}
