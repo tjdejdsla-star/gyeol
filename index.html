@@ -667,26 +667,39 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
       this.track(bl);return;}
     this.track(this.merge(this.blobs(A.p,0.45,Math.max(10,A.n*0.003))));}
 };
-const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 하나의 동선. 시간이 지나면 옅어지고, 겹친 곳은 더 진하다',
+const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 하나의 동선이 가는 실선 다발로 흐르다 옅어지고, 겹친 곳은 진하게 쌓인다',
   init(){this.f=0;this.paths={};this.fadeT=lerp(14,60,(S.trail-1)/9);},
   clear(){this.paths={};},
   draw(t,dt){const P=pal();this.f++;fillBg();if((this.f&1)===0)TR.update();
     const paths=this.paths,cols=[P.fg[1],P.fg[3],P.fg[2]],R=Math.max(12,W*0.012),R2=R*R,fadeT=this.fadeT;
-    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>1)return;let pa=paths[tr.id];if(!pa){pa=paths[tr.id]={id:tr.id,pts:[],col:cols[tr.id%3],ov:new Set(),seen:t,box:null};}
-      pa.seen=t;pa.box=[tr.x,tr.y,tr.w,tr.h];const last=pa.pts[pa.pts.length-1];
+    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>1)return;let pa=paths[tr.id];if(!pa){pa=paths[tr.id]={id:tr.id,pts:[],col:cols[tr.id%3],ov:new Set(),seen:t};}
+      pa.seen=t;const last=pa.pts[pa.pts.length-1];
       if(!last||Math.hypot(tr.sx-last[0],tr.sy-last[1])>3){
         for(const k in paths){const o=paths[k];if(o===pa||o.ov.has(pa.id))continue;const pts=o.pts;for(let i=0;i<pts.length;i+=2){const dx=pts[i][0]-tr.sx,dy=pts[i][1]-tr.sy;if(dx*dx+dy*dy<R2){pa.ov.add(o.id);o.ov.add(pa.id);break;}}}
-        pa.pts.push([tr.sx,tr.sy,t]);if(pa.pts.length>900)pa.pts.shift();}});
-    // draw every path: segments fade with age, and translucent strokes stack darker where paths overlap
-    ctx.lineCap='round';ctx.lineJoin='round';const lw=Math.max(3,Math.min(12,W*0.007));
-    for(const k in paths){const pa=paths[k];const pts=pa.pts;if(pts.length<2){if(t-pa.seen>fadeT)delete paths[k];continue;}
-      const rgb=hex(pa.col);let alive=false;
-      for(let i=1;i<pts.length;i++){const age=t-pts[i][2];if(age>fadeT)continue;alive=true;const a=0.42*(1-age/fadeT);ctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a.toFixed(3)+')';ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();}
-      if(!alive&&t-pa.seen>fadeT)delete paths[k];}
-    ctx.font='500 '+(isTouch?12:14)+'px '+SANS;ctx.textBaseline='middle';ctx.textAlign='left';
-    for(const k in paths){const pa=paths[k];const end=pa.pts[pa.pts.length-1];if(!end)continue;const cur=t-pa.seen<0.5;const age=t-end[2];if(age>fadeT)continue;const a=cur?1:0.6*(1-age/fadeT);
-      ctx.globalAlpha=a;ctx.fillStyle=pa.col;ctx.beginPath();ctx.arc(end[0],end[1],cur?lw*0.9:lw*0.6,0,TAU);ctx.fill();
-      if(pa.ov.size){const lab='겹침 '+pa.ov.size+'명';ctx.fillStyle=P.light?'rgba(20,20,20,0.7)':'rgba(255,255,255,0.75)';ctx.fillText(lab,end[0]+lw+6,end[1]);}ctx.globalAlpha=1;}
+        pa.pts.push([tr.sx,tr.sy,t]);}});
+    // each path is a small bundle of hairlines: thickest and darkest at the head, thinning and fading with age.
+    // Multiply (or add, on dark palettes) makes every crossing read darker without extra marks.
+    const BANDS=10,base=Math.max(0.8,Math.min(2,W/1000)),gap=base*3;
+    ctx.save();ctx.globalCompositeOperation=P.light?'multiply':'lighter';ctx.lineCap='round';ctx.lineJoin='round';
+    for(const k in paths){const pa=paths[k],pts=pa.pts;while(pts.length&&t-pts[0][2]>fadeT)pts.shift();
+      if(pts.length<3){if(!pts.length&&t-pa.seen>fadeT)delete paths[k];continue;}
+      const n=pts.length,nx=new Float32Array(n),ny=new Float32Array(n);
+      for(let i=0;i<n;i++){const a=pts[Math.max(0,i-2)],c=pts[Math.min(n-1,i+2)];let vx=c[0]-a[0],vy=c[1]-a[1];const l=Math.hypot(vx,vy)||1;nx[i]=-vy/l;ny[i]=vx/l;}
+      const rgb=hex(pa.col);
+      [-1,0,1].forEach(sd=>{const bands=[];for(let b=0;b<BANDS;b++)bands.push(new Path2D());
+        const off=i=>sd*gap*(0.55+0.45*Math.sin(i*0.09+pa.id*1.3));
+        for(let i=1;i<n-1;i++){const a=pts[i-1],b=pts[i],c=pts[i+1];const oa=off(i-1),ob=off(i),oc=off(i+1);
+          const m1x=(a[0]+nx[i-1]*oa+b[0]+nx[i]*ob)/2,m1y=(a[1]+ny[i-1]*oa+b[1]+ny[i]*ob)/2,m2x=(b[0]+nx[i]*ob+c[0]+nx[i+1]*oc)/2,m2y=(b[1]+ny[i]*ob+c[1]+ny[i+1]*oc)/2;
+          const bi=Math.min(BANDS-1,(((t-b[2])/fadeT)*BANDS)|0);bands[bi].moveTo(m1x,m1y);bands[bi].quadraticCurveTo(b[0]+nx[i]*ob,b[1]+ny[i]*ob,m2x,m2y);}
+        for(let bi=0;bi<BANDS;bi++){const life=1-(bi+0.5)/BANDS;const al=(sd===0?0.6:0.3)*Math.pow(life,1.3);
+          ctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+al.toFixed(3)+')';ctx.lineWidth=(sd===0?base*1.7:base*0.75)*(0.4+0.6*life);ctx.stroke(bands[bi]);}});}
+    ctx.restore();
+    // a quiet note beside each moving head: how many other paths this one has crossed
+    ctx.font='500 '+(isTouch?10:11)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';
+    const note=P.light?'rgba(30,30,34,0.55)':'rgba(240,240,245,0.6)';
+    for(const k in paths){const pa=paths[k];if(!pa.ov.size||t-pa.seen>1.5)continue;const e=pa.pts[pa.pts.length-1];if(!e)continue;
+      ctx.strokeStyle=note;ctx.lineWidth=0.75;ctx.beginPath();ctx.moveTo(e[0]+6,e[1]-6);ctx.lineTo(e[0]+18,e[1]-18);ctx.stroke();
+      ctx.fillStyle=note;ctx.fillText('겹침 '+String(pa.ov.size).padStart(2,'0'),e[0]+21,e[1]-20);}
   }};
 const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 움직임·사람·사물·얼굴 인식 박스를 겹친다',
   init(){this.f=0;},
@@ -788,19 +801,27 @@ const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 �
   }};
 
 /* 파동: a clean silhouette that tears into waveforms and block noise while moving, and settles back when still */
-const mWave={id:'wave',name:'파동',desc:'움직이면 실루엣이 파형과 블록으로 흩어지고, 멈추면 다시 사람이 된다',
-  init(){this.s=2;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.f=0;this.grain=mkCanvas(256,256);const g=this.grain.cx.createImageData(256,256);for(let i=0;i<g.data.length;i+=4){const v=200+Math.random()*55;g.data[i]=g.data[i+1]=g.data[i+2]=v;g.data[i+3]=22;}this.grain.cx.putImageData(g,0,0);},
-  draw(t){this.f++;const P=pal(),rw=this.rw,rh=this.rh,s=this.s,w=A.w,h=A.h,out=this.img.data,p=A.p;
-    // how much the people are moving right now (motion inside their shapes)
-    let me=0,mn=0;for(let i=0;i<A.n;i++){if(p[i]>0.4){me+=A.er[i];mn++;}}const target=mn?Math.min(1,(me/mn)*5):0;this.amp+=(target-this.amp)*(target>this.amp?0.25:0.06);const amp=this.amp;
-    const ink=P.light?[22,22,24]:P.fgRGB[0],bg=P.light?[228,228,226]:P.bgRGB;
-    for(let y=0;y<rh;y++){const ph=y*0.11;const dx=amp*(Math.sin(ph+t*7)*9+Math.sin(y*0.37-t*11)*4+Math.sin(y*0.05+t*3)*14);const rowK=amp>0.05&&hash2(y>>2,(t*6)|0)<amp*0.5?1:0;
-      for(let x=0;x<rw;x++){const dy=amp*(Math.sin(x*0.21+t*9)*5*rowK+Math.sin(x*0.07-t*4)*3);
-        let sx=x-dx,sy=y-dy;if(rowK&&amp>0.3)sx=Math.floor(sx/6)*6;sx=sx<0?0:sx>=rw?rw-1:sx;sy=sy<0?0:sy>=rh?rh-1:sy;
-        let v=p[((sy/s)|0)*w+((sx/s)|0)];if(rowK&&v>0.3)v=hash2(x>>2,y>>2)<0.6?1:0.25;const a=v>0.5?1:v>0.35?(v-0.35)/0.15:0;
+const mWave={id:'wave',name:'파동',desc:'움직이는 속도만큼 실루엣이 물결처럼 일렁이고, 멈추면 다시 또렷한 사람이 된다',
+  init(){this.s=isTouch?2:3;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.ph=0;this.dxr=new Float32Array(this.rh);this.dyc=new Float32Array(this.rw);},
+  draw(t,dt){const P=pal(),rw=this.rw,rh=this.rh,s=this.s,w=A.w,h=A.h,out=this.img.data,p=A.p;
+    // speed = motion inside the people; amplitude eases toward it so the surface swells and settles smoothly
+    // speed is read from how much the person's shape itself changes between frames, so a still person stays still
+    if(!this.prev||this.prev.length!==A.n){this.prev=new Float32Array(A.n);this.prev.set(p);}
+    const pv=this.prev;let ch=0,cn=0;for(let i=0;i<A.n;i++){const a=p[i],b=pv[i];if(a>0.3||b>0.3){ch+=a>b?a-b:b-a;cn++;}pv[i]=a;}
+    const target=cn>20?Math.min(1,Math.max(0,(ch/cn-0.02)*9)):0;
+    this.amp+=(target-this.amp)*(target>this.amp?0.07:0.035);const amp=this.amp;this.ph+=dt*(1.1+amp*4.5);const ph=this.ph;
+    // one smooth travelling wave across rows plus a slower one across columns; no noise, no blocks
+    const A1=amp*rw*0.04,A2=amp*rh*0.03,k1=TAU/(rh*0.22),k2=TAU/(rh*0.075),k3=TAU/(rw*0.16),dxr=this.dxr,dyc=this.dyc;
+    for(let y=0;y<rh;y++)dxr[y]=A1*(Math.sin(y*k1+ph*2.0)+0.35*Math.sin(y*k2-ph*3.1));
+    for(let x=0;x<rw;x++)dyc[x]=A2*Math.sin(x*k3+ph*1.6);
+    const ink=P.light?[20,20,22]:P.fgRGB[0],bg=P.light?[232,231,228]:P.bgRGB,iw=1/s,mw=w-1.001,mh=h-1.001;
+    for(let y=0;y<rh;y++){const dx=dxr[y];for(let x=0;x<rw;x++){
+        let gx=(x-dx)*iw-0.5,gy=(y-dyc[x])*iw-0.5;gx=gx<0?0:gx>mw?mw:gx;gy=gy<0?0:gy>mh?mh:gy;
+        const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i0=y0*w+x0;
+        const v=(p[i0]*(1-fx)+p[i0+1]*fx)*(1-fy)+(p[i0+w]*(1-fx)+p[i0+w+1]*fx)*fy;
+        let a=(v-0.36)/0.2;a=a<0?0:a>1?1:a;a=a*a*(3-2*a);
         const q=(y*rw+x)*4;out[q]=bg[0]+(ink[0]-bg[0])*a;out[q+1]=bg[1]+(ink[1]-bg[1])*a;out[q+2]=bg[2]+(ink[2]-bg[2])*a;out[q+3]=255;}}
-    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=amp<0.2;ctx.drawImage(this.cv,0,0,W,H);
-    ctx.save();ctx.globalAlpha=0.35;const pat=ctx.createPattern(this.grain,'repeat');ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);ctx.restore();
+    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
   }};
 
 /* 문자: people typed out in dense symbols, their edges in light marks, the rest of the frame a faint field */
@@ -882,25 +903,29 @@ const mSketch={id:'sketch',name:'스케치',desc:'윤곽을 따라가는 연필�
 
 /* 물방울: each person is a water drop; drops that come close pull together and merge */
 const mDrops={id:'drops',name:'물방울',desc:'사람 한 명 한 명이 물방울이 되고, 가까워지면 서로 끌려 합쳐진다',
-  init(){this.s=2;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;this.blobs={};},
-  draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const P=pal(),rw=this.rw,rh=this.rh;
-    // one drop per tracked person: glides after the person, stretches along its motion, wobbles like jelly, trails a tail
-    const alive={};TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;alive[tr.id]=1;let b=this.blobs[tr.id];const r=Math.min(Math.min(W,H)*0.16,Math.max(Math.min(tr.w,tr.h)*0.55,Math.min(W,H)*0.07));
-      if(!b){b=this.blobs[tr.id]={x:tr.sx,y:tr.sy,r:0,vx:0,vy:0,id:tr.id,wob:0,wv:0,hist:[]};}b.tx=tr.sx;b.ty=tr.sy;b.tr=r;});
-    for(const k in this.blobs){const b=this.blobs[k];if(!alive[k]){b.tr=0;if(b.r<2){delete this.blobs[k];continue;}}
-      const ax=(b.tx-b.x)*0.09,ay=(b.ty-b.y)*0.09;b.vx=b.vx*0.78+ax;b.vy=b.vy*0.78+ay;b.x+=b.vx;b.y+=b.vy;b.r+=(b.tr-b.r)*0.08;
-      const sp=Math.hypot(b.vx,b.vy);b.wv+=(sp-(b.lastSp||0))*0.35;b.lastSp=sp;b.wv=b.wv*0.9-b.wob*0.18;b.wob=(b.wob+b.wv)*0.96;
-      b.hist.push([b.x,b.y]);if(b.hist.length>10)b.hist.shift();}
-    const list=Object.values(this.blobs);
-    const pos=[];list.forEach(b=>{const sp=Math.hypot(b.vx,b.vy);const k=Math.min(0.55,sp*0.05);const ang=Math.atan2(b.vy,b.vx);
-      const wob=b.wob*0.9;pos.push({x:b.x,y:b.y,r:b.r*(1+0.03*Math.sin(t*3+b.id)+wob),k,cs:Math.cos(ang),sn:Math.sin(ang),id:b.id,main:true});
-      if(sp>1.2&&b.hist.length>6){const h=b.hist[2];pos.push({x:h[0],y:h[1],r:b.r*(0.45+Math.min(0.25,sp*0.02)),k:0,cs:1,sn:0,id:b.id,main:false});}});
+  init(){this.s=isTouch?3:4;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;this.blobs={};},
+  draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const P=pal(),rw=this.rw,rh=this.rh,minR=Math.min(W,H)*0.06,maxR=Math.min(W,H)*0.14,blobs=this.blobs,f=this.f;
+    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;const want=clamp(Math.sqrt(tr.w*tr.h)*0.34,minR,maxR);let b=blobs[tr.id];
+      if(!b){ // a track that restarts next to a fading drop takes that drop over instead of popping a new one
+        let best=null,bk=null,bd=1e9;for(const k in blobs){const o=blobs[k];if(f-o.seen<=2)continue;const d=Math.hypot(o.x-tr.sx,o.y-tr.sy);if(d<Math.max(o.r,minR)*1.6&&d<bd){bd=d;best=o;bk=k;}}
+        if(best){delete blobs[bk];b=blobs[tr.id]=best;}else b=blobs[tr.id]={x:tr.sx,y:tr.sy,vx:0,vy:0,r:minR*0.2,rt:want,k:0,kv:0,dx:1,dy:0,id:tr.id};}
+      b.tx=tr.sx;b.ty=tr.sy;b.seen=f;b.rt+=(want-b.rt)*0.015;});
+    for(const key in blobs){const b=blobs[key];const gone=f-b.seen>2;
+      // size: slow and bounded, so a drop never balloons or collapses with the detection box
+      const rt=gone?0:b.rt,dr=clamp((rt-b.r)*0.05,-(b.r*0.025+0.5),b.r*0.02+0.5);b.r+=dr;if(gone&&b.r<2){delete blobs[key];continue;}
+      // position: a soft spring with a little overshoot, which is what makes it feel chewy
+      b.vx+=(b.tx-b.x)*0.045;b.vy+=(b.ty-b.y)*0.045;b.vx*=0.84;b.vy*=0.84;b.x+=b.vx;b.y+=b.vy;
+      // squash and stretch on its own spring: stretches while moving, squashes and rebounds when it stops
+      const sp=Math.hypot(b.vx,b.vy);if(sp>0.25){b.dx+=(b.vx/sp-b.dx)*0.2;b.dy+=(b.vy/sp-b.dy)*0.2;const dl=Math.hypot(b.dx,b.dy)||1;b.dx/=dl;b.dy/=dl;}
+      const kt=Math.min(0.32,sp/(b.r+1)*1.8);b.kv+=(kt-b.k)*0.16;b.kv*=0.74;b.k=clamp(b.k+b.kv,-0.14,0.42);}
+    const pos=Object.values(blobs).map(b=>({x:b.x,y:b.y,r:b.r*(1+0.012*Math.sin(t*2.1+b.id*1.7)),k:b.k,cs:b.dx,sn:b.dy}));
     // surface tension: within reach, drops lean toward each other before they merge
-    for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const a=pos[i],c=pos[j];if(!a.main||!c.main)continue;const d=Math.hypot(a.x-c.x,a.y-c.y)||1,reach=(a.r+c.r)*1.7;if(d<reach){const k=(1-d/reach)*0.3;const ux=(c.x-a.x)/d,uy=(c.y-a.y)/d;const pull=Math.min(d*0.45,(reach-d)*k);a.x+=ux*pull*(c.r/(a.r+c.r));a.y+=uy*pull*(c.r/(a.r+c.r));c.x-=ux*pull*(a.r/(a.r+c.r));c.y-=uy*pull*(a.r/(a.r+c.r));}}
-    // metaball field on a small grid: solid ink drops on paper, smooth necks where they merge
+    for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const a=pos[i],c=pos[j];const d=Math.hypot(a.x-c.x,a.y-c.y)||1,reach=(a.r+c.r)*1.7;if(d<reach){const k=(1-d/reach)*0.3;const ux=(c.x-a.x)/d,uy=(c.y-a.y)/d;const pull=Math.min(d*0.45,(reach-d)*k);a.x+=ux*pull*(c.r/(a.r+c.r));a.y+=uy*pull*(c.r/(a.r+c.r));c.x-=ux*pull*(a.r/(a.r+c.r));c.y-=uy*pull*(a.r/(a.r+c.r));}}
+    // metaball field: solid ink drops with crisp, anti-aliased edges and smooth necks where they merge
     const out=this.img.data,bg=P.light?[239,239,233]:P.bgRGB,col=P.light?[12,12,14]:P.fgRGB[0],kx=W/rw,ky=H/rh;
-    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const px=x*kx,py=y*ky;let f=0;for(let i=0;i<pos.length;i++){const b=pos[i];if(b.r<1)continue;let dx=px-b.x,dy=py-b.y;if(b.k>0){const lx=dx*b.cs+dy*b.sn,ly=-dx*b.sn+dy*b.cs;dx=lx/(1+b.k);dy=ly*(1+b.k*0.5);}f+=(b.r*b.r)/(dx*dx+dy*dy+1);}
-      let a=(f-0.9)*6;a=a<0?0:a>1?1:a;const q=(y*rw+x)*4;out[q]=bg[0]+(col[0]-bg[0])*a;out[q+1]=bg[1]+(col[1]-bg[1])*a;out[q+2]=bg[2]+(col[2]-bg[2])*a;out[q+3]=255;}
+    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const px=x*kx,py=y*ky;let fv=0;
+      for(let i=0;i<pos.length;i++){const b=pos[i];if(b.r<1)continue;const ddx=px-b.x,ddy=py-b.y;const lx=(ddx*b.cs+ddy*b.sn)/(1+b.k),ly=(-ddx*b.sn+ddy*b.cs)*(1+b.k);fv+=(b.r*b.r)/(lx*lx+ly*ly+1);}
+      let a=(fv-0.96)/0.08;a=a<0?0:a>1?1:a;a=a*a*(3-2*a);const q=(y*rw+x)*4;out[q]=bg[0]+(col[0]-bg[0])*a;out[q+1]=bg[1]+(col[1]-bg[1])*a;out[q+2]=bg[2]+(col[2]-bg[2])*a;out[q+3]=255;}
     this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
   }};
 const MODES=[mGaze,mShapes,mDots,mGlyphs,mPixel,mWave,mAscii,mSketch,mDrops,mTrail,mWords,mPattern,mScribble,mDetect,mFlow,mEcho];
