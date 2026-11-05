@@ -387,10 +387,19 @@ function camError(err){
 }
 
 /* ---------- person segmentation (on-device model, optional): pixel-accurate person mask when available ---------- */
+// person mask from the pose model: it only covers people the model actually found (one mask per person, merged), and it is made for
+// whole bodies at a distance, where the selfie segmenter loses arms and legs
+const PM={mask:null,mw:0,mh:0,fresh:0,n:0,seen:-1e9};
+function takePoseMask(r){const now=performance.now(),ms=r&&r.segmentationMasks;PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=now;
+  if(!ms||!ms.length){PM.fresh=now;PM.n=Math.min(PM.n,0);return;}
+  try{const mw=ms[0].width,mh=ms[0].height,len=mw*mh;if(!PM.mask||PM.mask.length!==len)PM.mask=new Float32Array(len);const out=PM.mask;out.fill(0);
+    for(const m of ms){if(m.width===mw&&m.height===mh){const a=m.getAsFloat32Array();for(let i=0;i<len;i++)if(a[i]>out[i])out[i]=a[i];}try{m.close();}catch(e){}}
+    PM.mw=mw;PM.mh=mh;PM.fresh=now;PM.n=ms.length;}catch(e){}}
 const SEG={state:'idle',seg:null,idx:0,mask:null,mw:0,mh:0,last:0,ts:0,fresh:0};
+async function mkTask(cls,fs,opt){try{return await cls.createFromOptions(fs,opt);}catch(e){opt.baseOptions.delegate='CPU';return await cls.createFromOptions(fs,opt);}}
 async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loading';
   try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
-    SEG.seg=await vision.ImageSegmenter.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',delegate:'GPU'},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
+    SEG.seg=await mkTask(vision.ImageSegmenter,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',delegate:'GPU'},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
     let labels=[];try{labels=SEG.seg.getLabels()||[];}catch(e){}let idx=labels.findIndex(l=>/person|selfie|foreground/i.test(String(l)));if(idx<0)idx=labels.length>1?1:0;SEG.idx=idx;
     SEG.state='ready';toast('사람 분할 모델 준비됨 · 형태가 더 정확해져요');setStatus(statusEl.textContent+' · 분할');}
   catch(e){SEG.state='offline';}}
@@ -467,13 +476,20 @@ function analyze(){
   A.hotN=hotN; A.level+=(clamp(total/(n*0.05),0,1)-A.level)*0.2;
   // presence: either "moving things only" (motion energy, spread and held briefly) or background subtraction
   const bg=A.bg,pr=A.p,pres=A.pres; let presN=0;
-  if(SEG.mask&&performance.now()-SEG.fresh<400){
-    // model mask sampled onto the analysis grid through the same crop (and mirror) as the frame. Each cell reads four points and keeps the
+  const tnow=performance.now(),segOK=!!(SEG.mask&&tnow-SEG.fresh<400),pmOK=!!(PM.mask&&tnow-PM.fresh<400&&PM.n>0),poseOn=!!(FACE.pose&&tnow-PM.fresh<400);
+  if(segOK||pmOK){
+    // a mask sampled onto the analysis grid through the same crop (and mirror) as the frame. Each cell reads four points and keeps the
     // stronger of their average and most of their maximum, so a limb thinner than a cell is not lost between samples
-    const mw=SEG.mw,mh=SEG.mh,mk=SEG.mask,kx=mw/sw,ky=mh/sh,cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));
-    for(let y=0;y<h;y++){const ya=Math.min(mh-1,((sy+(y+0.25)/h*ch)*ky)|0)*mw,yb=Math.min(mh-1,((sy+(y+0.75)/h*ch)*ky)|0)*mw;
+    const samp=(mk,mw,mh,out)=>{const kx=mw/sw,ky=mh/sh;for(let y=0;y<h;y++){const ya=Math.min(mh-1,((sy+(y+0.25)/h*ch)*ky)|0)*mw,yb=Math.min(mh-1,((sy+(y+0.75)/h*ch)*ky)|0)*mw;
       for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x,xa=Math.min(mw-1,((sx+(xx+0.25)/w*cw)*kx)|0),xb=Math.min(mw-1,((sx+(xx+0.75)/w*cw)*kx)|0);
-        const a=mk[ya+xa],b=mk[ya+xb],c=mk[yb+xa],e2=mk[yb+xb],mx=Math.max(a,b,c,e2),mean=(a+b+c+e2)*0.25;let v=mean>mx*0.8?mean:mx*0.8;cur[y*w+x]=v<0?0:v>1?1:v;}}
+        const a=mk[ya+xa],b=mk[ya+xb],c=mk[yb+xa],e2=mk[yb+xb],mx=Math.max(a,b,c,e2),mean=(a+b+c+e2)*0.25;let v=mean>mx*0.8?mean:mx*0.8;out[y*w+x]=v<0?0:v>1?1:v;}}};
+    const cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));if(segOK)samp(SEG.mask,SEG.mw,SEG.mh,cur);else cur.fill(0);
+    if(pmOK){// people the pose model found: its own full-body mask, and the selfie mask only right around those people (nothing else in the room)
+      const gp=A.gp&&A.gp.length===n?A.gp:(A.gp=new Float32Array(n)),nb=A.nb&&A.nb.length===n?A.nb:(A.nb=new Uint8Array(n)),nt=A.nt&&A.nt.length===n?A.nt:(A.nt=new Uint8Array(n));samp(PM.mask,PM.mw,PM.mh,gp);
+      const R=3;for(let y=0;y<h;y++){let run=-1e9;for(let x=0;x<w;x++){if(gp[y*w+x]>0.3)run=x;nt[y*w+x]=x-run<=R?1:0;}run=1e9;for(let x=w-1;x>=0;x--){if(gp[y*w+x]>0.3)run=x;if(run-x<=R)nt[y*w+x]=1;}}
+      for(let x=0;x<w;x++){let run=-1e9;for(let y=0;y<h;y++){if(nt[y*w+x])run=y;nb[y*w+x]=y-run<=R?1:0;}run=1e9;for(let y=h-1;y>=0;y--){if(nt[y*w+x])run=y;if(run-y<=R)nb[y*w+x]=1;}}
+      for(let i=0;i<n;i++){const s2=nb[i]?cur[i]:0,g2=gp[i];cur[i]=g2>s2?g2:s2;}}
+    else if(poseOn&&tnow-PM.seen>900){for(let i=0;i<n;i++)cur[i]*=0.3;} // the pose model has seen nobody for a while: a lone selfie-mask blob is probably not a person
     // the pose model knows where arms and legs are: along each visible limb, faint mask becomes solid (no mask at all stays empty, so a
     // late pose never paints a ghost arm)
     limbBoost(cur,w,h,sx,sy,cw,ch,sw,sh);
@@ -577,13 +593,13 @@ function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='fi
   const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
-  if(wantPose&&FACE.pose&&now-FACE.plast>(usePose?70:100)){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
+  if(wantPose&&FACE.pose&&now-FACE.plast>(usePose?66:80)){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}}
   if(wantObj&&FACE.obj&&now-FACE.olast>140){FACE.olast=now;try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;}catch(e){FACE.ores=null;}}}
 async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='loading';
   try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
-    FACE.det=await vision.FaceDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});
+    try{FACE.det=await mkTask(vision.FaceDetector,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});}catch(e){FACE.det=null;}
     FACE.state='ready';toast('얼굴 인식 모델 준비됨');
-    try{FACE.pose=await vision.PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:4,minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});toast('자세 인식 모델 준비됨');}catch(e){}
+    try{FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:5,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});toast('자세 인식 모델 준비됨 · 사람만 잡아요');setStatus(statusEl.textContent+' · 자세');}catch(e){}
     try{FACE.obj=await vision.ObjectDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',delegate:'GPU'},runningMode:'VIDEO',scoreThreshold:0.4,maxResults:8});toast('사물 인식 모델 준비됨');}catch(e){}
   }catch(e){FACE.state='offline';}}
 const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
@@ -982,13 +998,14 @@ const mStack={id:'stack',name:'쌓기',busy(){return this.hold>0.3||STACK.fly.le
   // frame or two is still there at the moment of capture; with the person model running this is kept at three times the grid's detail
   K:3,
   accum(cand){const w=A.w,h=A.h,n=w*h;if(!this.accP||this.accP.length!==n)this.accP=new Float32Array(n);const ap=this.accP,p=A.p;for(let i=0;i<n;i++){const v=ap[i]*0.97;ap[i]=p[i]>v?p[i]:v;}
-    if(!(SEG.mask&&performance.now()-SEG.fresh<400&&A.crop)||SEG.fresh===this.lastSeg)return;this.lastSeg=SEG.fresh;
+    const tn=performance.now(),sOK=!!(SEG.mask&&tn-SEG.fresh<400),pOK=!!(PM.mask&&tn-PM.fresh<400&&PM.n>0);if(!(sOK||pOK)||!A.crop)return;const stamp=(sOK?SEG.fresh:0)+(pOK?PM.fresh:0);if(stamp===this.lastSeg)return;this.lastSeg=stamp;
     const K=this.K,HW=w*K,HH=h*K;if(!this.hi||this.hi.length!==HW*HH){this.hi=new Float32Array(HW*HH);this.hiN=0;}
     const gb=this.gb||[cand.x,cand.y,cand.w,cand.h],hx0=clamp(((gb[0]/A.sx-6)*K)|0,0,HW-1),hx1=clamp((((gb[0]+gb[2])/A.sx+6)*K)|0,0,HW-1),hy0=clamp(((gb[1]/A.sy-6)*K)|0,0,HH-1),hy1=clamp((((gb[1]+gb[3])/A.sy+6)*K)|0,0,HH-1);
-    const cr=A.crop,sx=cr[0],sy=cr[1],cw=cr[2],ch=cr[3],kx=SEG.mw/cr[4],ky=SEG.mh/cr[5],mw=SEG.mw,mh=SEG.mh,mk=SEG.mask,hi=this.hi;
-    for(let y=hy0;y<=hy1;y++){const my=clamp((sy+(y+0.5)/HH*ch)*ky-0.5,0,mh-1.001),y0=my|0,fy=my-y0;
-      for(let x=hx0;x<=hx1;x++){const u=(x+0.5)/HW,uu=S.mirror?1-u:u,mx=clamp((sx+uu*cw)*kx-0.5,0,mw-1.001),x0=mx|0,fx=mx-x0,i=y0*mw+x0;
-        let v=(mk[i]*(1-fx)+mk[i+1]*fx)*(1-fy)+(mk[i+mw]*(1-fx)+mk[i+mw+1]*fx)*fy;v=v<0?0:v>1?1:v;const j=y*HW+x,o=hi[j]*0.97;hi[j]=v>o?v:o;}}
+    const cr=A.crop,sx=cr[0],sy=cr[1],cw=cr[2],ch=cr[3],hi=this.hi;
+    const bil=(mk,mw,mh,fx0,fy0)=>{const mx=clamp(fx0*mw-0.5,0,mw-1.001),my=clamp(fy0*mh-0.5,0,mh-1.001),x0=mx|0,y0=my|0,fx=mx-x0,fy=my-y0,i=y0*mw+x0;return (mk[i]*(1-fx)+mk[i+1]*fx)*(1-fy)+(mk[i+mw]*(1-fx)+mk[i+mw+1]*fx)*fy;};
+    for(let y=hy0;y<=hy1;y++){const fv=(sy+(y+0.5)/HH*ch)/cr[5];
+      for(let x=hx0;x<=hx1;x++){const u=(x+0.5)/HW,uu=S.mirror?1-u:u,fu=(sx+uu*cw)/cr[4];let v=sOK?bil(SEG.mask,SEG.mw,SEG.mh,fu,fv):0;if(pOK){const q=bil(PM.mask,PM.mw,PM.mh,fu,fv);if(q>v)v=q;}
+        v=v<0?0:v>1?1:v;const j=y*HW+x,o=hi[j]*0.97;hi[j]=v>o?v:o;}}
     this.hiN=(this.hiN||0)+1;},
   resetAcc(){if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);if(this.hiN){this.hi.fill(0);this.hiN=0;}},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
@@ -1696,7 +1713,8 @@ function drawSensorPreview(now){const w=A.w,h=A.h;if(!w)return;const cv=sensorVi
   sOv.cx.putImageData(sImg,0,0);c.drawImage(sOv,0,0,cv.width,cv.height);
   sFpsN++;if(now-sFpsT>1000){sFps=Math.round(sFpsN*1000/(now-sFpsT));sFpsN=0;sFpsT=now;bytesRate=bytesAcc/((now-bytesT)/1000);bytesAcc=0;bytesT=now;
     sensorStatus.textContent=(conn&&conn.open?'연결됨':'연결 대기')+' · '+sFps+' fps · '+(bytesRate/1024).toFixed(0)+' KB/s · '+w+'×'+h+' 격자';}}
-function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);runSeg(now);const ok=analyze();drawSensorPreview(now);
+function runPoseSensor(now){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(FACE.state==='idle')loadFace();if(FACE.state!=='ready'||!FACE.pose||now-FACE.plast<80)return;FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}}
+function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);runSeg(now);runPoseSensor(now);const ok=analyze();drawSensorPreview(now);
   if(ok&&conn&&conn.open&&now-lastSend>=45){const dc=conn.dataChannel;if(!dc||dc.bufferedAmount<65536){try{const b=encodePacket(seq++);conn.send(b);bytesAcc+=b.byteLength;lastSend=now;}catch(e){}}}}
 
 /* ---------- main loop ---------- */
