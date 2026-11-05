@@ -360,7 +360,7 @@ A.cx=A.cv.getContext('2d',{willReadFrequently:true});
 function allocAnalyzer(w,h){
   A.w=w;A.h=h;A.n=w*h;A.cv.width=w;A.cv.height=h;
   ['gray','prev','bg','diff','tmp','e','er','p','rm','u','v','xx','yy','xy','xt','yt'].forEach(k=>{A[k]=new Float32Array(A.n);});
-  A.hot=new Int32Array(A.n);A.pres=new Int32Array(A.n);A.hotN=0;A.presN=0;A.frames=0;A.level=0;A.sx=W/w;A.sy=H/h;
+  A.hot=new Int32Array(A.n);A.hot2=new Int32Array(A.n);A.pres=new Int32Array(A.n);A.hotN=0;A.presN=0;A.frames=0;A.level=0;A.sx=W/w;A.sy=H/h;
 }
 function gridFor(aspect,cells){const w=clamp(Math.round(Math.sqrt(cells*aspect)),24,240);return[w,clamp(Math.round(w/aspect),24,240)];}
 function setupAnalyzer(){ const g=gridFor(W/H,isTouch?7000:13000); if(g[0]!==A.w||g[1]!==A.h) allocAnalyzer(g[0],g[1]); else {A.sx=W/A.w;A.sy=H/A.h;} }
@@ -369,6 +369,13 @@ function resetBackground(){ if(A.n&&A.frames>0){A.bg.set(A.gray);A.p.fill(0);A.r
 function blur3(src,tmp,w,h){
   for(let y=0;y<h;y++){const o=y*w;tmp[o]=(src[o]*3+src[o+1])*0.25;for(let x=1;x<w-1;x++)tmp[o+x]=(src[o+x-1]+src[o+x]*2+src[o+x+1])*0.25;tmp[o+w-1]=(src[o+w-1]*3+src[o+w-2])*0.25;}
   for(let x=0;x<w;x++){src[x]=(tmp[x]*3+tmp[x+w])*0.25;for(let y=1;y<h-1;y++){const i=y*w+x;src[i]=(tmp[i-w]+tmp[i]*2+tmp[i+w])*0.25;}const i=(h-1)*w+x;src[i]=(tmp[i]*3+tmp[i-w])*0.25;}
+}
+function fillInside(m,tmp,w,h,thr,q){ // flood the outside from the top/left/right borders; unreached cells are inside the shape
+  const n=w*h;for(let i=0;i<n;i++)tmp[i]=m[i]>thr?2:0; let head=0,tail=0;
+  const seed=i=>{if(tmp[i]===0){tmp[i]=1;q[tail++]=i;}};
+  for(let x=0;x<w;x++)seed(x); for(let y=0;y<h;y++){seed(y*w);seed(y*w+w-1);}
+  while(head<tail){const i=q[head++];const x=i%w,y=(i/w)|0;if(x>0)seed(i-1);if(x<w-1)seed(i+1);if(y>0)seed(i-w);if(y<h-1)seed(i+w);}
+  for(let i=0;i<n;i++)m[i]=tmp[i]===1?0:1;
 }
 function morph(src,tmp,w,h,R,isMax){ // separable max (dilate) or min (erode) filter
   for(let y=0;y<h;y++){const o=y*w;for(let x=0;x<w;x++){let m=src[o+x];const x0=x-R<0?0:x-R,x1=x+R>=w?w-1:x+R;for(let k=x0;k<=x1;k++){const v=src[o+k];if(isMax?v>m:v<m)m=v;}tmp[o+x]=m;}}
@@ -411,9 +418,14 @@ function analyze(){
   if(S.detect==='motion'){
     // motion energy -> close the gaps between moving edges (dilate then erode) -> brief hold, so a moving
     // person reads as one filled shape and nothing is compared against a stored background
-    const hold=lerp(0.86,0.965,(S.trail-1)/9),R=Math.max(3,Math.round(w/26));
-    for(let i=0;i<n;i++)d[i]=er[i]; blur3(d,A.tmp,w,h); morph(d,A.tmp,w,h,R,true); morph(d,A.tmp,w,h,R,false); blur3(d,A.tmp,w,h);
-    for(let i=0;i<n;i++){let v=d[i]*2.4;v=v>1?1:v;const s=v>pr[i]?v:pr[i]*hold;pr[i]=s;if(s>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
+    const hold=lerp(0.86,0.965,(S.trail-1)/9),R=Math.max(3,Math.round(w/26)),R2=2;
+    for(let i=0;i<n;i++)d[i]=er[i]; blur3(d,A.tmp,w,h);
+    const fl=A.xx; for(let i=0;i<n;i++)fl[i]=d[i]; morph(fl,A.tmp,w,h,R2,true);          // slightly thickened outline
+    fillInside(fl,A.tmp,w,h,0.12,A.hot2);                                                 // 1 = outline or enclosed inside
+    morph(fl,A.tmp,w,h,R2,false);
+    morph(d,A.tmp,w,h,R,true); morph(d,A.tmp,w,h,R,false);                                // closing for thin parts
+    for(let i=0;i<n;i++){const f=fl[i]>0.5?1:d[i]*2.4;d[i]=f>1?1:f;} blur3(d,A.tmp,w,h);
+    for(let i=0;i<n;i++){let v=d[i]*1.2;v=v>1?1:v;const s=v>pr[i]?v:pr[i]*hold;pr[i]=s;if(s>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
   }else{
     const tP=30-S.sens*1.3,invP=1/35;
     for(let i=0;i<n;i++){let x=g[i]-bg[i];d[i]=x<0?-x:x;} blur3(d,A.tmp,w,h);
@@ -609,7 +621,35 @@ function drawFrameTo(cv){ // current camera frame, cropped like the analysis, in
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;
   c.save();if(S.mirror){c.translate(W,0);c.scale(-1,1);}try{c.drawImage(el,sx,sy,cw,ch,0,0,W,H);}catch(e){}c.restore();
 }
-const mPaint={id:'paint',name:'그리기',desc:'움직인 궤적을 따라 카메라 사진이 찍혀 남는다',
+function findPens(maxPens){ // the strongest moving spots (a waving hand), each a weighted centroid around a peak
+  const w=A.w,h=A.h,er=A.er,u=A.u,v=A.v,pens=[],used=[];
+  for(let p=0;p<maxPens;p++){let bi=-1,bs=0;
+    for(let k=0;k<A.hotN;k++){const i=A.hot[k];const sc=er[i]*(Math.abs(u[i])+Math.abs(v[i]));if(sc<=bs)continue;const x=i%w,y=(i/w)|0;let near=false;for(const q of used){if(Math.abs(q[0]-x)<w*0.12&&Math.abs(q[1]-y)<h*0.2){near=true;break;}}if(near)continue;bs=sc;bi=i;}
+    if(bi<0||bs<0.5)break;const bx=bi%w,by=(bi/w)|0;let sx=0,sy=0,sw=0,R=Math.max(3,Math.round(w/30));
+    for(let y=Math.max(0,by-R);y<=Math.min(h-1,by+R);y++)for(let x=Math.max(0,bx-R);x<=Math.min(w-1,bx+R);x++){const i=y*w+x;const sc=er[i]*(Math.abs(u[i])+Math.abs(v[i]));sx+=x*sc;sy+=y*sc;sw+=sc;}
+    if(sw>0){pens.push({x:(sx/sw+0.5)*A.sx,y:(sy/sw+0.5)*A.sy,s:bs});used.push([bx,by]);}}
+  return pens;}
+const mPaint={id:'paint',name:'그리기',desc:'가장 크게 움직이는 손끝을 따라 빛의 선을 긋는다',
+  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.cv=mkCanvas(tw,th);this.clear();this.f=0;this.pens=[];},
+  clear(){const c=this.cv.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle=pal().bg;c.fillRect(0,0,W,H);},
+  draw(){const P=pal(),c=this.cv.cx;this.f++;c.setTransform(DPR,0,0,DPR,0,0);
+    if((this.f%10)===0){c.fillStyle=rgba(P.bg,lerp(0.05,0.003,(S.trail-1)/9));c.fillRect(0,0,W,H);}
+    const found=findPens(2),cols=[P.fg[1],P.fg[3]];c.lineCap='round';c.lineJoin='round';
+    // match found spots to existing pens; a pen lifts after a few frames without a spot
+    const pens=this.pens;pens.forEach(p=>p.hit=false);
+    found.forEach(f=>{let best=null,bd=1e9;pens.forEach(p=>{if(p.hit)return;const d=Math.hypot(p.x-f.x,p.y-f.y);if(d<bd&&d<W*0.25){bd=d;best=p;}});
+      if(best){const nx=best.x+(f.x-best.x)*0.45,ny=best.y+(f.y-best.y)*0.45;const d=Math.hypot(nx-best.x,ny-best.y);
+        if(best.down&&d>0.5){const col=cols[best.id%2],wdt=Math.max(2,Math.min(14,2+d*0.5));
+          c.strokeStyle=rgba(col,0.18);c.lineWidth=wdt*3;c.beginPath();c.moveTo(best.x,best.y);c.lineTo(nx,ny);c.stroke();
+          c.strokeStyle=col;c.lineWidth=wdt;c.beginPath();c.moveTo(best.x,best.y);c.lineTo(nx,ny);c.stroke();
+          c.strokeStyle='rgba(255,255,255,0.9)';c.lineWidth=Math.max(1,wdt*0.35);c.beginPath();c.moveTo(best.x,best.y);c.lineTo(nx,ny);c.stroke();}
+        best.x=nx;best.y=ny;best.down=true;best.hit=true;best.miss=0;}
+      else pens.push({id:pens.length?pens[pens.length-1].id+1:0,x:f.x,y:f.y,down:false,hit:true,miss:0});});
+    for(let i=pens.length-1;i>=0;i--){const p=pens[i];if(!p.hit){p.miss++;if(p.miss>6)pens.splice(i,1);else if(p.miss>2)p.down=false;}}
+    ctx.drawImage(this.cv,0,0,W,H);
+    pens.forEach(p=>{if(!p.hit)return;const col=cols[p.id%2];ctx.fillStyle='rgba(255,255,255,0.95)';ctx.beginPath();ctx.arc(p.x,p.y,5,0,TAU);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,11,0,TAU);ctx.stroke();});
+  }};
+const mPhoto={id:'photo',name:'사진',desc:'움직인 궤적을 따라 카메라 사진이 찍혀 남는다',
   init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.cv=mkCanvas(tw,th);this.src=mkCanvas(tw,th);this.tmp=mkCanvas(tw,th);this.mask=mkCanvas(A.w,A.h);this.clear();this.f=0;},
   clear(){const c=this.cv.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle=pal().bg;c.fillRect(0,0,W,H);},
   draw(){
@@ -775,7 +815,7 @@ const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 움직임
     TR.log.forEach((l,i)=>ctx.fillText(l,16,y0+16*(i+1)));
     ctx.strokeStyle=rgba(blue,0.6);ctx.lineWidth=1;ctx.strokeRect(10,y0-6,Math.min(W-20,320),(TR.log.length+1)*16+12);
   }};
-const MODES=[mShapes,mDots,mGlyphs,mCurtain,mPaint,mNeon,mTrail,mWords,mPattern,mScribble,mDetect,mFlow,mInk,mRipple,mEcho];
+const MODES=[mShapes,mDots,mGlyphs,mCurtain,mPaint,mNeon,mTrail,mPhoto,mWords,mPattern,mScribble,mDetect,mFlow,mInk,mRipple,mEcho];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -785,7 +825,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\';
+const KEYS='1234567890-=[]\\;';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
