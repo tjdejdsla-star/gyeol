@@ -566,7 +566,8 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
     while(changed){changed=false;for(let i=0;i<bl.length&&!changed;i++)for(let j=i+1;j<bl.length;j++){const a=bl[i],b=bl[j];
       const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
       const inside=ox>0.6*Math.min(a.w,b.w)&&oy>0.6*Math.min(a.h,b.h);
-      const stacked=!detector&&ox>0.35*Math.min(a.w,b.w)&&oy>-H*0.22,beside=!detector&&oy>0.35*Math.min(a.h,b.h)&&ox>-W*0.03;
+      // only a small piece (a head, an arm, a hand) joins a bigger blob; two blobs of similar size are two people standing close
+      const ratio=Math.min(a.area,b.area)/Math.max(a.area,b.area),stacked=!detector&&ratio<0.5&&ox>0.35*Math.min(a.w,b.w)&&oy>-H*0.22,beside=!detector&&ratio<0.3&&oy>0.35*Math.min(a.h,b.h)&&ox>-W*0.03;
       if(inside||stacked||beside){const x0=Math.min(a.x,b.x),y0=Math.min(a.y,b.y),x1=Math.max(a.x+a.w,b.x+b.w),y1=Math.max(a.y+a.h,b.y+b.h),n=a.area+b.area;
         bl[i]={x:x0,y:y0,w:x1-x0,h:y1-y0,cx:(a.cx*a.area+b.cx*b.area)/n,cy:(a.cy*a.area+b.cy*b.area)/n,conf:Math.max(a.conf,b.conf),area:n};bl.splice(j,1);changed=true;break;}}}
     return bl;},
@@ -773,30 +774,46 @@ const mBlocks={id:'blocks',name:'빛벽',desc:'뒤에서 빛이 비치는 반투
 
 /* 유리: people behind a frosted glass screen. Whoever is close to the glass is dark and sharp, whoever is far is a pale blur;
    hands raised against the glass come through warm */
-const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 유리에 가까운 사람은 짙고 또렷하게, 먼 사람은 옅게 번진다. 유리에 댄 손은 붉게 비친다',
-  init(){this.s1=null;this.b1=mkCanvas(Math.max(2,A.w>>1),Math.max(2,A.h>>1));this.b2=mkCanvas(Math.max(2,(A.w/5)|0),Math.max(2,(A.h/5)|0));this.mid=mkCanvas(Math.max(2,A.w*2),Math.max(2,A.h*2));this.hand=mkCanvas(2,2);this.f=0;
+const CANVAS_FILTER=(()=>{try{const c=document.createElement('canvas').getContext('2d');c.filter='blur(2px)';return c.filter==='blur(2px)';}catch(e){return false;}})();
+const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 유리에 다가올수록 또렷하고 짙어지고, 멀어질수록 옅게 번져 사라진다. 유리에 댄 손은 붉게 비친다',
+  init(){this.lab=new Int8Array(A.n);this.pm=[];this.pc=[];this.O=mkCanvas(Math.max(2,W>>1),Math.max(2,H>>1));this.sm={};this.small=null;this.mid=null;this.hand=mkCanvas(2,2);this.f=0;
     this.grain=mkCanvas(200,200);const g=this.grain.cx.createImageData(200,200);for(let i=0;i<g.data.length;i+=4){const v=128+(Math.random()-0.5)*90;g.data[i]=g.data[i+1]=g.data[i+2]=v;g.data[i+3]=16;}this.grain.cx.putImageData(g,0,0);},
-  blurred(src,small,out){ // downsample then upsample twice: a cheap, smooth wide blur that also works on iPhone Safari
-    const s=small.cx;s.setTransform(1,0,0,1,0,0);s.clearRect(0,0,small.width,small.height);s.imageSmoothingEnabled=true;s.drawImage(src,0,0,small.width,small.height);
-    const o=out.cx;o.setTransform(1,0,0,1,0,0);o.clearRect(0,0,out.width,out.height);o.imageSmoothingEnabled=true;o.drawImage(small,0,0,out.width,out.height);return out;},
+  // draw a full-screen layer blurred by r screen pixels: a real gaussian where the browser has canvas filters, a down-and-up sample elsewhere
+  blurDraw(src,r,alpha){if(r<1.2){ctx.globalAlpha=alpha;ctx.drawImage(src,0,0,W,H);ctx.globalAlpha=1;return;}
+    const O=this.O,o=O.cx;o.setTransform(1,0,0,1,0,0);o.globalCompositeOperation='source-over';o.clearRect(0,0,O.width,O.height);o.imageSmoothingEnabled=true;
+    if(CANVAS_FILTER){o.filter='blur('+(r*O.width/W).toFixed(2)+'px)';o.drawImage(src,0,0,O.width,O.height);o.filter='none';}
+    else{ // no canvas filter (older Safari): a pyramid of halvings, then halving back up, blended between two levels for a continuous radius
+      if(!this.L||this.L[0].width!==O.width||this.L[0].height!==O.height){this.L=[];this.U=[];let lw=O.width,lh=O.height;for(let k=0;k<7;k++){this.L.push(mkCanvas(Math.max(2,lw),Math.max(2,lh)));this.U.push(mkCanvas(Math.max(2,lw),Math.max(2,lh)));lw=Math.round(lw/2);lh=Math.round(lh/2);}}
+      const L=this.L,U=this.U,put=(c,img)=>{const x=c.cx;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';x.clearRect(0,0,c.width,c.height);x.imageSmoothingEnabled=true;x.drawImage(img,0,0,c.width,c.height);};
+      const lv=clamp(Math.log2(r*O.width/W/0.75),0,6),k0=Math.floor(lv),k1=Math.min(6,k0+1),fr=lv-k0;put(L[0],src);for(let k=1;k<=k1;k++)put(L[k],L[k-1]);
+      const up=k=>{let cur=L[k];for(let j=k-1;j>=0;j--){put(U[j],cur);cur=U[j];}return cur;};
+      o.globalAlpha=1;o.drawImage(up(k0),0,0);if(fr>0.02&&k1>k0){o.globalAlpha=fr;o.drawImage(up(k1),0,0);o.globalAlpha=1;}}
+    ctx.globalAlpha=alpha;ctx.drawImage(O,0,0,W,H);ctx.globalAlpha=1;},
   draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();
     // the lit glass: a pale blue-white field, brightest low in the middle, falling to deep blue at the top
     let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#16273a');g.addColorStop(0.28,'#8fa9bd');g.addColorStop(0.62,'#e4edf1');g.addColorStop(1,'#b9cad6');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
     g=ctx.createRadialGradient(W*0.5,H*0.62,Math.min(W,H)*0.05,W*0.5,H*0.6,Math.max(W,H)*0.6);g.addColorStop(0,'rgba(255,255,255,0.65)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-    const ink=[12,24,36];this.s1=upsampleMask(A.p,A.w,A.h,2,0.32,0.62,ink,this.s1);
-    const b1=this.blurred(this.s1,this.b1,this.mid),B1=mkCanvas(this.mid.width,this.mid.height);B1.cx.drawImage(b1,0,0);const B2=this.blurred(this.s1,this.b2,this.mid);
-    ctx.imageSmoothingEnabled=true;const people=PEOPLE.list;
-    if(!people.length){ctx.globalAlpha=0.55;ctx.drawImage(B2,0,0,W,H);ctx.globalAlpha=1;}
-    people.forEach(pp=>{const near=pp.near,x=pp.bx-pp.bw*0.25,y=pp.by-pp.bh*0.15,w=pp.bw*1.5,h=pp.bh*1.35;ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
-      ctx.globalAlpha=0.35+0.25*(1-near);ctx.drawImage(B2,0,0,W,H);ctx.globalAlpha=0.25+0.55*near;ctx.drawImage(B1,0,0,W,H);ctx.globalAlpha=Math.pow(near,1.6)*0.85;ctx.drawImage(this.s1,0,0,W,H);ctx.restore();ctx.globalAlpha=1;});
-    // hands against the glass: sharper and warm, where the pose model finds a wrist of a near person
-    TR.tracks.forEach(tr=>{if(!tr.pose||TR.f-tr.seen>2)return;const near=clamp((tr.h/H-0.2)/0.75,0,1);if(near<0.35)return;[[15,19],[16,20]].forEach(([wr,ix])=>{const a=tr.pose[wr],b=tr.pose[ix];if(!a||a.v<0.5)return;
-      const cx=b&&b.v>0.4?(a.x*0.4+b.x*0.6):a.x,cy=b&&b.v>0.4?(a.y*0.4+b.y*0.6):a.y,r=tr.h*0.085,S1=this.s1,k=S1.width/W;
-      if(this.hand.width!==S1.width||this.hand.height!==S1.height)this.hand=mkCanvas(S1.width,S1.height);const hc=this.hand.cx;hc.setTransform(1,0,0,1,0,0);hc.globalCompositeOperation='source-over';hc.clearRect(0,0,S1.width,S1.height);hc.drawImage(S1,0,0);
-      hc.globalCompositeOperation='source-in';hc.fillStyle='#b9513a';hc.fillRect(0,0,S1.width,S1.height);hc.globalCompositeOperation='destination-in';const hg=hc.createRadialGradient(cx*k,cy*k,0,cx*k,cy*k,r*k);hg.addColorStop(0,'rgba(0,0,0,1)');hg.addColorStop(0.65,'rgba(0,0,0,0.85)');hg.addColorStop(1,'rgba(0,0,0,0)');hc.fillStyle=hg;hc.fillRect(0,0,S1.width,S1.height);hc.globalCompositeOperation='source-over';
-      ctx.globalAlpha=0.9*near;ctx.drawImage(this.hand,0,0,W,H);ctx.globalAlpha=1;});});
+    const w=A.w,h=A.h,n=A.n,p=A.p,lab=this.lab,ink=[12,24,36],sc=isTouch?2:3;
+    // who is who: every silhouette cell belongs to the nearest person whose box holds it, so each person can be blurred on their own
+    let people=PEOPLE.list.slice();if(!people.length&&A.presN>12){let x0=w,x1=0,y0=h,y1=0;for(let i=0;i<n;i++)if(p[i]>0.5){const x=i%w,y=(i/w)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+      people=[{key:'all',bx:x0*A.sx,by:y0*A.sy,bw:(x1-x0+1)*A.sx,bh:(y1-y0+1)*A.sy,x:(x0+x1)/2*A.sx,y:(y0+y1)/2*A.sy,near:clamp(((y1-y0)/h-0.2)/0.75,0,1)}];}
+    const P=people.length;for(let i=0;i<n;i++){lab[i]=-1;if(p[i]<0.12)continue;const x=(i%w+0.5)*A.sx,y=(((i/w)|0)+0.5)*A.sy;let best=-1,bd=1e18;
+      for(let k=0;k<P;k++){const q=people[k],mx=q.bw*0.2,my=q.bh*0.1;const inside=x>q.bx-mx&&x<q.bx+q.bw+mx&&y>q.by-my&&y<q.by+q.bh+my;const d=(x-(q.bx+q.bw/2))**2+(y-(q.by+q.bh/2))**2+(inside?0:1e12);if(d<bd){bd=d;best=k;}}lab[i]=best;}
+    // depth: smoothed per person, so walking toward the glass sharpens gradually; far people are drawn first, near ones on top
+    const order=people.map((q,k)=>{const sm=this.sm[q.key];const nr=sm==null?q.near:sm+(q.near-sm)*0.08;this.sm[q.key]=nr;return {q,k,near:nr};}).sort((a,b)=>a.near-b.near);
+    const scl=W/1280;
+    order.forEach(({q,k,near})=>{if(!this.pm[k]||this.pm[k].length!==n)this.pm[k]=new Float32Array(n);const m=this.pm[k];for(let i=0;i<n;i++)m[i]=lab[i]===k?p[i]:0;if(!this.tmpb||this.tmpb.length!==n)this.tmpb=new Float32Array(n);blur3(m,this.tmpb,w,h);
+      this.pc[k]=upsampleMask(m,w,h,sc,0.32,0.58,ink,this.pc[k]);
+      const r=(1+48*Math.pow(1-near,1.35))*scl,alpha=0.42+0.52*Math.pow(near,0.8);this.blurDraw(this.pc[k],r,alpha);
+      // hands against the glass: sharp and warm, only for someone close
+      if(near<0.45)return;const tr=TR.tracks.find(t=>t.pose&&TR.f-t.seen<=2&&t.cx>q.bx-q.bw*0.2&&t.cx<q.bx+q.bw*1.2);if(!tr)return;const S1=this.pc[k],kk=S1.width/W;
+      [[15,19],[16,20]].forEach(([wr,ix])=>{const a=tr.pose[wr],b=tr.pose[ix];if(!a||a.v<0.5)return;const cx=b&&b.v>0.4?(a.x*0.4+b.x*0.6):a.x,cy=b&&b.v>0.4?(a.y*0.4+b.y*0.6):a.y,rr=tr.h*0.085;
+        if(this.hand.width!==S1.width||this.hand.height!==S1.height)this.hand=mkCanvas(S1.width,S1.height);const hc=this.hand.cx;hc.setTransform(1,0,0,1,0,0);hc.globalCompositeOperation='source-over';hc.clearRect(0,0,S1.width,S1.height);hc.drawImage(S1,0,0);
+        hc.globalCompositeOperation='source-in';hc.fillStyle='#b9513a';hc.fillRect(0,0,S1.width,S1.height);hc.globalCompositeOperation='destination-in';const hg=hc.createRadialGradient(cx*kk,cy*kk,0,cx*kk,cy*kk,rr*kk);hg.addColorStop(0,'rgba(0,0,0,1)');hg.addColorStop(0.65,'rgba(0,0,0,0.85)');hg.addColorStop(1,'rgba(0,0,0,0)');hc.fillStyle=hg;hc.fillRect(0,0,S1.width,S1.height);hc.globalCompositeOperation='source-over';
+        ctx.globalAlpha=0.9*near;ctx.drawImage(this.hand,0,0,W,H);ctx.globalAlpha=1;});});
+    for(const key in this.sm)if(!people.some(q=>q.key===key))delete this.sm[key];
     // frost: a faint grain and a soft sheen over everything
-    ctx.globalAlpha=1;const pat=ctx.createPattern(this.grain,'repeat');ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);
+    const pat=ctx.createPattern(this.grain,'repeat');ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);
     g=ctx.createLinearGradient(0,0,W,0);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(0.5,'rgba(255,255,255,0.05)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
   }};
 
