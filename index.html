@@ -392,7 +392,7 @@ function camError(err){
 const PM={mask:null,mw:0,mh:0,fresh:0,n:0,seen:-1e9};
 function takePoseMask(r){const now=performance.now(),ms=r&&r.segmentationMasks;PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=now;
   if(!ms||!ms.length){PM.fresh=now;PM.n=Math.min(PM.n,0);return;}
-  try{const mw=ms[0].width,mh=ms[0].height,len=mw*mh;if(!PM.mask||PM.mask.length!==len)PM.mask=new Float32Array(len);const out=PM.mask;out.fill(0);
+  try{const mw=ms[0].width,mh=ms[0].height,len=mw*mh;if(!PM.mask||PM.mask.length!==len)PM.mask=new Float32Array(len);const out=PM.mask;for(let i=0;i<len;i++)out[i]*=0.55;
     for(const m of ms){if(m.width===mw&&m.height===mh){const a=m.getAsFloat32Array();for(let i=0;i<len;i++)if(a[i]>out[i])out[i]=a[i];}try{m.close();}catch(e){}}
     PM.mw=mw;PM.mh=mh;PM.fresh=now;PM.n=ms.length;}catch(e){}}
 const SEG={state:'idle',seg:null,idx:0,mask:null,mw:0,mh:0,last:0,ts:0,fresh:0};
@@ -487,9 +487,12 @@ function analyze(){
     const cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));if(segOK)samp(SEG.mask,SEG.mw,SEG.mh,cur);else cur.fill(0);
     if(pmOK){// people the pose model found: its own full-body mask, and the selfie mask only right around those people (nothing else in the room)
       const gp=A.gp&&A.gp.length===n?A.gp:(A.gp=new Float32Array(n)),nb=A.nb&&A.nb.length===n?A.nb:(A.nb=new Uint8Array(n)),nt=A.nt&&A.nt.length===n?A.nt:(A.nt=new Uint8Array(n));samp(PM.mask,PM.mw,PM.mh,gp);
-      const R=3;for(let y=0;y<h;y++){let run=-1e9;for(let x=0;x<w;x++){if(gp[y*w+x]>0.3)run=x;nt[y*w+x]=x-run<=R?1:0;}run=1e9;for(let x=w-1;x>=0;x--){if(gp[y*w+x]>0.3)run=x;if(run-x<=R)nt[y*w+x]=1;}}
-      for(let x=0;x<w;x++){let run=-1e9;for(let y=0;y<h;y++){if(nt[y*w+x])run=y;nb[y*w+x]=y-run<=R?1:0;}run=1e9;for(let y=h-1;y>=0;y--){if(nt[y*w+x])run=y;if(run-y<=R)nb[y*w+x]=1;}}
-      for(let i=0;i<n;i++){const s2=nb[i]?cur[i]:0,g2=gp[i];cur[i]=g2>s2?g2:s2;}}
+      // each blob of the selfie mask is kept whole if it touches anyone the pose model found: people overlapping each other stay one steady
+      // shape even when the pose model drops one of them for a moment; a blob touching nobody (a chair, a poster) is dropped
+      const lab=A.lab&&A.lab.length===n?A.lab:(A.lab=new Int32Array(n)),q=A.lq&&A.lq.length===n?A.lq:(A.lq=new Int32Array(n));lab.fill(0);let id=0;const keep=[0];
+      for(let s0=0;s0<n;s0++){if(lab[s0]||cur[s0]<0.35)continue;id++;let hd=0,tl=0,hit=false;q[tl++]=s0;lab[s0]=id;while(hd<tl){const i=q[hd++],x=i%w;if(gp[i]>0.3)hit=true;
+          if(x>0&&!lab[i-1]&&cur[i-1]>=0.35){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&!lab[i+1]&&cur[i+1]>=0.35){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&!lab[i-w]&&cur[i-w]>=0.35){lab[i-w]=id;q[tl++]=i-w;}if(i<n-w&&!lab[i+w]&&cur[i+w]>=0.35){lab[i+w]=id;q[tl++]=i+w;}}keep.push(hit?1:0);}
+      for(let i=0;i<n;i++){const s2=lab[i]?(keep[lab[i]]?cur[i]:0):cur[i]*0.5,g2=gp[i];cur[i]=g2>s2?g2:s2;}}
     else if(poseOn&&tnow-PM.seen>900){for(let i=0;i<n;i++)cur[i]*=0.3;} // the pose model has seen nobody for a while: a lone selfie-mask blob is probably not a person
     // the pose model knows where arms and legs are: along each visible limb, faint mask becomes solid (no mask at all stays empty, so a
     // late pose never paints a ghost arm)
@@ -498,7 +501,7 @@ function analyze(){
     blur3(cur,A.tmp,w,h);
     const hs=A.hs=hyst(cur,w,h,0.55,0.32,A.hs);
     // over time: shape appears at once and fades over a few frames, so an arm the model drops for a frame does not flicker away
-    for(let i=0;i<n;i++){let v=cur[i];if(hs[i]&&v<0.72)v=0.72;const o=pr[i],sm=v>o?o*0.4+v*0.6:o*0.55+v*0.45;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
+    for(let i=0;i<n;i++){let v=cur[i];if(hs[i]&&v<0.72)v=0.72;const o=pr[i],sm=v>o?o*0.45+v*0.55:o*0.6+v*0.4;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
   }else if(S.detect==='motion'){
     // motion energy -> close the gaps between moving edges (dilate then erode) -> brief hold, so a moving
     // person reads as one filled shape and nothing is compared against a stored background
@@ -545,7 +548,7 @@ function decodePacket(buf){
 
 /* ---------- modes ---------- */
 const mShapes={id:'shapes',name:'도형',desc:'격자 위 기본 도형들이 제자리에서 피어나고 사라지며 사람을 그린다. 움직이는 곳은 도형이 바뀐다',
-  init(){const cols=isTouch?24:40;this.cols=cols;this.cell=W/cols;this.rows=Math.ceil(H/this.cell);const m=cols*this.rows;
+  init(){const cols=isTouch?38:64;this.cols=cols;this.cell=W/cols;this.rows=Math.ceil(H/this.cell);const m=cols*this.rows;
     this.a=new Float32Array(m);this.rate=new Float32Array(m);this.type=new Uint8Array(m);this.next=new Uint8Array(m);this.mo=new Float32Array(m);this.cool=new Float32Array(m);
     for(let i=0;i<m;i++){this.rate[i]=0.06+Math.random()*0.1;this.type[i]=(Math.random()*4)|0;}},
   shape(path,k,x,y,s){if(s<0.4)return;if(k===0){path.moveTo(x+s,y);path.arc(x,y,s,0,TAU);}else if(k===1){path.rect(x-s*0.86,y-s*0.86,s*1.72,s*1.72);}
@@ -598,7 +601,7 @@ function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now(
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='aqua',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&now-FACE.plast>(usePose?66:80)){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}}
@@ -825,15 +828,15 @@ const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 
   draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();const w=A.w,h=A.h,n=A.n,M=this.M,D=this.D,Dn=this.Dn,p=A.p;
     ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
     // the silhouette, averaged over a few frames so its edge does not shimmer
-    for(let i=0;i<n;i++)M[i]=M[i]*0.6+p[i]*0.4;if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
+    for(let i=0;i<n;i++)M[i]=M[i]*0.35+p[i]*0.65;if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
     // a smooth depth map: each person's distance spreads softly around them, so blur changes gradually and never in a seam
     const people=PEOPLE.list;let gNear=0.2;if(!people.length&&A.presN>12){let y0=h,y1=0;for(let i=0;i<n;i++)if(p[i]>0.5){const y=(i/w)|0;if(y<y0)y0=y;if(y>y1)y1=y;}gNear=clamp(((y1-y0)/h-0.2)/0.75,0,1);}
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!people.length){Dn[i]=gNear;continue;}const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let sw=0,sv=0;
       for(const q of people){const cx=q.bx+q.bw/2,cy=q.by+q.bh/2,sx=Math.max(20,q.bw*0.6),sy=Math.max(20,q.bh*0.6),g=Math.exp(-(((px-cx)/sx)**2+((py-cy)/sy)**2)*0.5)+1e-6;sw+=g;sv+=g*q.near;}Dn[i]=sv/sw;}
-    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*0.06;
+    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*(Dn[i]>D[i]?0.14:0.03);
     // sharpness only in the last stretch before the glass; four depth layers blended, so blur is continuous across the body
     const S=this.tmp;for(let i=0;i<n;i++){let s=(D[i]-0.62)/0.33;s=s<0?0:s>1?1:s;S[i]=s*s*(3-2*s);}
-    const sc=isTouch?2:3,scl=W/1280,R=[0,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
+    const sc=isTouch?2:3,scl=W/1280,R=[1.6,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
     for(let i=0;i<n;i++){const z=(1-S[i])*3;for(let l=0;l<4;l++){const wv=1-Math.abs(z-l);this.Wl[l][i]=wv>0?wv:0;}}
     for(let l=3;l>=0;l--){this.cv[l]=this.layer(this.Mb,this.Wl[l],sc,this.cv[l]);if(!this.cv[l].any)continue;this.blurDraw(this.cv[l],R[l]*scl,AL[l]);}
   }};
@@ -895,8 +898,10 @@ const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 �
     // a quiet reading: a slim scale on the right and the warmest point, in degrees
     let mi=0,mv=0;for(let i=0;i<n;i++)if(Ts[i]>mv){mv=Ts[i];mi=i;}const tmax=(20+16.5*mv).toFixed(1),hx=((mi%tw)+0.5)*sx,hy=(((mi/tw)|0)+0.5)*sy;
     const bx=W-28-(isTouch?6:0),by=H*0.2,bh=H*0.5,g=ctx.createLinearGradient(0,by+bh,0,by);for(let k=0;k<=8;k++){const li=((k/8*255)|0)*3;g.addColorStop(k/8,'rgb('+lut[li]+','+lut[li+1]+','+lut[li+2]+')');}
-    ctx.fillStyle=g;ctx.fillRect(bx,by,6,bh);ctx.font=(isTouch?9:10)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';ctx.fillStyle='rgba(255,255,255,0.8)';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText('36.5°',bx-6,by);ctx.fillText('20.0°',bx-6,by+bh);
-    if(mv>0.55){ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(hx-8,hy);ctx.lineTo(hx+8,hy);ctx.moveTo(hx,hy-8);ctx.lineTo(hx,hy+8);ctx.stroke();ctx.textAlign='left';ctx.fillText(tmax+'°',hx+11,hy-9);}
+    ctx.fillStyle=g;ctx.fillRect(bx,by,8,bh);const fz=Math.round(clamp(Math.min(W,H)*0.024,13,22));ctx.font='700 '+fz+'px '+SANS;ctx.textBaseline='middle';
+    const tag=(txt,x,y,al)=>{ctx.textAlign=al;const tw=ctx.measureText(txt).width,px=fz*0.5,x0=al==='right'?x-tw-px:x-px;ctx.fillStyle='rgba(8,12,28,0.62)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x0,y-fz*0.78,tw+px*2,fz*1.56,fz*0.5);else ctx.rect(x0,y-fz*0.78,tw+px*2,fz*1.56);ctx.fill();ctx.fillStyle='#ffffff';ctx.fillText(txt,x,y);};
+    tag('36.5°',bx-10,by,'right');tag('20.0°',bx-10,by+bh,'right');
+    if(mv>0.55){ctx.strokeStyle='rgba(255,255,255,0.95)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(hx-11,hy);ctx.lineTo(hx+11,hy);ctx.moveTo(hx,hy-11);ctx.lineTo(hx,hy+11);ctx.stroke();ctx.font='800 '+Math.round(fz*1.25)+'px '+SANS;tag(tmax+'°',hx+18+fz*0.5,hy-fz*1.2,'left');}
     ctx.textAlign='left';ctx.textBaseline='alphabetic';
   }};
 /* 말씀: a wall of scripture that never stops flowing. When someone steps in, every line parts around their shape, the letters crowding smaller toward
@@ -964,10 +969,9 @@ const mWord={id:'word',name:'말씀',desc:'화면 가득 흐르는 성경 구절
 /* 쌓기: stand still in front for three seconds and your silhouette is lifted out, carried to the left, and dropped. The shapes fall with real
    physics, tumble and come to rest on one another. The pile is kept across every mode change until the page is reloaded */
 const STACK={eng:null,pieces:[],fly:[],n:0,people:0,scale:1,viewW:1000,viewT:1000,acc:0,lastC:-1,
-  COLORS:['#c8673f','#dca24f','#8fa382','#5d7656','#7a96ad','#3f566a','#d08f80','#c9b089','#80687a','#a65336','#e2b48f','#5f8b86'],
+  COLORS:['#1fc8f2','#ffd12e','#9a5cff','#2fd27a','#ff4b5c','#3a76ff','#ff9726','#ff6fb5'],
   ensure(){if(this.eng)return true;if(!window.Matter)return false;const M=window.Matter;this.eng=M.Engine.create({enableSleeping:true,positionIterations:10,velocityIterations:8});this.eng.gravity.y=1;
     const st={isStatic:true,friction:0.9,frictionStatic:1,restitution:0};this.wallR=M.Bodies.rectangle(this.viewW+60,-15000,120,30400,st);M.Composite.add(this.eng.world,[M.Bodies.rectangle(19500,60,41000,120,st),M.Bodies.rectangle(-60,-15000,120,30400,st),this.wallR]);
-    // jelly: every landing or knock squashes the piece, which then wobbles back (drawn as squash and stretch over the rigid body)
     M.Events.on(this.eng,'collisionStart',ev=>{for(const pr of ev.pairs){const a=pr.bodyA.parent,b=pr.bodyB.parent,rel=Math.hypot(a.velocity.x-b.velocity.x,a.velocity.y-b.velocity.y);if(rel<0.6)continue;const imp=Math.min(0.3,rel*0.03);for(const bd of [a,b]){const pc=bd.plugin&&bd.plugin.piece;if(pc)pc.jv-=imp;}}});return true;},
   color(){let c;do{c=(Math.random()*this.COLORS.length)|0;}while(c===this.lastC);this.lastC=c;return this.COLORS[c];},
   // a cropped silhouette (values 0..1) becomes a rigid body made of row-merged rectangles, plus a cut-paper texture drawn on top of it
@@ -977,7 +981,7 @@ const STACK={eng:null,pieces:[],fly:[],n:0,people:0,scale:1,viewW:1000,viewT:100
       const next={};runs.forEach(([a,b])=>{const key=a+','+b;if(open[key]){open[key].h++;next[key]=open[key];}else{const r={x:a,y,w:b-a+1,h:1};rects.push(r);next[key]=r;}});for(const kk in open)delete open[kk];Object.assign(open,next);}
     if(!rects.length)return null;const visTop=-H/k,px=20+Math.random()*Math.max(1,this.viewW-40-wW),py=visTop-hW-30;
     const parts=rects.map(r=>M.Bodies.rectangle(px+(r.x+r.w/2)*cell,py+(r.y+r.h/2)*cell,r.w*cell,r.h*cell));
-    const body=M.Body.create({parts,friction:0.7,frictionStatic:0.9,restitution:0.14,frictionAir:0.012,sleepThreshold:50});
+    const body=M.Body.create({parts,friction:0.35,frictionStatic:0.6,restitution:0.58,frictionAir:0.006,sleepThreshold:60});
     const ox=px-body.position.x,oy=py-body.position.y,ang=(Math.random()-0.5)*0.5;M.Body.setAngle(body,ang);M.Body.setAngularVelocity(body,(Math.random()-0.5)*0.02);M.Composite.add(this.eng.world,body);
     // texture: the smooth silhouette in one natural colour, a slightly lighter top, and a soft paper shadow
     const tp=Math.max(8,Math.round(hW*k*DPR)),sc=tp/gh,pad=Math.ceil(tp*0.06)+4,tex=mkCanvas(Math.ceil(wW/hW*tp)+pad*2,tp+pad*2),tc=tex.cx;
@@ -1000,7 +1004,7 @@ function hyst(src,w,h,hiT,loT,out){const n=w*h;if(!out||out.length!==n)out=new F
 function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h);let best=0,bestN=0,id=0;for(let s0=0;s0<w*h;s0++){if(!on[s0]||lab[s0])continue;id++;let hd=0,tl=0;q[tl++]=s0;lab[s0]=id;
     while(hd<tl){const i=q[hd++],x=i%w;if(x>0&&on[i-1]&&!lab[i-1]){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&on[i+1]&&!lab[i+1]){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&on[i-w]&&!lab[i-w]){lab[i-w]=id;q[tl++]=i-w;}if(i<w*h-w&&on[i+w]&&!lab[i+w]){lab[i+w]=id;q[tl++]=i+w;}}
     if(tl>bestN){bestN=tl;best=id;}}for(let i=0;i<w*h;i++)if(lab[i]!==best)on[i]=0;}
-const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 말랑한 젤리 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
+const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 쨍한 색 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
   init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.holdId=-1;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
@@ -1050,9 +1054,7 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     // the pile
     if(ok)STACK.step(dt,k);const flying=new Set(STACK.fly.map(f=>f.pc));
     ctx.strokeStyle='rgba(60,45,30,0.12)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(ww+0.5,0);ctx.lineTo(ww+0.5,H);ctx.stroke();
-    const f6=Math.min(3,dt*60);STACK.pieces.forEach(p=>{if(flying.has(p))return;const b=p.body;p.jv+=(-0.2*p.js-0.13*p.jv)*f6;p.js+=p.jv*f6;p.js=p.js<-0.3?-0.3:p.js>0.3?0.3:p.js;
-      // squash and stretch about the bottom of the piece (screen-upright, like jelly settling under its own weight)
-      const sx=1-0.55*p.js,sy=1+p.js,bx=b.position.x*k,bb=fy+b.bounds.max.y*k,py=fy+b.position.y*k;ctx.save();ctx.translate(bx,bb);ctx.scale(sx,sy);ctx.translate(0,py-bb);ctx.rotate(b.angle);ctx.drawImage(p.tex,(p.ox-p.pad)*k,(p.oy-p.pad)*k,(p.w+p.pad*2)*k,(p.h+p.pad*2)*k);ctx.restore();});
+    STACK.pieces.forEach(p=>{if(flying.has(p))return;const b=p.body;ctx.save();ctx.translate(b.position.x*k,fy+b.position.y*k);ctx.rotate(b.angle);ctx.drawImage(p.tex,(p.ox-p.pad)*k,(p.oy-p.pad)*k,(p.w+p.pad*2)*k,(p.h+p.pad*2)*k);ctx.restore();});
     // the lift: the shape rises from where the person stands and is carried over the top of the pile; it is held still (asleep) until it lets go
     for(let i=STACK.fly.length-1;i>=0;i--){const f=STACK.fly[i],p=f.pc,b=p.body;f.t+=dt/0.9;const e=f.t<1?f.t*f.t*(3-2*f.t):1;
       if(f.t<1){window.Matter.Sleeping.set(b,true);const tx=(b.position.x+p.ox)*k,ty=fy+(b.position.y+p.oy)*k,tw=p.w*k,th=p.h*k,x=lerp(f.sx,tx,e),y=lerp(f.sy,ty,e)-Math.sin(e*Math.PI)*H*0.12,sw=lerp(f.sw,tw,e),sh=lerp(f.sh,th,e);
@@ -1139,7 +1141,7 @@ const mDodge={id:'dodge',name:'피하기',desc:'하늘에서 떨어지는 빗방
    a heart over your head sends up hearts, a circle above it soap bubbles, both arms up confetti, a flower cup under the chin flowers,
    arms spread butterflies, arms crossed an X, one hand up a wave. Shapes are read from the pose model, person by person */
 const EMOJI_FONT='"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif';
-const mEmoji={id:'emoji',name:'이모지',desc:'몸으로 모양을 만들면 이모지가 떠오르는 포즈 놀이. 머리 위 하트는 하트, 동그라미는 비눗방울, 만세는 폭죽, 꽃받침은 꽃, 양팔 벌리기는 나비. 이 필터만 실제 카메라 화면이 보인다',
+const mEmoji={id:'emoji',name:'이모지',needVideo:true,desc:'몸으로 모양을 만들면 이모지가 떠오르는 포즈 놀이. 머리 위 하트는 하트, 동그라미는 비눗방울, 만세는 폭죽, 꽃받침은 꽃, 양팔 벌리기는 나비. 이 필터만 실제 카메라 화면이 보인다',
   KINDS:{heart:{e:['❤️','💗','💕','💖'],icon:'❤️',name:'머리 위 하트',rate:7},circle:{bubble:true,icon:'🫧',name:'동그라미',rate:6},hooray:{e:['🎉','✨','⭐','🎊','🌟'],icon:'🎉',name:'만세',rate:12},
     flower:{e:['🌸','🌼','🌷','💐'],icon:'🌸',name:'꽃받침',rate:6},wings:{e:['🦋'],icon:'🦋',name:'양팔 벌리기',rate:4},cross:{e:['❌'],icon:'❌',name:'엑스',rate:2},wave:{e:['👋','😊','💛'],icon:'👋',name:'한 손 들기',rate:3}},
   init(){this.parts=[];this.sp={};this.g=[];this.small=null;},
@@ -1149,14 +1151,15 @@ const mEmoji={id:'emoji',name:'이모지',desc:'몸으로 모양을 만들면 �
     const cols=['rgba(255,150,200,0.55)','rgba(255,230,140,0.5)','rgba(140,240,200,0.5)','rgba(140,190,255,0.55)','rgba(210,150,255,0.5)'];x.lineWidth=2.2;for(let i=0;i<cols.length;i++){x.strokeStyle=cols[i];x.beginPath();x.arc(cx,cx,r-1,i/cols.length*TAU,(i+1)/cols.length*TAU+0.2);x.stroke();}
     x.fillStyle='rgba(255,255,255,0.85)';x.beginPath();x.ellipse(cx-r*0.38,cx-r*0.42,r*0.2,r*0.1,-0.7,0,TAU);x.fill();x.fillStyle='rgba(255,255,255,0.5)';x.beginPath();x.arc(cx+r*0.42,cx+r*0.38,r*0.06,0,TAU);x.fill();return this.sp.__b=c;},
   // the shape a body is making, from its pose landmarks (screen coordinates); d is the shoulder width, so every test scales with distance
-  shape(L){const ok=(...i)=>i.every(j=>L[j]&&L[j].v>0.45);if(!ok(0,11,12))return null;const n=L[0],a=L[11],b=L[12],d=Math.hypot(a.x-b.x,a.y-b.y);if(d<W*0.015)return null;const sy=(a.y+b.y)/2,mx=(a.x+b.x)/2;
+  shape(L){const ok=(...i)=>i.every(j=>L[j]&&L[j].v>0.3);if(!ok(0,11,12))return null;const n=L[0],a=L[11],b=L[12],d=Math.hypot(a.x-b.x,a.y-b.y);if(d<W*0.012)return null;const sy=(a.y+b.y)/2,mx=(a.x+b.x)/2;
     if(ok(15,16)){const w1=L[15],w2=L[16],wd=Math.hypot(w1.x-w2.x,w1.y-w2.y),wy=(w1.y+w2.y)/2,wx=(w1.x+w2.x)/2,elb=ok(13,14),e1=L[13],e2=L[14];
-      if((w1.x-w2.x)*(a.x-b.x)<0&&Math.abs(w1.x-w2.x)>d*0.12&&wy>sy-d*0.45&&wy<sy+d*1.4&&wd<d*1.3)return {k:'cross',x:wx,y:wy,d};
-      if(wd<d*0.8&&wy<n.y-d*0.2&&elb&&Math.abs(e1.x-e2.x)>d*1.2&&e1.y<sy+d*0.15&&e2.y<sy+d*0.15)return wy<n.y-d*1.15?{k:'circle',x:wx,y:(wy+n.y)/2-d*0.2,d}:{k:'heart',x:wx,y:wy-d*0.15,d};
-      if(w1.y<n.y-d*0.45&&w2.y<n.y-d*0.45&&wd>d*1.2)return {k:'hooray',x:mx,y:Math.min(w1.y,w2.y),d,hands:[w1,w2]};
-      if(Math.abs(w1.y-sy)<d*0.55&&Math.abs(w2.y-sy)<d*0.55&&Math.abs(w1.x-mx)>d*1.3&&Math.abs(w2.x-mx)>d*1.3)return {k:'wings',x:mx,y:sy,d,hands:[w1,w2]};
-      if(wd<d*0.85&&wy>n.y-d*0.05&&wy<n.y+d*0.95&&Math.abs(wx-n.x)<d*0.65)return {k:'flower',x:n.x,y:n.y,d};}
-    const up=j=>L[j]&&L[j].v>0.45&&L[j].y<n.y-d*0.3;if(up(15)!==up(16)){const w=up(15)?L[15]:L[16];return {k:'wave',x:w.x,y:w.y,d};}
+      const wide=!elb||Math.abs(e1.x-e2.x)>d*0.95;
+      if((w1.x-w2.x)*(a.x-b.x)<0&&Math.abs(w1.x-w2.x)>d*0.06&&wy>sy-d*0.6&&wy<sy+d*1.7&&wd<d*1.6)return {k:'cross',x:wx,y:wy,d};
+      if(wd<d*1.15&&wy<n.y+d*0.05&&wide)return wy<n.y-d*1.0?{k:'circle',x:wx,y:(wy+n.y)/2-d*0.2,d}:{k:'heart',x:wx,y:wy-d*0.15,d};
+      if(w1.y<n.y-d*0.15&&w2.y<n.y-d*0.15&&wd>=d*1.15)return {k:'hooray',x:mx,y:Math.min(w1.y,w2.y),d,hands:[w1,w2]};
+      if(Math.abs(w1.y-sy)<d*0.8&&Math.abs(w2.y-sy)<d*0.8&&Math.abs(w1.x-mx)>d*1.05&&Math.abs(w2.x-mx)>d*1.05)return {k:'wings',x:mx,y:sy,d,hands:[w1,w2]};
+      if(wd<d*1.25&&wy>n.y-d*0.25&&wy<n.y+d*1.25&&Math.abs(wx-n.x)<d*0.95)return {k:'flower',x:n.x,y:n.y,d};}
+    const up=j=>L[j]&&L[j].v>0.3&&L[j].y<n.y-d*0.05,dn=j=>!L[j]||L[j].v<=0.3||L[j].y>sy;if(up(15)&&dn(16)||up(16)&&dn(15)){const w=up(15)?L[15]:L[16];return {k:'wave',x:w.x,y:w.y,d};}
     return null;},
   emit(k,g,first){const K=this.KINDS[k],d=g.d,R=Math.random,P=this.parts;
     const add=(o)=>{P.push(Object.assign({t:0,life:3.4,rot:(R()-0.5)*0.6,vr:(R()-0.5)*1.2,ay:0,flap:0,e:K.e?K.e[(R()*K.e.length)|0]:null,bub:!!K.bubble},o));};
@@ -1172,13 +1175,14 @@ const mEmoji={id:'emoji',name:'이모지',desc:'몸으로 모양을 만들면 �
     // the camera picture itself; from a phone sensor only its small colour grid arrives, shown soft
     const el=source.el,d2=srcDims();ctx.fillStyle='#101114';ctx.fillRect(0,0,W,H);
     if(el&&!A.remote&&d2[0]){const SA=W/H;let cw=d2[0],ch=d2[0]/SA;if(ch>d2[1]){ch=d2[1];cw=d2[1]*SA;}ctx.save();if(S.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(el,(d2[0]-cw)/2,(d2[1]-ch)/2,cw,ch,0,0,W,H);}catch(e){}ctx.restore();}
+    else if(A.remote&&RV.on&&RV.el.videoWidth){const vw=RV.el.videoWidth,vh=RV.el.videoHeight,SA=W/H;let cw=vw,ch=vw/SA;if(ch>vh){ch=vh;cw=vh*SA;}ctx.save();if(RV.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(RV.el,(vw-cw)/2,(vh-ch)/2,cw,ch,0,0,W,H);}catch(e){}ctx.restore();}
     else if(A.rgb&&A.rgb.length===A.n*3){if(!this.small||this.small.width!==A.w||this.small.height!==A.h){this.small=mkCanvas(A.w,A.h);this.simg=this.small.cx.createImageData(A.w,A.h);}const dd=this.simg.data,rgb=A.rgb;for(let i=0;i<A.n;i++){dd[i*4]=rgb[i*3];dd[i*4+1]=rgb[i*3+1];dd[i*4+2]=rgb[i*3+2];dd[i*4+3]=255;}
       this.small.cx.putImageData(this.simg,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.small,0,0,W,H);}
     // which shapes are being made, held for a moment before they count (so passing through a pose does nothing)
     const PL=poseScreen()||[],seen=[];PL.forEach(L=>{const g=this.shape(L);if(g)seen.push(g);});
     this.g.forEach(e=>e.hit=false);for(const g of seen){let best=null,bd=1e9;for(const e of this.g){if(e.k!==g.k||e.hit)continue;const dd=Math.hypot(e.x-g.x,e.y-g.y);if(dd<g.d*1.5&&dd<bd){bd=dd;best=e;}}
       if(!best){best={k:g.k,t:0,acc:0,fired:false};this.g.push(best);}Object.assign(best,g,{hit:true,miss:0});}
-    for(let i=this.g.length-1;i>=0;i--){const e=this.g[i];if(!e.hit){e.miss=(e.miss||0)+dt;if(e.miss>0.35){this.g.splice(i,1);continue;}}else{e.t+=dt;if(e.t>0.25){const K=this.KINDS[e.k];if(!e.fired){e.fired=true;this.emit(e.k,e,true);}e.acc+=dt*K.rate;while(e.acc>=1){e.acc-=1;this.emit(e.k,e,false);}}}}
+    for(let i=this.g.length-1;i>=0;i--){const e=this.g[i];if(!e.hit){e.miss=(e.miss||0)+dt;if(e.miss>0.5){this.g.splice(i,1);continue;}}else{e.t+=dt;if(e.t>0.16){const K=this.KINDS[e.k];if(!e.fired){e.fired=true;this.emit(e.k,e,true);}e.acc+=dt*K.rate;while(e.acc>=1){e.acc-=1;this.emit(e.k,e,false);}}}}
     // the emoji themselves
     for(let i=this.parts.length-1;i>=0;i--){const q=this.parts[i];q.t+=dt;if(q.t>=q.life){if(q.bub){for(let k=0;k<6;k++){const a=k/6*TAU;this.parts.push({x:q.x+Math.cos(a)*q.s*0.4,y:q.y+Math.sin(a)*q.s*0.4,vx:Math.cos(a)*q.s*1.5,vy:Math.sin(a)*q.s*1.5,t:0,life:0.35,s:q.s*0.12,dot:1,rot:0,vr:0,ay:0});}}this.parts.splice(i,1);continue;}
       q.vy+=(q.ay||0)*dt;q.x+=(q.vx+(q.sw!=null&&!q.ay?Math.sin(q.t*2.2+q.sw)*W*0.02:0))*dt;q.y+=q.vy*dt;q.rot+=q.vr*dt;
@@ -1187,7 +1191,7 @@ const mEmoji={id:'emoji',name:'이모지',desc:'몸으로 모양을 만들면 �
       const img=q.bub?this.bubble():this.sprite(q.e);ctx.save();ctx.translate(q.x,q.y);ctx.rotate(q.rot+(q.wob?Math.sin(q.t*10)*0.45:0));ctx.scale(q.flap?0.35+0.65*Math.abs(Math.sin(q.t*11)):1,1);ctx.drawImage(img,-sc/2,-sc/2,sc,sc);ctx.restore();}
     ctx.globalAlpha=1;
     // what you can do, along the bottom; the shape being made lights up
-    const act=new Set(this.g.filter(e=>e.hit&&e.t>0.25).map(e=>e.k)),keys=Object.keys(this.KINDS);let fz=Math.max(12,Math.min(18,W/70));ctx.font='600 '+fz+'px '+SANS;
+    const act=new Set(this.g.filter(e=>e.hit&&e.t>0.16).map(e=>e.k)),keys=Object.keys(this.KINDS);let fz=Math.max(12,Math.min(18,W/70));ctx.font='600 '+fz+'px '+SANS;
     const items=keys.map(k=>this.KINDS[k].icon+' '+this.KINDS[k].name);let tw=items.reduce((s2,it)=>s2+ctx.measureText(it).width+fz*1.6,0);if(tw>W-32){fz*=(W-32)/tw;ctx.font='600 '+fz+'px '+SANS;tw=items.reduce((s2,it)=>s2+ctx.measureText(it).width+fz*1.6,0);}
     const by=H-fz*2.6-(isTouch?56:0);ctx.fillStyle='rgba(0,0,0,0.38)';ctx.beginPath();ctx.roundRect?ctx.roundRect((W-tw)/2-fz*0.4,by-fz*1.1,tw+fz*0.8,fz*2.2,fz*1.1):ctx.rect((W-tw)/2-fz*0.4,by-fz*1.1,tw+fz*0.8,fz*2.2);ctx.fill();
     let x=(W-tw)/2+fz*0.4;ctx.textBaseline='middle';ctx.textAlign='left';items.forEach((it,i)=>{const on=act.has(keys[i]);ctx.fillStyle=on?'#ffffff':'rgba(255,255,255,0.62)';ctx.font=(on?'800 ':'600 ')+fz+'px '+SANS+','+EMOJI_FONT;ctx.fillText(it,x,by);x+=ctx.measureText(it).width+fz*1.6;});ctx.textBaseline='alphabetic';
@@ -1199,10 +1203,11 @@ const mEmoji={id:'emoji',name:'이모지',desc:'몸으로 모양을 만들면 �
    confetti and falling golden sparks, then a few late crackles. Friends who stay together keep the sky going */
 const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 사람은 회색 그림자로 돌아다니고, 서로 붙거나 겹치는 순간 그 자리에서 불꽃놀이가 화려하게 터진다. 붙어 있는 동안 계속 터진다',
   COL:['#fff6c8','#ffd36e','#ff9ec4','#ff7aa8','#9ff0d0','#8fd3ff','#c7a8ff','#ffffff','#ffb38a'],
-  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;this.bursts=[];this.amb=[];this.pairs={};this.sp={};
+  SCHEMES:[['#fff6c8','#ffd36e','#ffb36b'],['#ff9ec4','#ff6fa8','#d9a8ff','#ffffff'],['#9ff0d0','#8fd3ff','#d4f6ff','#ffffff'],['#ff7a7a','#ffd36e','#8fd3ff','#9ff0d0','#c7a8ff'],['#c7a8ff','#8f9bff','#ffffff'],['#ffe08a','#ff9ec4','#9ff0d0']],
+  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;this.bursts=[];this.amb=[];this.pairs={};this.sp={};this.q=[];
     const bw=Math.max(2,Math.round(W/2)),bh=Math.max(2,Math.round(H/2)),b=mkCanvas(bw,bh),c=b.cx;
-    let g=c.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#08133a');g.addColorStop(0.5,'#173a8a');g.addColorStop(1,'#0c2259');c.fillStyle=g;c.fillRect(0,0,bw,bh);
-    g=c.createRadialGradient(bw*0.5,bh*0.45,0,bw*0.5,bh*0.45,Math.max(bw,bh)*0.7);g.addColorStop(0,'rgba(95,145,235,0.35)');g.addColorStop(0.6,'rgba(80,60,170,0.12)');g.addColorStop(1,'rgba(8,8,36,0.4)');c.fillStyle=g;c.fillRect(0,0,bw,bh);
+    let g=c.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#040a24');g.addColorStop(0.5,'#0f2766');g.addColorStop(1,'#071740');c.fillStyle=g;c.fillRect(0,0,bw,bh);
+    g=c.createRadialGradient(bw*0.5,bh*0.45,0,bw*0.5,bh*0.45,Math.max(bw,bh)*0.7);g.addColorStop(0,'rgba(80,125,220,0.24)');g.addColorStop(0.6,'rgba(70,50,150,0.1)');g.addColorStop(1,'rgba(4,4,24,0.5)');c.fillStyle=g;c.fillRect(0,0,bw,bh);
     const im=c.getImageData(0,0,bw,bh),d=im.data;for(let i=0;i<d.length;i+=4){const n=(Math.random()-0.5)*12;d[i]+=n;d[i+1]+=n;d[i+2]+=n;}c.putImageData(im,0,0);
     for(let i=0;i<bw*bh/700;i++){const x=Math.random()*bw,y=Math.random()*bh,r=Math.random()<0.9?0.25+Math.random()*0.6:0.7+Math.random()*1.1;c.fillStyle='rgba(255,255,255,'+(0.25+Math.random()*0.6).toFixed(2)+')';c.beginPath();c.arc(x,y,r,0,TAU);c.fill();}
     this.bg=b;for(let i=0;i<24;i++)this.amb.push(this.ambient(true));},
@@ -1210,7 +1215,7 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
   glow(col){const k='g'+col;if(this.sp[k])return this.sp[k];const S2=96,c=mkCanvas(S2,S2),x=c.cx,g=x.createRadialGradient(S2/2,S2/2,0,S2/2,S2/2,S2/2),rgb=hex(col);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(0.18,'rgba('+rgb+',0.9)');g.addColorStop(0.5,'rgba('+rgb+',0.25)');g.addColorStop(1,'rgba('+rgb+',0)');x.fillStyle=g;x.fillRect(0,0,S2,S2);return this.sp[k]=c;},
   star4(col){const k='s'+col;if(this.sp[k])return this.sp[k];const S2=96,c=mkCanvas(S2,S2),x=c.cx,m=S2/2;x.fillStyle=col;x.beginPath();x.moveTo(m,2);x.quadraticCurveTo(m+5,m-5,S2-2,m);x.quadraticCurveTo(m+5,m+5,m,S2-2);x.quadraticCurveTo(m-5,m+5,2,m);x.quadraticCurveTo(m-5,m-5,m,2);x.fill();
     const g=x.createRadialGradient(m,m,0,m,m,m*0.5);g.addColorStop(0,'rgba(255,255,255,0.95)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.beginPath();x.arc(m,m,m*0.5,0,TAU);x.fill();return this.sp[k]=c;},
-  burst(x0,y0,big){const R=Math.random,C=this.COL,s=(big?1:0.62)*Math.min(W,H)*0.16,x=clamp(x0+(R()-0.5)*s*0.4,s,W-s),y=clamp(y0-s*(big?1.1:0.8)-R()*s*0.4,s*0.9,H*0.62),b={x,y,x0,y0,s,t:big?-0.42:-0.32,lt:big?0.42:0.32,big,rays:[],gold:[],caps:[],bits:[],sparks:[],crack:[],spikes:[],hue:C[(R()*4)|0]};
+  burst(x0,y0,big,sz){const R=Math.random,C=this.COL,s=(sz||(big?1:0.62))*Math.min(W,H)*0.16,x=clamp(x0+(R()-0.5)*s*0.4,s,W-s),y=clamp(y0-s*(big?1.1:0.8)-R()*s*0.4,s*0.9,H*0.62),b={x,y,x0,y0,s,t:big?-0.42:-0.32,lt:big?0.42:0.32,big,rays:[],gold:[],caps:[],bits:[],sparks:[],crack:[],spikes:[],hue:C[(R()*4)|0]};
     const nS=12;for(let i=0;i<nS;i++)b.spikes.push(0.65+R()*0.7);
     const nR=big?72:40;for(let i=0;i<nR;i++)b.rays.push({a:i/nR*TAU+(R()-0.5)*0.14,len:s*(1.1+R()*2.4),w:1.2+R()*2.4,col:C[(R()*C.length)|0],tip:R()<0.45,d:R()*0.1});
     const nG=big?30:16;for(let i=0;i<nG;i++)b.gold.push({a:R()*TAU,len:s*(2.4+R()*2),w:0.7+R()*0.8,d:0.03+R()*0.08});
@@ -1218,6 +1223,17 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
     const nB=big?150:80;for(let i=0;i<nB;i++){const a=R()*TAU,v=s*(0.8+R()*4.2);b.bits.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-s*0.4,k:R()<0.55?0:R()<0.75?1:2,r:s*(0.012+R()*0.03),col:C[(R()*C.length)|0],rot:R()*TAU,vr:(R()-0.5)*8,life:1.4+R()*2,tw:R()*TAU});}
     const nP=big?54:28;for(let i=0;i<nP;i++){const a=R()*TAU,v=s*(1.5+R()*3.2);b.sparks.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,px:x,py:y,life:1.1+R()*1.2,col:R()<0.6?'#ffd36e':'#fff6c8'});}
     const nK=big?10:5;for(let i=0;i<nK;i++){const a=R()*TAU,rr=s*(1.4+R()*1.6);b.crack.push({x:x+Math.cos(a)*rr,y:y+Math.sin(a)*rr,t:0.45+R()*0.6,col:C[(R()*C.length)|0]});}
+    // a kind of shell: classic rays (peony), or a ring, a heart, a weeping willow, a chrysanthemum, a star, a crossette that splits, a palm
+    b.type='peony';const sc=this.SCHEMES[(R()*this.SCHEMES.length)|0],pc=()=>sc[(R()*sc.length)|0];b.ps=[];
+    const P=(vx,vy,o)=>b.ps.push(Object.assign({x,y,vx,vy,dr:0.45,g:s*0.25,life:1.7,col:pc(),sz:s*0.045,tr:0.1,t:0},o||{}));
+    if(b.type!=='peony'){b.rays=b.rays.slice(0,big?12:6);b.gold=[];b.sparks=b.sparks.slice(0,10);b.bits=b.bits.slice(0,big?50:25);b.caps=b.caps.slice(0,big?6:3);}
+    if(b.type==='ring'){const tilt=R()*Math.PI,q=0.35+R()*0.65,ct=Math.cos(tilt),st=Math.sin(tilt);for(const [N,v,c] of [[60,s*2.6,sc[0]],[36,s*1.45,sc[1%sc.length]]])for(let i=0;i<N;i++){const a=i/N*TAU,ux=Math.cos(a)*v,uy=Math.sin(a)*v*q;P(ux*ct-uy*st,ux*st+uy*ct,{col:c});}}
+    else if(b.type==='heart'){const N=76,pk=['#ff7aa8','#ff9ec4','#ffd1e3','#ffffff'];for(let i=0;i<N;i++){const u=i/N*TAU,hx=16*Math.pow(Math.sin(u),3),hy=-(13*Math.cos(u)-5*Math.cos(2*u)-2*Math.cos(3*u)-Math.cos(4*u));P(hx/16*s*2.3,hy/16*s*2.3,{col:pk[(R()*pk.length)|0],g:s*0.12,life:1.9,dr:0.42});}for(let i=0;i<30;i++){const a=R()*TAU,v=s*R()*1.2;P(Math.cos(a)*v,Math.sin(a)*v,{col:'#ffd1e3',sz:s*0.03,life:1.4});}}
+    else if(b.type==='star'){const rot=R()*TAU,pts=[];for(let i=0;i<10;i++){const a=rot+i/10*TAU,r=i%2?0.42:1;pts.push([Math.cos(a)*r,Math.sin(a)*r]);}for(let i=0;i<10;i++){const A2=pts[i],B2=pts[(i+1)%10];for(let k=0;k<7;k++){const f=k/7,ux=A2[0]+(B2[0]-A2[0])*f,uy=A2[1]+(B2[1]-A2[1])*f;P(ux*s*2.5,uy*s*2.5,{col:i%2?sc[0]:pc(),life:1.8,dr:0.42,g:s*0.15});}}}
+    else if(b.type==='willow'){for(let i=0;i<86;i++){const a=R()*TAU,v=s*(1.3+R()*1.4);P(Math.cos(a)*v,Math.sin(a)*v,{col:R()<0.7?'#ffd36e':'#fff1b8',dr:0.28,g:s*1.15,life:2.8+R()*0.6,tr:0.34,sz:s*0.034,tw:R()*TAU});}}
+    else if(b.type==='chrys'){for(let i=0;i<140;i++){const a=R()*TAU,v=s*(2.1+R()*0.8);P(Math.cos(a)*v,Math.sin(a)*v,{dr:0.5,g:s*0.35,life:1.5+R()*0.4,tr:0.14,sz:s*0.038,tw:R()<0.4?R()*TAU:0});}}
+    else if(b.type==='crossette'){for(let i=0;i<18;i++){const a=i/18*TAU+R()*0.2,v=s*2.2;P(Math.cos(a)*v,Math.sin(a)*v,{col:sc[0],life:0.62,split:1,sz:s*0.06,tr:0.12});}}
+    else if(b.type==='palm'){for(let i=0;i<9;i++){const a=-Math.PI/2+(i/8-0.5)*Math.PI*1.6+(R()-0.5)*0.2,v=s*(2.3+R()*0.6);P(Math.cos(a)*v,Math.sin(a)*v,{col:'#ffd36e',dr:0.5,g:s*0.75,life:2.2,tr:0.28,sz:s*0.09,shed:1});}}
     this.bursts.push(b);if(this.bursts.length>10)this.bursts.shift();},
   draw(t,dt){dt=Math.min(dt||0.016,0.05);if((this.f=(this.f||0)+1)%2===0)TR.update();const R=Math.random;
     ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
@@ -1231,7 +1247,9 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
     // meetings: two people touching or overlapping set off a big burst where they meet, then smaller ones while they stay together
     const live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=4),seen={};
     const touch=(a,b)=>{const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);return ox>-Math.min(a.w,b.w)*0.04&&oy>Math.min(a.h,b.h)*0.4;};
-    const meet=(key,x,y)=>{seen[key]=1;let P=this.pairs[key];if(!P){P=this.pairs[key]={next:1.5,gone:0};this.burst(x,y,true);}else{P.gone=0;P.next-=dt;if(P.next<=0){this.burst(x+(R()-0.5)*W*0.08,y-R()*H*0.12,false);P.next=1.2+R()*0.8;}}};
+    const meet=(key,x,y)=>{seen[key]=1;let P=this.pairs[key];if(!P){P=this.pairs[key]={next:1.5,gone:0};this.burst(x,y,true,1+R()*0.35);this.q.push({t:0.32,x:x-W*(0.08+R()*0.06),y:y-H*0.05,sz:0.45+R()*0.25},{t:0.62,x:x+W*(0.08+R()*0.06),y:y-H*0.1,sz:0.6+R()*0.3});}
+      else{P.gone=0;P.next-=dt;if(P.next<=0){const SZ=[0.45,0.6,0.8,1.05];this.burst(x+(R()-0.5)*W*0.1,y-R()*H*0.12,false,SZ[(R()*SZ.length)|0]);P.next=1.1+R()*0.8;}}};
+    for(let i=this.q.length-1;i>=0;i--){const q=this.q[i];q.t-=dt;if(q.t<=0){this.burst(q.x,q.y,false,q.sz);this.q.splice(i,1);}}
     for(let i=0;i<live.length;i++)for(let j=i+1;j<live.length;j++){const a=live[i],b=live[j];if(!touch(a,b))continue;meet(Math.min(a.id,b.id)+'-'+Math.max(a.id,b.id),(Math.max(a.x,b.x)+Math.min(a.x+a.w,b.x+b.w))/2,Math.max(a.y,b.y)+Math.min(a.h,b.h)*0.28);}
     live.forEach(tr=>{if(tr.w>tr.h*0.95&&tr.h>H*0.3&&!tr.pose)meet('w'+tr.id,tr.x+tr.w/2,tr.y+tr.h*0.28);}); // two people the tracker sees as one wide shape
     for(const k in this.pairs)if(!seen[k]){this.pairs[k].gone+=dt;if(this.pairs[k].gone>0.6)delete this.pairs[k];}
@@ -1255,6 +1273,10 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
       ctx.globalCompositeOperation='lighter';
       for(const q of b.sparks){if(T>q.life)continue;q.px=q.x;q.py=q.y;q.vx*=Math.pow(0.35,dt);q.vy=q.vy*Math.pow(0.35,dt)+s*1.6*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;const al=1-T/q.life;
         ctx.globalAlpha=al*0.8;ctx.strokeStyle=q.col;ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(q.x-(q.x-q.px)*6,q.y-(q.y-q.py)*6);ctx.lineTo(q.x,q.y);ctx.stroke();const z=s*0.06;ctx.globalAlpha=al;ctx.drawImage(this.glow(q.col),q.x-z,q.y-z,z*2,z*2);}
+      for(let j=b.ps.length-1;j>=0;j--){const q=b.ps[j];q.t+=dt;if(q.t>q.life){if(q.split){for(let k=0;k<4;k++){const a=Math.atan2(q.vy,q.vx)+Math.PI/4+k*Math.PI/2,v=s*0.95;b.ps.push({x:q.x,y:q.y,vx:Math.cos(a)*v+q.vx*0.2,vy:Math.sin(a)*v+q.vy*0.2,dr:0.4,g:s*0.3,life:1.0,col:this.COL[(R()*this.COL.length)|0],sz:s*0.035,tr:0.1,t:0});}}b.ps.splice(j,1);continue;}
+        const dr=Math.pow(q.dr,dt);q.vx*=dr;q.vy=q.vy*dr+q.g*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;const al=Math.min(1,(q.life-q.t)/0.45)*(q.tw?0.55+0.45*Math.sin(q.t*30+q.tw):1);if(al<=0.01)continue;
+        ctx.globalAlpha=al*0.75;ctx.strokeStyle=q.col;ctx.lineWidth=Math.max(1,q.sz*0.45);ctx.beginPath();ctx.moveTo(q.x-q.vx*q.tr,q.y-q.vy*q.tr);ctx.lineTo(q.x,q.y);ctx.stroke();const z=q.sz*1.6;ctx.globalAlpha=al;ctx.drawImage(this.glow(q.col),q.x-z,q.y-z,z*2,z*2);
+        if(q.shed&&R()<dt*40)b.ps.push({x:q.x,y:q.y,vx:(R()-0.5)*s*0.3,vy:(R()-0.5)*s*0.3,dr:0.3,g:s*0.5,life:0.5+R()*0.4,col:'#fff1b8',sz:s*0.022,tr:0.05,t:0,tw:R()*TAU});}
       for(const c of b.crack){const u=T-c.t;if(u<0||u>0.3)continue;const k=Math.sin(u/0.3*Math.PI),z=s*0.22*k;ctx.globalAlpha=k;ctx.drawImage(this.star4(c.col),c.x-z,c.y-z,z*2,z*2);ctx.drawImage(this.glow('#ffffff'),c.x-z*0.7,c.y-z*0.7,z*1.4,z*1.4);}
       ctx.globalCompositeOperation='source-over';
       for(const c of b.caps){const dd=c.v*(1-Math.exp(-T*1.6))/1.6,al=c.al*Math.min(1,T/0.15)*Math.max(0,Math.min(1,(3.4-T)/1.4)),cx=Math.cos(c.a),cy=Math.sin(c.a);if(al<=0)continue;
@@ -1264,6 +1286,186 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
         else if(q.k===1){ctx.save();ctx.translate(q.x,q.y);ctx.rotate(q.rot);ctx.fillStyle=q.col;ctx.beginPath();ctx.moveTo(0,-q.r*1.6);ctx.lineTo(q.r*1.3,q.r);ctx.lineTo(-q.r*1.3,q.r);ctx.closePath();ctx.fill();ctx.restore();}
         else{const z=q.r*3.2;ctx.drawImage(this.star4(q.col),q.x-z,q.y-z,z*2,z*2);}}}
     ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';}};
+
+/* 물감: the surface of water with oil on it. A film of iridescent colour (magenta, violet, blue, cyan, green, gold, orange) drifts and
+   curls; wherever people move, the water follows them and drags the colour into swirls and fine marbled lines. A small fluid simulation
+   (advection, pressure projection, a little vorticity) on a coarse grid; colour comes from the film's thickness through a thin-film palette */
+const mFluid={id:'fluid',name:'물감',desc:'기름 막이 앉은 물처럼 무지갯빛 물감이 천천히 흐르고 감긴다. 사람이 지나가면 그 움직임대로 물감이 밀리고 소용돌이치며 번진다',
+  init(){const R=Math.random,gw=this.gw=isTouch?120:168,gh=this.gh=Math.max(8,Math.round(gw*H/W)),n=gw*gh;['vx','vy','ux','uy','p','dv','T','T2','S','S2','cu','D','D2','fx','fy','ft'].forEach(k=>this[k]=new Float32Array(n));
+    const noise=(sc,seed)=>{const cw=Math.ceil(gw/sc)+3,chh=Math.ceil(gh/sc)+3,g=new Float32Array(cw*chh);for(let i=0;i<g.length;i++)g[i]=R();const out=new Float32Array(n);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const fx=x/sc,fy=y/sc,x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,sx=tx*tx*(3-2*tx),sy=ty*ty*(3-2*ty),i=y0*cw+x0;out[y*gw+x]=(g[i]*(1-sx)+g[i+1]*sx)*(1-sy)+(g[i+cw]*(1-sx)+g[i+cw+1]*sx)*sy;}return out;};
+    const a=noise(gw/3,1),b=noise(gw/7,2),c=noise(gw/16,3),d2=noise(gw/4,4),e2=noise(gw/28,5),e3=noise(gw/12,6);for(let i=0;i<n;i++){this.T[i]=(a[i]*1.0+b[i]*0.55+c[i]*0.25)*2.1;this.S[i]=0.2+0.8*Math.min(1,Math.max(0,(d2[i]-0.2)*1.6));this.D[i]=e2[i]*0.7+e3[i]*0.5;}
+    // a swirl to start from, so the film already looks stirred
+    for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const i=y*gw+x,dx=x-gw*0.5,dy=y-gh*0.5;this.vx[i]=-dy*0.012+(b[i]-0.5)*0.6;this.vy[i]=dx*0.012+(c[i]-0.5)*0.6;}
+    const st=[[0,'#d63c95'],[0.12,'#8a3fbf'],[0.25,'#2f6fde'],[0.37,'#31c4e6'],[0.48,'#4fd3a2'],[0.58,'#b3d84a'],[0.67,'#f3cf3c'],[0.78,'#f08a3a'],[0.89,'#e2486f'],[1,'#d63c95']].map(q=>[q[0],hex(q[1])]);
+    const lut=this.lut=new Uint8ClampedArray(1024*3);for(let i=0;i<1024;i++){const v=i/1024;let A2=st[0],B2=st[st.length-1];for(let j=0;j<st.length-1;j++)if(v>=st[j][0]&&v<=st[j+1][0]){A2=st[j];B2=st[j+1];break;}const f=(v-A2[0])/((B2[0]-A2[0])||1),e=f*f*(3-2*f);for(let c2=0;c2<3;c2++)lut[i*3+c2]=A2[1][c2]+(B2[1][c2]-A2[1][c2])*e;}
+    this.rw=gw*3;this.rh=gh*3;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.prevP=new Float32Array(A.n);},
+  adv(src,dst,vx,vy){const gw=this.gw,gh=this.gh;for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const i=y*gw+x;let px=x-vx[i],py=y-vy[i];px=px<0?0:px>gw-1.001?gw-1.001:px;py=py<0?0:py>gh-1.001?gh-1.001:py;const x0=px|0,y0=py|0,fx=px-x0,fy=py-y0,j=y0*gw+x0;
+      dst[i]=(src[j]*(1-fx)+src[j+1]*fx)*(1-fy)+(src[j+gw]*(1-fx)+src[j+gw+1]*fx)*fy;}},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);const gw=this.gw,gh=this.gh,n=gw*gh,vx=this.vx,vy=this.vy,w=A.w,h=A.h,ap=A.p,pv=this.prevP,f60=dt*60;
+    // people push the water: their motion (optical flow) where they move, and the push of a shape that has moved into new water
+    const FX=this.fx,FY=this.fy;FX.fill(0);FY.fill(0);for(let y=1;y<gh-1;y++){const gy=Math.min(h-1,((y+0.5)*h/gh)|0);for(let x=1;x<gw-1;x++){const gx=Math.min(w-1,((x+0.5)*w/gw)|0),j=gy*w+gx,e=A.er[j];if(e<0.08&&Math.abs(ap[j]-pv[j])<0.05)continue;const i=y*gw+x,k=gw/w;
+      let fx=A.u[j]*k*e*0.9,fy=A.v[j]*k*e*0.9;const gxp=Math.min(w-1,gx+1),gxm=Math.max(0,gx-1),gyp=Math.min(h-1,gy+1),gym=Math.max(0,gy-1),dP=ap[j]-pv[j];fx-=(ap[gy*w+gxp]-ap[gy*w+gxm])*dP*2.2;fy-=(ap[gyp*w+gx]-ap[gym*w+gx])*dP*2.2;FX[i]=clamp(fx,-1.2,1.2);FY[i]=clamp(fy,-1.2,1.2);}}
+    box5(FX,this.ft,gw,gh);box5(FY,this.ft,gw,gh);for(let i=0;i<n;i++){vx[i]+=FX[i]*f60*1.6;vy[i]+=FY[i]*f60*1.6;}
+    pv.set(ap);
+    // a slow living drift: a gently turning current so the film never stops moving
+    const tt=t*0.05;for(let y=1;y<gh-1;y++)for(let x=1;x<gw-1;x++){const i=y*gw+x,u=x/gw,v=y/gh;vx[i]+=Math.sin(v*5.1+tt*3+Math.sin(u*3.3-tt))*0.0035*f60;vy[i]+=Math.cos(u*4.7-tt*2.4+Math.sin(v*2.9+tt))*0.0035*f60;}
+    // vorticity: keeps the curls curling
+    const cu=this.cu;for(let y=1;y<gh-1;y++)for(let x=1;x<gw-1;x++){const i=y*gw+x;cu[i]=(vy[i+1]-vy[i-1]-(vx[i+gw]-vx[i-gw]))*0.5;}
+    for(let y=2;y<gh-2;y++)for(let x=2;x<gw-2;x++){const i=y*gw+x,nx=Math.abs(cu[i+1])-Math.abs(cu[i-1]),ny=Math.abs(cu[i+gw])-Math.abs(cu[i-gw]),l=Math.hypot(nx,ny)+1e-5,c=cu[i]*0.06*f60;vx[i]+=ny/l*c;vy[i]-=nx/l*c;}
+    // carry the velocity by itself, keep it within the frame, make it incompressible
+    const ux=this.ux,uy=this.uy;this.adv(vx,ux,vx,vy);this.adv(vy,uy,vx,vy);const damp=Math.pow(0.992,f60);for(let i=0;i<n;i++){vx[i]=ux[i]*damp;vy[i]=uy[i]*damp;}
+    for(let x=0;x<gw;x++){vx[x]=vy[x]=0;vx[(gh-1)*gw+x]=vy[(gh-1)*gw+x]=0;}for(let y=0;y<gh;y++){vx[y*gw]=vy[y*gw]=0;vx[y*gw+gw-1]=vy[y*gw+gw-1]=0;}
+    const P=this.p,dv=this.dv;for(let y=1;y<gh-1;y++)for(let x=1;x<gw-1;x++){const i=y*gw+x;dv[i]=0.5*(vx[i+1]-vx[i-1]+vy[i+gw]-vy[i-gw]);}
+    for(let it=0;it<16;it++)for(let y=1;y<gh-1;y++)for(let x=1;x<gw-1;x++){const i=y*gw+x;P[i]=(P[i-1]+P[i+1]+P[i-gw]+P[i+gw]-dv[i])*0.25;}
+    for(let y=1;y<gh-1;y++)for(let x=1;x<gw-1;x++){const i=y*gw+x;vx[i]-=0.5*(P[i+1]-P[i-1]);vy[i]-=0.5*(P[i+gw]-P[i-gw]);}
+    for(let i=0;i<n;i++){const sp=Math.hypot(vx[i],vy[i]);if(sp>3){vx[i]*=3/sp;vy[i]*=3/sp;}}
+    // the colour film rides the water
+    this.adv(this.T,this.T2,vx,vy);let tmp=this.T;this.T=this.T2;this.T2=tmp;this.adv(this.S,this.S2,vx,vy);tmp=this.S;this.S=this.S2;this.S2=tmp;this.adv(this.D,this.D2,vx,vy);tmp=this.D;this.D=this.D2;this.D2=tmp;
+    // draw: thickness through the thin-film colours, duller where the film is thin (S), with a soft sheen from the film's slope
+    const T=this.T,S=this.S,Dd=this.D,lut=this.lut,rw=this.rw,rh=this.rh,d=this.img.data,g2=[104,112,116];
+    for(let y=0;y<rh;y++){let gy=(y+0.5)/3-0.5;gy=gy<0?0:gy>gh-1.001?gh-1.001:gy;const y0=gy|0,fy=gy-y0;for(let x=0;x<rw;x++){let gx=(x+0.5)/3-0.5;gx=gx<0?0:gx>gw-1.001?gw-1.001:gx;const x0=gx|0,fx=gx-x0,i=y0*gw+x0;
+        const tv=(T[i]*(1-fx)+T[i+1]*fx)*(1-fy)+(T[i+gw]*(1-fx)+T[i+gw+1]*fx)*fy+((Dd[i]*(1-fx)+Dd[i+1]*fx)*(1-fy)+(Dd[i+gw]*(1-fx)+Dd[i+gw+1]*fx)*fy)*0.32,sv=(S[i]*(1-fx)+S[i+1]*fx)*(1-fy)+(S[i+gw]*(1-fx)+S[i+gw+1]*fx)*fy;
+        const li=(((tv%1)+1)%1*1023|0)*3,m=(sv<0?0:sv>1?1:sv)*0.9,b=0.86+0.16*m,o=(y*rw+x)*4;d[o]=(g2[0]+(lut[li]-g2[0])*m)*b;d[o+1]=(g2[1]+(lut[li+1]-g2[1])*m)*b;d[o+2]=(g2[2]+(lut[li+2]-g2[2])*m)*b;d[o+3]=255;}}
+    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);}};
+
+/* 수족관: standing at the glass of a great aquarium. Light falls from the surface in slow shafts; a school of silver fish wheels through
+   the blue, rays glide past, small fish dart near the rocks. People stand in front as dark silhouettes, and fish that come near them scatter */
+const mAqua={id:'aqua',name:'수족관',desc:'커다란 수족관 유리 앞. 은빛 물고기 떼와 가오리가 헤엄치고, 사람은 검은 실루엣으로 선다. 사람이 다가가면 물고기가 놀라 흩어진다',
+  init(){const R=Math.random;this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;
+    const bw=Math.max(2,Math.round(W/2)),bh=Math.max(2,Math.round(H/2)),b=mkCanvas(bw,bh),c=b.cx,g=c.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#cdeaf6');g.addColorStop(0.3,'#7cc2e6');g.addColorStop(0.68,'#3a8ac0');g.addColorStop(1,'#1d5784');c.fillStyle=g;c.fillRect(0,0,bw,bh);
+    // rocks and coral along the floor, fading into the blue
+    for(let k=0;k<3;k++){c.fillStyle=['rgba(40,90,120,0.35)','rgba(28,70,98,0.55)','rgba(18,52,74,0.8)'][k];c.beginPath();c.moveTo(0,bh);let x=0;while(x<bw){const ww=bw*(0.05+R()*0.12),hh=bh*(0.06+R()*0.12)*(0.6+k*0.3);c.quadraticCurveTo(x+ww*0.5,bh-hh*(1.6+R()),x+ww,bh-hh*(0.4+R()*0.6));x+=ww;}c.lineTo(bw,bh);c.closePath();c.fill();}
+    const im=c.getImageData(0,0,bw,bh),d=im.data;for(let i=0;i<d.length;i+=4){const n=(R()-0.5)*6;d[i]+=n;d[i+1]+=n;d[i+2]+=n;}c.putImageData(im,0,0);this.bg=b;
+    this.rays=[];for(let i=0;i<7;i++)this.rays.push({x:R(),w:0.03+R()*0.06,a:0.05+R()*0.07,ph:R()*TAU,sp:0.1+R()*0.2,tilt:0.12+R()*0.1});
+    this.dust=[];for(let i=0;i<70;i++)this.dust.push({x:R()*W,y:R()*H,r:0.5+R()*1.6,v:2+R()*6,ph:R()*TAU});
+    // fish: two schools of silver fish at different depths, a few larger loners, and rays
+    this.fish=[];const mk=(n,z,cx,cy,sz,school)=>{for(let i=0;i<n;i++)this.fish.push({x:cx+(R()-0.5)*W*0.2,y:cy+(R()-0.5)*H*0.15,vx:(R()<0.5?-1:1)*W*0.03,vy:0,z,L:Math.min(W,H)*sz*(0.8+R()*0.4),school,ph:R()*TAU,scare:0,tone:R()});};
+    mk(isTouch?14:22,0.55,W*0.6,H*0.32,0.06,1);mk(isTouch?10:16,0.85,W*0.3,H*0.45,0.08,2);mk(4,1,W*0.5,H*0.55,0.14,0);mk(8,0.35,W*0.4,H*0.25,0.04,3);
+    this.rays2=[];for(let i=0;i<2;i++)this.rays2.push({x:R()*W,y:H*(0.25+R()*0.3),vx:(R()<0.5?-1:1)*W*0.025,z:0.7+R()*0.3,L:Math.min(W,H)*(0.28+R()*0.08),ph:R()*TAU,scare:0});},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);const R=Math.random,w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
+    const pS=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
+    // light shafts from the surface
+    ctx.globalCompositeOperation='lighter';for(const r of this.rays){const x=(r.x+Math.sin(t*r.sp+r.ph)*0.03)*W,ww=r.w*W,al=r.a*(0.7+0.3*Math.sin(t*0.4+r.ph)),g=ctx.createLinearGradient(0,0,0,H*0.85);g.addColorStop(0,'rgba(255,255,255,'+al+')');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;
+      ctx.beginPath();ctx.moveTo(x-ww*0.3,0);ctx.lineTo(x+ww*0.3,0);ctx.lineTo(x+ww*0.9+H*r.tilt,H*0.85);ctx.lineTo(x-ww*0.9+H*r.tilt,H*0.85);ctx.closePath();ctx.fill();}
+    ctx.globalCompositeOperation='source-over';
+    for(const q of this.dust){q.y-=q.v*dt;q.x+=Math.sin(t*0.5+q.ph)*4*dt;if(q.y<-4){q.y=H+4;q.x=R()*W;}ctx.fillStyle='rgba(235,250,255,0.35)';ctx.beginPath();ctx.arc(q.x,q.y,q.r,0,TAU);ctx.fill();}
+    // movement: schools hold together and wheel slowly, keep inside the water, and scatter from people at the glass
+    const F=this.fish,top=H*0.06,bot=H*0.8;for(const f of F){let ax=0,ay=0,cx=0,cy=0,mx=0,my=0,nb=0;for(const o of F){if(o===f||o.school!==f.school||!f.school)continue;const dx=o.x-f.x,dy=o.y-f.y,dd=Math.hypot(dx,dy);if(dd<W*0.25){cx+=dx;cy+=dy;mx+=o.vx;my+=o.vy;nb++;}if(dd<f.L*1.1&&dd>0){ax-=dx/dd*W*0.08;ay-=dy/dd*W*0.08;}}
+      if(nb){ax+=cx/nb*0.25+(mx/nb-f.vx)*0.6;ay+=cy/nb*0.25+(my/nb-f.vy)*0.6;}ax+=Math.sin(t*0.13+f.school*2+f.ph*0.1)*W*0.01;ay+=Math.cos(t*0.17+f.ph)*H*0.01;
+      if(f.x<W*0.05)ax+=W*0.15;if(f.x>W*0.95)ax-=W*0.15;if(f.y<top)ay+=H*0.2;if(f.y>bot)ay-=H*0.2;
+      let fx2=0,fy2=0,th=0;const rr=Math.min(W,H)*0.16;for(let k=0;k<8;k++){const a=k/8*TAU,q=pS(f.x+Math.cos(a)*rr,f.y+Math.sin(a)*rr);fx2-=Math.cos(a)*q;fy2-=Math.sin(a)*q;if(q>th)th=q;}th=Math.max(th,pS(f.x,f.y));
+      if(th>0.25){f.scare=Math.min(1,f.scare+dt*5);ax+=fx2*W*1.2;ay+=fy2*W*1.2;}else f.scare=Math.max(0,f.scare-dt*0.6);
+      f.vx+=ax*dt;f.vy+=ay*dt;const mxs=W*(0.05+0.05*f.z)*(1+f.scare*2.5),sp=Math.hypot(f.vx,f.vy);if(sp>mxs){f.vx*=mxs/sp;f.vy*=mxs/sp;}if(Math.abs(f.vx)<W*0.012)f.vx+=(f.vx<0?-1:1)*W*0.01*dt;f.vy*=Math.pow(0.6,dt);
+      f.x+=f.vx*dt;f.y+=f.vy*dt;f.ph+=dt*(5+f.scare*8);}
+    for(const r of this.rays2){let fx2=0,th=0;for(let k=0;k<6;k++){const a=k/6*TAU,q=pS(r.x+Math.cos(a)*r.L*0.6,r.y+Math.sin(a)*r.L*0.4);fx2-=Math.cos(a)*q;if(q>th)th=q;}if(th>0.25){r.scare=Math.min(1,r.scare+dt*3);if(fx2)r.vx+=Math.sign(fx2)*W*0.08*dt;}else r.scare=Math.max(0,r.scare-dt*0.4);
+      const mxs=W*0.03*(1+r.scare*1.5);r.vx=clamp(r.vx,-mxs,mxs);if(Math.abs(r.vx)<W*0.01)r.vx=(r.vx<0?-1:1)*W*0.012;r.x+=r.vx*dt;r.y+=Math.sin(t*0.2+r.ph)*H*0.01*dt;r.ph+=dt*(1.6+r.scare*2);if(r.x<-r.L)r.x=W+r.L;if(r.x>W+r.L)r.x=-r.L;}
+    // drawing, far to near: farther things are smaller and paler (lost in the blue)
+    const haze=(z)=>1-z;const items=F.map(f=>({z:f.z,f})).concat(this.rays2.map(r=>({z:r.z,r}))).sort((a,b)=>a.z-b.z);
+    for(const it of items){if(it.f){const f=it.f,dir=f.vx<0?-1:1,L=f.L,hz=haze(f.z),wag=Math.sin(f.ph)*0.25,ang=Math.atan2(f.vy,Math.abs(f.vx))*0.6*dir;
+        ctx.save();ctx.translate(f.x,f.y);ctx.scale(dir,1);ctx.rotate(ang*dir);ctx.globalAlpha=0.55+0.45*f.z;
+        const g=ctx.createLinearGradient(0,-L*0.2,0,L*0.2),back=f.school===0?[70+f.tone*30,90,110]:[96,128,150],bel=[236,244,248];const mixc=(c)=>'rgb('+Math.round(c[0]+(140-c[0])*hz*0.6)+','+Math.round(c[1]+(190-c[1])*hz*0.6)+','+Math.round(c[2]+(225-c[2])*hz*0.6)+')';
+        g.addColorStop(0,mixc(back));g.addColorStop(0.55,mixc([186,205,214]));g.addColorStop(1,mixc(bel));ctx.fillStyle=g;
+        ctx.beginPath();ctx.moveTo(L*0.5,0);ctx.bezierCurveTo(L*0.4,-L*0.2,-L*0.1,-L*0.22,-L*0.32,-L*0.05);ctx.lineTo(-L*0.36,-L*0.03);ctx.lineTo(-L*0.55,-L*(0.2+wag*0.3));ctx.lineTo(-L*0.48,0);ctx.lineTo(-L*0.55,L*(0.2-wag*0.3));ctx.lineTo(-L*0.36,L*0.03);ctx.lineTo(-L*0.32,L*0.05);ctx.bezierCurveTo(-L*0.1,L*0.2,L*0.4,L*0.18,L*0.5,0);ctx.closePath();ctx.fill();
+        ctx.fillStyle='rgba(20,40,55,0.6)';ctx.beginPath();ctx.arc(L*0.34,-L*0.04,Math.max(1,L*0.028),0,TAU);ctx.fill();ctx.restore();}
+      else{const r=it.r,dir=r.vx<0?-1:1,L=r.L,fl=Math.sin(r.ph)*L*0.12;ctx.save();ctx.translate(r.x,r.y);ctx.scale(dir,1);ctx.globalAlpha=0.6+0.4*r.z;
+        const g=ctx.createLinearGradient(0,-L*0.3,0,L*0.3);g.addColorStop(0,'#3d5a6c');g.addColorStop(1,'#7f9cac');ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(L*0.32,0);ctx.bezierCurveTo(L*0.26,-L*0.2,L*0.12,-L*0.38,-L*0.04,-L*0.52-fl);ctx.bezierCurveTo(-L*0.08,-L*0.32,-L*0.15,-L*0.14,-L*0.24,-L*0.02);ctx.lineTo(-L*0.24,L*0.02);
+        ctx.bezierCurveTo(-L*0.15,L*0.14,-L*0.08,L*0.32,-L*0.04,L*0.52+fl);ctx.bezierCurveTo(L*0.12,L*0.38,L*0.26,L*0.2,L*0.32,0);ctx.closePath();ctx.fill();ctx.fillStyle='rgba(225,240,245,0.25)';ctx.beginPath();ctx.ellipse(L*0.08,0,L*0.12,L*0.07,0,0,TAU);ctx.fill();ctx.strokeStyle='rgba(61,90,108,0.8)';ctx.lineWidth=Math.max(1,L*0.012);ctx.beginPath();ctx.moveTo(-L*0.2,0);ctx.quadraticCurveTo(-L*0.45,Math.sin(r.ph*0.7)*L*0.04,-L*0.75,0);ctx.stroke();ctx.restore();}}
+    ctx.globalAlpha=1;
+    // the people at the glass
+    if(!this.pc||this.pc.length!==A.n)this.pc=new Float32Array(A.n);this.pc.set(A.p);blur3(this.pc,this.tmp,w,h);this.sil=upsampleMask(this.pc,w,h,2,0.45,0.58,[6,18,30],this.sil);ctx.drawImage(this.sil,0,0,W,H);
+    const fg=ctx.createLinearGradient(0,H*0.82,0,H);fg.addColorStop(0,'rgba(6,18,30,0)');fg.addColorStop(1,'rgba(6,18,30,0.55)');ctx.fillStyle=fg;ctx.fillRect(0,H*0.82,W,H*0.18);}};
+
+/* 풍선: raise a hand and colourful balloons float up out of it, swaying on their strings; when one reaches the top of the screen it pops
+   with a bang of confetti. Over the real camera picture */
+const mBalloon={id:'balloon',name:'풍선',needVideo:true,desc:'손을 위로 들면 그 아래에서 형형색색 풍선이 떠올라 몸을 지나 올라가고, 화면 위에 닿으면 펑 터지며 색종이가 쏟아진다. 실제 화면 그대로',
+  COLS:['#ff4757','#ffb020','#2ed573','#1e90ff','#a55eea','#ff6fb5','#00cec9','#ffd32a'],
+  init(){this.b=[];this.c=[];this.pops=[];this.hands={};this.sp={};this.hintT=0;},
+  sprite(col){if(this.sp[col])return this.sp[col];const S2=128,c=mkCanvas(S2,Math.round(S2*1.25)),x=c.cx,cx=S2/2,cy=S2*0.52,rx=S2*0.42,ry=S2*0.5,rgb=hex(col);
+    const g=x.createRadialGradient(cx-rx*0.35,cy-ry*0.4,rx*0.05,cx,cy,ry*1.05);g.addColorStop(0,'rgba(255,255,255,0.95)');g.addColorStop(0.18,'rgb('+rgb.map(v=>Math.min(255,v+60)).join(',')+')');g.addColorStop(0.7,col);g.addColorStop(1,'rgb('+rgb.map(v=>v*0.62|0).join(',')+')');
+    x.fillStyle=g;x.beginPath();x.moveTo(cx,cy+ry);x.bezierCurveTo(cx+rx*1.32,cy+ry*0.55,cx+rx*1.05,cy-ry*1.05,cx,cy-ry);x.bezierCurveTo(cx-rx*1.05,cy-ry*1.05,cx-rx*1.32,cy+ry*0.55,cx,cy+ry);x.fill();
+    x.fillStyle='rgb('+rgb.map(v=>v*0.7|0).join(',')+')';x.beginPath();x.moveTo(cx,cy+ry-2);x.lineTo(cx-6,cy+ry+9);x.lineTo(cx+6,cy+ry+9);x.closePath();x.fill();
+    x.fillStyle='rgba(255,255,255,0.55)';x.beginPath();x.ellipse(cx-rx*0.42,cy-ry*0.45,rx*0.14,ry*0.24,0.5,0,TAU);x.fill();return this.sp[col]=c;},
+  pop(bl){const R=Math.random;this.pops.push({x:bl.x,y:bl.y,r:bl.r,t:0,col:bl.col});for(let i=0;i<46;i++){const a=R()*TAU,v=H*(0.25+R()*0.55);this.c.push({x:bl.x,y:bl.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-H*0.15,w:bl.r*(0.12+R()*0.12),h:bl.r*(0.05+R()*0.05),rot:R()*TAU,vr:(R()-0.5)*12,fl:R()*TAU,col:this.COLS[(R()*this.COLS.length)|0],t:0,life:3+R()*2});}
+    if(this.c.length>900)this.c.splice(0,this.c.length-900);},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);const R=Math.random,src=videoSrc();if(src)drawVideo(src);else{const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#bfe3ff');g.addColorStop(1,'#fef6ff');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
+    // raised hands let balloons go
+    const PL=poseScreen()||[],now=t,seen={};PL.forEach((L,pi)=>{if(!L[0]||!L[11]||!L[12])return;const n=L[0],d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y)||W*0.05,sy=(L[11].y+L[12].y)/2;
+      for(const j of [15,16]){const wq=L[j];if(!wq||wq.v<0.3)continue;if(wq.y<Math.min(n.y,sy-d*0.35)){const key=pi+'-'+j;seen[key]=1;const hd=this.hands[key]||(this.hands[key]={t:0.15});hd.t-=dt;if(hd.t<=0){hd.t=0.32+R()*0.18;if(this.b.length<46){const r=Math.max(18,Math.min(W,H)*(0.045+R()*0.025));this.b.push({x:clamp(wq.x+(R()-0.5)*d*1.2,r,W-r),y:H+r*1.3,vx:(R()-0.5)*W*0.03,vy:-H*0.18,r,col:this.COLS[(R()*this.COLS.length)|0],ph:R()*TAU,age:0});}}}}});
+    for(const k in this.hands)if(!seen[k])delete this.hands[k];
+    // balloons rise, sway and nudge one another; at the top they pop
+    const B=this.b;for(let i=B.length-1;i>=0;i--){const b=B[i];b.age+=dt;b.vy+=(-H*0.24-b.vy)*Math.min(1,dt*0.9);b.vx+=(Math.sin(t*1.3+b.ph)*W*0.02-b.vx)*Math.min(1,dt*0.8);
+      for(const o of B){if(o===b)continue;const dx=b.x-o.x,dy=b.y-o.y,dd=Math.hypot(dx,dy),m=(b.r+o.r)*0.95;if(dd<m&&dd>0){const f=(m-dd)/m*W*0.6*dt;b.vx+=dx/dd*f;b.vy+=dy/dd*f*0.5;}}
+      b.x+=b.vx*dt;b.y+=b.vy*dt;b.x=clamp(b.x,b.r,W-b.r);if(b.y-b.r*1.05<0){this.pop(b);B.splice(i,1);}}
+    for(const b of B){const sw=Math.sin(t*1.3+b.ph)*0.12,img=this.sprite(b.col),bw=b.r*2.1,bh=bw*1.25;ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.lineWidth=1.2;ctx.beginPath();const kx=b.x,ky=b.y+b.r*1.02;ctx.moveTo(kx,ky);
+      ctx.bezierCurveTo(kx+Math.sin(t*2+b.ph)*b.r*0.4,ky+b.r*0.9,kx-Math.sin(t*2.3+b.ph)*b.r*0.4,ky+b.r*1.8,kx+Math.sin(t*1.7+b.ph)*b.r*0.3,ky+b.r*2.6);ctx.stroke();
+      ctx.save();ctx.translate(b.x,b.y);ctx.rotate(sw);ctx.drawImage(img,-bw/2,-bw*0.52,bw,bh);ctx.restore();}
+    // the pop: a quick flash and ring, then confetti that flutters down
+    for(let i=this.pops.length-1;i>=0;i--){const q=this.pops[i];q.t+=dt;if(q.t>0.35){this.pops.splice(i,1);continue;}const k=q.t/0.35;ctx.globalAlpha=1-k;ctx.strokeStyle='#ffffff';ctx.lineWidth=3*(1-k)+1;ctx.beginPath();ctx.arc(q.x,q.y,q.r*(0.8+k*1.8),0,TAU);ctx.stroke();
+      ctx.strokeStyle=q.col;ctx.lineWidth=2;ctx.beginPath();for(let a=0;a<10;a++){const an=a/10*TAU;ctx.moveTo(q.x+Math.cos(an)*q.r*(0.9+k),q.y+Math.sin(an)*q.r*(0.9+k));ctx.lineTo(q.x+Math.cos(an)*q.r*(1.3+k*2.2),q.y+Math.sin(an)*q.r*(1.3+k*2.2));}ctx.stroke();}
+    ctx.globalAlpha=1;for(let i=this.c.length-1;i>=0;i--){const q=this.c[i];q.t+=dt;if(q.t>q.life||q.y>H+20){this.c.splice(i,1);continue;}q.vx*=Math.pow(0.4,dt);q.vy=q.vy*Math.pow(0.4,dt)+H*0.35*dt;q.x+=(q.vx+Math.sin(q.t*4+q.fl)*W*0.02)*dt;q.y+=q.vy*dt;q.rot+=q.vr*dt;
+      ctx.globalAlpha=Math.min(1,(q.life-q.t)/0.8);ctx.save();ctx.translate(q.x,q.y);ctx.rotate(q.rot);ctx.scale(1,Math.abs(Math.cos(q.t*6+q.fl)));ctx.fillStyle=q.col;ctx.fillRect(-q.w/2,-q.h/2,q.w,q.h);ctx.restore();}
+    ctx.globalAlpha=1;
+    // a hint while nobody has raised a hand
+    if(!B.length&&!this.c.length){const fz=Math.max(14,Math.min(22,W/60));ctx.font='600 '+fz+'px '+SANS+','+EMOJI_FONT;ctx.textAlign='center';const msg='🎈 손을 위로 높이 들어 보세요',tw=ctx.measureText(msg).width,by=H-fz*2.6-(isTouch?56:0);
+      ctx.fillStyle='rgba(0,0,0,0.38)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1,fz*1.05);else ctx.rect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1);ctx.fill();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(msg,W/2,by);ctx.textAlign='left';ctx.textBaseline='alphabetic';}}};
+
+/* the live picture, wherever it comes from: the local camera, or the phone sensor's video when it is streamed to the monitor */
+function videoSrc(){if(A.remote){return RV.on&&RV.el.videoWidth?{el:RV.el,vw:RV.el.videoWidth,vh:RV.el.videoHeight,mirror:RV.mirror}:null;}const el=source.el,d2=srcDims();return el&&d2[0]?{el,vw:d2[0],vh:d2[1],mirror:S.mirror}:null;}
+function coverCrop(vw,vh){const SA=W/H;let cw=vw,ch=vw/SA;if(ch>vh){ch=vh;cw=vh*SA;}return [(vw-cw)/2,(vh-ch)/2,cw,ch];}
+function drawVideo(src){const c=coverCrop(src.vw,src.vh);ctx.save();if(src.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(src.el,c[0],c[1],c[2],c[3],0,0,W,H);}catch(e){}ctx.restore();return c;}
+function noVideo(msg){ctx.fillStyle='#101114';ctx.fillRect(0,0,W,H);ctx.font='500 '+Math.max(14,W/64)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.75)';ctx.textAlign='center';ctx.fillText(msg||'카메라 화면을 기다리는 중이에요…',W/2,H/2);ctx.textAlign='left';}
+
+/* 늘이기: while someone stands there, they stay exactly as they are and the world either side of them is pulled out sideways: every row
+   of the picture repeats the colour just beside the person, all the way to the edge, as long horizontal bands */
+const mStretch={id:'stretch',name:'늘이기',needVideo:true,desc:'사람이 서 있으면 그 사람만 그대로 두고 양옆 풍경이 가로로 주욱 늘어난다. 실제 화면 그대로',
+  init(){this.keep=null;this.k=0;},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);const src=videoSrc();if(!src){noVideo();return;}const c=drawVideo(src);
+    // which columns hold a person (smoothed, so the band edges glide rather than jump)
+    const w=A.w,h=A.h,p=A.p,B=Math.max(40,Math.round(W/6));if(!this.keep||this.keep.length!==B)this.keep=new Float32Array(B);const keep=this.keep;
+    for(let b=0;b<B;b++){const x0=Math.floor(b*w/B),x1=Math.max(x0+1,Math.floor((b+1)*w/B));let on=0;for(let x=x0;x<x1&&!on;x++)for(let y=0;y<h;y++)if(p[y*w+x]>0.5){on=1;break;}keep[b]+=(on-keep[b])*(on?0.35:0.12);}
+    const spans=[];for(let b=0;b<B;){if(keep[b]<0.5){b++;continue;}let e=b;while(e+1<B&&keep[e+1]>=0.5)e++;spans.push([b*W/B,(e+1)*W/B]);b=e+1;}
+    for(let i=spans.length-1;i>0;i--)if(spans[i][0]-spans[i-1][1]<W*0.03){spans[i-1][1]=spans[i][1];spans.splice(i,1);}
+    const pad=W*0.012;spans.forEach(sp=>{sp[0]=Math.max(0,sp[0]-pad);sp[1]=Math.min(W,sp[1]+pad);});
+    this.k+=((spans.length?1:0)-this.k)*Math.min(1,dt*(spans.length?2.2:4));const k=this.k;if(k<0.01||!spans.length)return;
+    // the bands: each gap is filled from the column right beside the nearest person, spreading out from them as the effect comes in
+    const vx=(x)=>c[0]+(src.mirror?(W-x):x)/W*c[2];
+    const band=(edgeX,x0,x1,outward)=>{const wdt=(x1-x0)*k;if(wdt<1)return;const dx=outward<0?x1-wdt:x0;try{ctx.drawImage(src.el,clamp(vx(edgeX)-1,0,src.vw-2),c[1],2,c[3],dx,0,wdt,H);}catch(e){}};
+    band(spans[0][0],0,spans[0][0],-1);for(let i=0;i<spans.length-1;i++){const a=spans[i][1],b=spans[i+1][0],m=(a+b)/2;band(a,a,m,1);band(b,m,b,-1);}const L=spans[spans.length-1];band(L[1],L[1],W,1);}};
+
+/* 오목거울·볼록거울: a fun-house mirror over the live picture, drawn on the graphics card so it stays sharp. The concave mirror swells
+   whoever stands in front (more the closer they come); the convex mirror shrinks the world into a wide bulging view */
+const GLW={cv:null,gl:null,prog:null,tex:null,ok:null,u:{},
+  init(){if(this.ok!==null)return this.ok;try{const cv=document.createElement('canvas'),gl=cv.getContext('webgl',{premultipliedAlpha:false,antialias:false})||cv.getContext('experimental-webgl');if(!gl){this.ok=false;return false;}
+    const sh=(type,src)=>{const o=gl.createShader(type);gl.shaderSource(o,src);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;};
+    const vs='attribute vec2 p;varying vec2 uv;void main(){uv=vec2(p.x*0.5+0.5,0.5-p.y*0.5);gl_Position=vec4(p,0.0,1.0);}';
+    const fs='precision mediump float;varying vec2 uv;uniform sampler2D tex;uniform vec4 crop;uniform float mir;uniform vec2 ctr;uniform float rad;uniform float k;uniform float asp;uniform float mode;'+
+      'void main(){vec2 d=uv-ctr;d.x*=asp;float r=length(d);vec2 q=uv;'+
+      'if(r<rad){float t=r/rad;float e=t*t*(3.0-2.0*t);float f=mix(k,1.0,e);vec2 d2=d*f;d2.x/=asp;q=ctr+d2;}'+
+      'float o=step(q.x,0.0)+step(1.0,q.x)+step(q.y,0.0)+step(1.0,q.y);if(mir>0.5)q.x=1.0-q.x;vec2 st=crop.xy+clamp(q,0.0,1.0)*crop.zw;vec3 col=texture2D(tex,st).rgb;gl_FragColor=vec4(o>0.0?col*0.12:col,1.0);}';
+    const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw new Error('link');gl.useProgram(pr);
+    const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);const loc=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);[gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.CLAMP_TO_EDGE));[gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.LINEAR));
+    ['crop','mir','ctr','rad','k','asp','mode'].forEach(n=>this.u[n]=gl.getUniformLocation(pr,n));Object.assign(this,{cv,gl,prog:pr,tex});this.ok=true;}catch(e){this.ok=false;}return this.ok;},
+  render(src,o){const gl=this.gl,cv=this.cv,s2=Math.min(DPR,1920/W),cw=Math.max(2,Math.round(W*s2)),ch=Math.max(2,Math.round(H*s2));if(cv.width!==cw||cv.height!==ch){cv.width=cw;cv.height=ch;}gl.viewport(0,0,cw,ch);
+    try{gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,src.el);}catch(e){return false;}const c=coverCrop(src.vw,src.vh),u=this.u;
+    gl.uniform4f(u.crop,c[0]/src.vw,c[1]/src.vh,c[2]/src.vw,c[3]/src.vh);gl.uniform1f(u.mir,src.mirror?1:0);gl.uniform2f(u.ctr,o.cx,o.cy);gl.uniform1f(u.rad,o.rad);gl.uniform1f(u.k,o.k);gl.uniform1f(u.asp,W/H);gl.uniform1f(u.mode,o.mode);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);ctx.drawImage(cv,0,0,W,H);return true;}};
+function mirrorMode(id,name,desc,convex){return {id,name,desc,needVideo:true,
+  init(){this.cx=0.5;this.cy=0.45;this.kk=convex?1.75:0.7;},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);const src=videoSrc();if(!src){noVideo();return;}if(this.f===undefined)this.f=0;if((this.f++&1)===0)PEOPLE.update();
+    // centre on the person in front (the nearest), or the middle of the frame when nobody is there
+    let best=null;PEOPLE.list.forEach(q=>{if(!best||q.near>best.near)best=q;});const tx=best?(best.bx+best.bw/2)/W:0.5,ty=best?clamp((best.by+best.bh*0.32)/H,0.2,0.8):0.45;this.cx+=(tx-this.cx)*Math.min(1,dt*3);this.cy+=(ty-this.cy)*Math.min(1,dt*3);
+    const near=best?best.near:0,tk=convex?1.75:1/(1.35+0.95*near);this.kk+=(tk-this.kk)*Math.min(1,dt*2.5);
+    const ok=GLW.init()&&GLW.render(src,{cx:convex?0.5+(this.cx-0.5)*0.35:this.cx,cy:convex?0.5+(this.cy-0.5)*0.35:this.cy,rad:convex?1.05*Math.max(1,W/H):0.6*Math.min(1.4,W/H),k:this.kk,mode:convex?1:0});
+    if(!ok){drawVideo(src);}
+    // the mirror itself: an oval frame of soft shade and a faint streak of reflected light, and a one-line hint
+    const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.42,W/2,H/2,Math.hypot(W,H)*0.56);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,0.55)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    const hl=ctx.createLinearGradient(W*0.08,0,W*0.36,H);hl.addColorStop(0,'rgba(255,255,255,0)');hl.addColorStop(0.5,'rgba(255,255,255,0.07)');hl.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=hl;ctx.beginPath();ctx.moveTo(W*0.12,0);ctx.lineTo(W*0.22,0);ctx.lineTo(W*0.06,H);ctx.lineTo(-W*0.04,H);ctx.closePath();ctx.fill();
+    const fz=Math.max(13,Math.min(20,W/68));ctx.font='600 '+fz+'px '+SANS;ctx.textAlign='center';const msg=convex?name+' · 세상이 작고 넓게 보여요':name+' · 가까이 올수록 크게 부풀어요',tw=ctx.measureText(msg).width,by=H-fz*2.6-(isTouch?56:0);
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1,fz*1.05);else ctx.rect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1);ctx.fill();ctx.fillStyle='#ffffff';ctx.textBaseline='middle';ctx.fillText(msg,W/2,by);ctx.textAlign='left';ctx.textBaseline='alphabetic';}};}
+const mConcave=mirrorMode('concave','오목거울','오목거울 앞에 선 것처럼 사람이 크게 부풀어 보이고, 가까이 올수록 더 커진다. 실제 화면 그대로',false);
+const mConvex=mirrorMode('convex','볼록거울','볼록거울처럼 화면 전체가 둥글게 휘며 작고 넓게 보인다. 실제 화면 그대로',true);
 
 const mGaze={id:'gaze',name:'시선',desc:'차가운 바닥 위 한색 실루엣. 카메라를 가만히 바라보는 사람의 실루엣만 천천히 따뜻한 색으로 물들고, 시선이 떠나면 식는다',
   init(){const n=A.n;this.M=new Float32Array(n);this.Wf=new Float32Array(n);this.Wn=new Float32Array(n);this.Uf=new Float32Array(n);this.tmp=new Float32Array(n);this.warmth={};this.f=0;this.cv=null;},
@@ -1452,7 +1654,7 @@ const FM={mem:[],live:[],nextMem:1,tc:null,hc:null,
 
 /* ---------- people: one entry per person, from body tracks and faces together ----------
    A face inside a body box names that body, so a person who is briefly lost and found again keeps one key. */
-function nearOf(tr){const L=tr.pose;if(L&&L[11]&&L[12]&&L[11].v>0.5&&L[12].v>0.5){const d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y)/H;return clamp((d-0.1)/0.25,0,1);}return clamp((tr.h/H-0.2)/0.75,0,1);}
+function nearOf(tr){const L=tr.pose,now=performance.now();if(L&&L[11]&&L[12]&&L[11].v>0.5&&L[12].v>0.5){const d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y)/H,v=clamp((d-0.1)/0.25,0,1);tr.nearP=v;tr.nearPt=now;return v;}if(tr.nearPt&&now-tr.nearPt<1500)return tr.nearP;return clamp((tr.h/H-0.2)/0.75,0,1);}
 const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
   faceBoxes(){const out=[];if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detections))return out;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw)return out;
     const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
@@ -1466,7 +1668,7 @@ const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
       if(best){this.trackFace[best.id]={mem:fc.mem,t:now,face:fc};fc.body=best;}});
     bodies.sort((a,b)=>a.id-b.id).forEach(tr=>{const tf=this.trackFace[tr.id],faceId=tf&&now-tf.t<10000?tf.mem:null,key=faceId!=null?'f'+faceId:'t'+tr.id;if(taken.has(key))return;taken.add(key);
       const prev=this.trackKey[tr.id];if(prev&&prev!==key)this.renames.push([prev,key]);this.trackKey[tr.id]=key;const fc=tf&&now-tf.t<400?tf.face:null;
-      const near=nearOf(tr);
+      const nr=nearOf(tr),ns=this.nearSm||(this.nearSm={}),o=ns[key];const near=o==null?nr:o+(nr-o)*(nr>o?0.35:0.06);ns[key]=near;
       list.push({key,x:tr.sx,y:tr.sy,bx:tr.x,by:tr.y,bw:tr.w,bh:tr.h,near,faceId,face:fc});});
     faces.forEach(fc=>{if(fc.body||fc.mem==null)return;const key='f'+fc.mem;if(taken.has(key))return;taken.add(key);const ty=fc.cy+fc.sh*2.2;
       const s=this.sm[key]||(this.sm[key]={x:fc.cx,y:ty});s.x+=(fc.cx-s.x)*0.25;s.y+=(ty-s.y)*0.25;
@@ -1661,23 +1863,27 @@ const mAura={id:'aura',name:'아우라',desc:'가까이 다가오면 사람이 �
     for(let i=0;i<256;i++){const v=i/255;let a=stops[0],b=stops[stops.length-1];for(let j=0;j<stops.length-1;j++)if(v>=stops[j][0]&&v<=stops[j+1][0]){a=stops[j];b=stops[j+1];break;}const f=(v-a[0])/((b[0]-a[0])||1);for(let c=0;c<3;c++)lut[i*3+c]=a[1][c]+(b[1][c]-a[1][c])*f;}this.lut=lut;},
   draw(t,dt){this.f++;if((this.f&1)===0)PEOPLE.update();const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
     // how close is the nearest person: the aura opens up only past a threshold, and eases in and out
-    let near=0;PEOPLE.list.forEach(p=>{if(p.near>near)near=p.near;});if(!PEOPLE.list.length){let top=h,bot=0;for(let i=0;i<A.n;i++)if(A.p[i]>0.5){const y=(i/w)|0;if(y<top)top=y;if(y>bot)bot=y;}near=bot>top?clamp(((bot-top)/h-0.2)/0.75,0,1):0;}
-    const target=clamp((near-0.35)/0.3,0,1);this.k+=(target-this.k)*0.04;const k=this.k,lut=this.lut,cw=this.cv.width,ch=this.cv.height,out=this.img.data,mw=w-1.001,mh=h-1.001,seed=(this.f*7919)>>>0;
+    // how close each person is: only whoever has come close blooms; everyone else stays as they are
+    if(!this.kk)this.kk={};if(!this.K||this.K.length!==A.n)this.K=new Float32Array(A.n);const K=this.K,ppl=PEOPLE.list,seenK={};let kmax=0;
+    ppl.forEach(q=>{const tg=clamp((q.near-0.35)/0.3,0,1),o=this.kk[q.key]||0,v=o+(tg-o)*0.05;this.kk[q.key]=v;seenK[q.key]=1;if(v>kmax)kmax=v;});for(const key in this.kk)if(!seenK[key]){this.kk[key]*=0.9;if(this.kk[key]<0.01)delete this.kk[key];}
+    if(ppl.length){for(let y=0;y<h;y++)for(let x=0;x<w;x++){const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let best=1e9,kv=0;for(const q of ppl){const dx=(px-(q.bx+q.bw/2))/Math.max(20,q.bw*0.5),dy=(py-(q.by+q.bh/2))/Math.max(20,q.bh*0.5),d=dx*dx+dy*dy;if(d<best){best=d;kv=this.kk[q.key]||0;}}K[y*w+x]=kv;}box5(K,this.tmp,w,h);box5(K,this.tmp,w,h);}
+    else{let top=h,bot=0;for(let i=0;i<A.n;i++)if(A.p[i]>0.5){const y=(i/w)|0;if(y<top)top=y;if(y>bot)bot=y;}const near=bot>top?clamp(((bot-top)/h-0.2)/0.75,0,1):0;this.k+=(clamp((near-0.35)/0.3,0,1)-this.k)*0.04;K.fill(this.k);kmax=this.k;}
+    const k=kmax,lut=this.lut,cw=this.cv.width,ch=this.cv.height,out=this.img.data,mw=w-1.001,mh=h-1.001,seed=(this.f*7919)>>>0;
     let r=seed||1;const rnd=()=>{r^=r<<13;r^=r>>>17;r^=r<<5;return ((r>>>0)%1000)/1000;};
     for(let y=0;y<ch;y++){let gy=(y+0.5)*h/ch-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,yy=y/ch,base=0.12-0.12*yy+0.02*Math.sin(t*0.3+yy*3);
       for(let x=0;x<cw;x++){let gx=(x+0.5)*w/cw-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0,i0=y0*w+x0;
-        const v=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy;
-        let q=(base+0.08+v*(0.2+0.8*k)*1.25+(rnd()-0.5)*0.2)*255;q=q<0?0:q>255?255:q;const li=(q|0)*3,n=(rnd()-0.5)*34,o=(y*cw+x)*4;
+        const v=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy,kk=(K[i0]*(1-fx)+K[i0+1]*fx)*(1-fy)+(K[i0+w]*(1-fx)+K[i0+w+1]*fx)*fy;
+        let q=(base+0.08+v*(0.2+0.8*kk)*1.25+(rnd()-0.5)*0.2)*255;q=q<0?0:q>255?255:q;const li=(q|0)*3,n=(rnd()-0.5)*34,o=(y*cw+x)*4;
         out[o]=lut[li]+n;out[o+1]=lut[li+1]+n;out[o+2]=lut[li+2]+n;out[o+3]=255;}}
     this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
     // only a quiet nudge at the bottom while nobody is close yet
     const cx=W/2,cy=H-Math.max(54,H*0.09)-(isTouch?60:0);ctx.textAlign='center';ctx.textBaseline='middle';
     if(k<0.2){ctx.font='500 '+Math.max(13,W/70)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fillText('조금 더 가까이 와 보세요',cx,cy);}ctx.textAlign='left';ctx.textBaseline='alphabetic';
   }};
-/* 색점: one flat yellow ground; each person becomes a grid of round dots, every dot carrying the real colour of that spot */
-const mColorDots={id:'colordots',name:'색점',desc:'노란 단색 배경 위에 사람만 동그라미 격자로 찍힌다. 동그라미마다 그 자리의 실제 색을 담는다',
+/* 색점: a white ground; each person becomes a grid of round dots, every dot carrying the real colour of that spot */
+const mColorDots={id:'colordots',name:'색점',desc:'흰 배경 위에 사람만 동그라미 격자로 찍힌다. 동그라미마다 그 자리의 실제 색을 담는다',
   init(){this.cols=isTouch?48:80;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.cv=mkCanvas(this.cols,this.rows);const n=this.cols*this.rows;this.cr=new Float32Array(n*3);this.cov=new Float32Array(n);},
-  draw(t){const bg=[255,247,106];ctx.fillStyle='rgb(255,247,106)';ctx.fillRect(0,0,W,H);
+  draw(t){const bg=[255,255,255];ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);
     // the colour of the frame at each dot (shared by a local camera and a phone sensor alike); nothing of the frame itself is shown
     const px=gridColors(this.cols,this.rows,this);
     const cols=this.cols,rows=this.rows,c=this.cell,R=c*0.43,cr=this.cr,cov=this.cov;
@@ -1694,7 +1900,7 @@ function gridColors(cols,rows,M){const n=cols*rows;if(!M.pxc||M.pxc.length!==n*4
 function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analysis, at a tiny size (one pixel per dot)
   const c=cv.cx;c.setTransform(1,0,0,1,0,0);const el=source.el;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!el||A.remote||!sw||!sh){c.fillStyle='#777';c.fillRect(0,0,w,h);return;}
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;c.save();if(S.mirror){c.translate(w,0);c.scale(-1,1);}c.imageSmoothingEnabled=true;try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(e){}c.restore();}
-const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mDodge,mEmoji,mFire];
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mDodge,mEmoji,mFire,mAqua,mFluid,mStretch,mConcave,mConvex,mBalloon];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1704,11 +1910,11 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`q';
+const KEYS='1234567890-=[]\\;\',./`qwertyu';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
-function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();fillBg();lastSwitch=performance.now();save();syncChips();
+function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();wantVideo();fillBg();lastSwitch=performance.now();save();syncChips();
   const b=modesEl.children[S.mode];if(b&&b.scrollIntoView)try{b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}catch(e){}}
 function isOn(i){const m=MODES[i];return !!m&&!(S.off||[]).includes(m.id);}
 function nextMode(d){const N=MODES.length;let i=S.mode;for(let k=0;k<N;k++){i=((i+d)%N+N)%N;if(isOn(i)){setMode(i);return;}}}
@@ -1787,6 +1993,10 @@ window.addEventListener('keydown',e=>{if(e.target&&/INPUT|SELECT|TEXTAREA/.test(
 
 /* ---------- two-device link (display <-> sensor) via WebRTC data channel ---------- */
 let role='solo',peer=null,conn=null,code='';
+// the phone sensor's live video, only while a mode on the monitor needs the real picture (the emoji mode)
+const RV={el:document.createElement('video'),on:false,call:null,mirror:true};RV.el.muted=true;RV.el.playsInline=true;RV.el.setAttribute('playsinline','');RV.el.autoplay=true;
+function wantVideo(){if(role==='display'&&conn&&conn.open){try{conn.send(JSON.stringify({type:'video',on:!!(mode&&mode.needVideo)}));}catch(e){}}}
+let vcall=null;
 const CDN={peer:['https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'],
   qr:['https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js','https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js','https://unpkg.com/qrcode-generator@1.4.4/qrcode.js']};
 const loaded={};
@@ -1803,9 +2013,10 @@ function enterDisplay(){role='display';hideIntro();useDemo();link.hidden=false;l
   Promise.all([loadScript(CDN.peer,()=>!!window.Peer),loadScript(CDN.qr,()=>!!window.qrcode).catch(()=>{})]).then(createHostPeer).catch(()=>{linkErr.hidden=false;linkErr.textContent='연결 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요. (단독 모드는 인터넷 없이도 됩니다)';});}
 function createHostPeer(){if(peer){try{peer.destroy();}catch(e){}}code=genCode();peer=new window.Peer('gyeol-'+code,{debug:0});
   peer.on('open',()=>{codeText.textContent=code;renderQR();linkErr.hidden=true;});
+  peer.on('call',call=>{try{if(RV.call)try{RV.call.close();}catch(e){}RV.call=call;call.answer();call.on('stream',st=>{RV.el.srcObject=st;RV.el.play().catch(()=>{});RV.on=true;});call.on('close',()=>{if(RV.call===call){RV.on=false;RV.call=null;}});call.on('error',()=>{RV.on=false;});}catch(e){}});
   peer.on('connection',c=>{if(conn&&conn.open){try{c.close();}catch(e){}return;}conn=c;
-    c.on('open',()=>{onSensorConnected();sendHello();});
-    c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info')setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));else if(m.type==='pose'&&Array.isArray(m.L))FACE.rpose={L:m.L,t:performance.now()};}catch(e){}}
+    c.on('open',()=>{onSensorConnected();sendHello();wantVideo();});
+    c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info'){setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));RV.mirror=m.mirror!=null?!!m.mirror:m.facing==='user';}else if(m.type==='pose'&&Array.isArray(m.L))FACE.rpose={L:m.L,t:performance.now()};}catch(e){}}
       else if(d instanceof ArrayBuffer)decodePacket(d);else if(d&&d.buffer instanceof ArrayBuffer)decodePacket(d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength));else if(typeof Blob!=='undefined'&&d instanceof Blob)d.arrayBuffer().then(decodePacket);});
     c.on('close',()=>onSensorLost(c));c.on('error',()=>onSensorLost(c));});
   peer.on('error',err=>{if(err&&err.type==='unavailable-id'){createHostPeer();return;}linkErr.hidden=false;linkErr.textContent='중계 서버 오류: '+((err&&err.type)||'unknown')+'. 인터넷 연결을 확인하고 새로고침해 주세요.';});
@@ -1829,8 +2040,9 @@ async function joinDisplay(kind){const c=(codeInput.value||'').trim().toUpperCas
   if(peer){try{peer.destroy();}catch(e){}}
   peer=new window.Peer({debug:0});
   peer.on('open',()=>{const cn=peer.connect('gyeol-'+c,{serialization:'raw',reliable:false});conn=cn;
-    cn.on('open',()=>{sensorStatus.textContent='연결됨 · 데이터 전송 중';sMsg('');try{cn.send(JSON.stringify({type:'info',facing:S.facing}));}catch(e){}});
-    cn.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='hello'&&m.aspect){const g=gridFor(m.aspect,m.cells||6000);if(g[0]!==A.w||g[1]!==A.h){allocAnalyzer(g[0],g[1]);resetAnalysis();}}}catch(e){}}});
+    cn.on('open',()=>{sensorStatus.textContent='연결됨 · 데이터 전송 중';sMsg('');try{cn.send(JSON.stringify({type:'info',facing:S.facing,mirror:S.mirror}));}catch(e){}});
+    cn.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='hello'&&m.aspect){const g=gridFor(m.aspect,m.cells||6000);if(g[0]!==A.w||g[1]!==A.h){allocAnalyzer(g[0],g[1]);resetAnalysis();}}
+      else if(m.type==='video'){if(m.on&&!vcall&&stream){try{vcall=peer.call('gyeol-'+c,stream);vcall.on('close',()=>{vcall=null;});}catch(e){vcall=null;}}else if(!m.on&&vcall){try{vcall.close();}catch(e){}vcall=null;}}}catch(e){}}});
     cn.on('close',()=>{if(conn===cn){conn=null;sensorStatus.textContent='화면과 연결이 끊겼어요';sMsg('화면 쪽이 닫혔거나 네트워크가 끊겼어요. 다시 연결해 주세요.');sensorJoin.hidden=false;}});
     cn.on('error',()=>{sMsg('연결 오류가 났어요. 코드를 확인하고 다시 시도해 주세요.');});});
   peer.on('error',err=>{const t=(err&&err.type)||'';if(t==='peer-unavailable')sMsg('코드 '+c+' 화면을 찾지 못했어요. 화면 쪽에 표시된 코드와 인터넷 연결을 확인해 주세요.');else sMsg('중계 서버 오류: '+t+'. 인터넷 연결을 확인해 주세요.');sensorJoin.hidden=false;});}
@@ -1840,7 +2052,7 @@ $('#btnJoinBack').addEventListener('click',()=>joinDisplay('environment'));
 $('#btnJoinDemo').addEventListener('click',()=>joinDisplay('demo'));
 $('#btnSensorHome').addEventListener('click',()=>{leaveSensor();showIntro('');});
 $('#sLeave').addEventListener('click',()=>{leaveSensor();showIntro('');});
-$('#sFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'environment':'user';try{await startCamera(f);try{conn&&conn.open&&conn.send(JSON.stringify({type:'info',facing:f}));}catch(e){}}catch(e){sMsg(camError(e));}});
+$('#sFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'environment':'user';try{await startCamera(f);try{conn&&conn.open&&conn.send(JSON.stringify({type:'info',facing:f,mirror:S.mirror}));}catch(e){}}catch(e){sMsg(camError(e));}});
 $('#sMirror').addEventListener('click',()=>{S.mirror=!S.mirror;resetAnalysis();save();toast(S.mirror?'좌우 반전 켬':'좌우 반전 끔');});
 $('#sDetect').addEventListener('click',()=>{S.detect=S.detect==='motion'?'presence':'motion';resetBackground();save();syncCtl();toast(S.detect==='motion'?'움직이는 것만 감지해요':'정지한 사람도 잡아요 (카메라 앞을 비우고 배경 다시 잡기)');});
 $('#sBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
