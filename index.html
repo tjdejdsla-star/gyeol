@@ -528,7 +528,7 @@ const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,fti
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='drops'||id==='space'||id==='poem'||id==='aura',wantPose=wantFace||id==='string'||id==='stars',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='drops'||id==='space'||id==='poem'||id==='aura',wantPose=wantFace||id==='string'||id==='stars'||id==='comb'||id==='frost',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&now-FACE.plast>70){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
@@ -705,6 +705,117 @@ function largestFace(){if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detectio
   return best;}
 
 /* 시선의 온도: a cold still scene; a held gaze warms it and flowers grow where the viewer looks */
+/* smooth silhouette: bilinear upsampling of a coarse person field with a smoothstep edge, so contours are smooth instead of grid steps */
+function upsampleMask(m,gw,gh,s,lo,hi,rgb,cv){const sw=Math.max(1,gw*s),sh=Math.max(1,gh*s);if(!cv||cv.width!==sw||cv.height!==sh){cv=mkCanvas(sw,sh);cv.img=null;}if(!cv.img)cv.img=cv.cx.createImageData(sw,sh);
+  const d=cv.img.data,mw=gw-1.001,mh=gh-1.001,inv=1/(hi-lo),r=rgb[0],g=rgb[1],b=rgb[2];
+  for(let y=0;y<sh;y++){let gy=(y+0.5)/s-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,o0=y0*gw,o1=o0+gw;
+    for(let x=0;x<sw;x++){let gx=(x+0.5)/s-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0;
+      const v=(m[o0+x0]*(1-fx)+m[o0+x0+1]*fx)*(1-fy)+(m[o1+x0]*(1-fx)+m[o1+x0+1]*fx)*fy;let a=(v-lo)*inv;a=a<0?0:a>1?1:a;a=a*a*(3-2*a);
+      const q=(y*sw+x)*4;d[q]=r;d[q+1]=g;d[q+2]=b;d[q+3]=a*255;}}
+  cv.cx.putImageData(cv.img,0,0);return cv;}
+
+/* 결: hundreds of threads of light hang across the wall; a moving hand combs them aside, and they ease slowly back */
+const mComb={id:'comb',name:'결',desc:'벽 가득 드리운 빛의 실들. 멈춰 선 사람이 손을 흔들면 빗질하듯 쓸려 넘어가고, 걷는 몸에는 반응하지 않는다. 실은 겹치지 않고 밀려 모였다가 천천히 돌아온다',
+  init(){const n=isTouch?150:Math.round(clamp(W/5,170,400));this.n=n;this.m=isTouch?52:64;const N=n*this.m;this.sp=W/(n+1);this.x0=new Float32Array(n);this.dx=new Float32Array(N);this.vx=new Float32Array(N);
+    for(let i=0;i<n;i++)this.x0[i]=this.sp*(i+1)+(hash2(i,7)-0.5)*this.sp*0.3;this.U=new Float32Array(A.n);this.E=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.f=0;},
+  clear(){this.dx.fill(0);this.vx.fill(0);},
+  handField(){const w=A.w,h=A.h,E=this.E,U=this.U;E.fill(0);U.fill(0);this.wr=this.wr||{};this.state='idle';
+    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2||(tr.hits||0)<4)return;const hs=tr.hist,n=hs.length;if(n<6)return;
+      // standing still: the body's centre (the hips, when the pose model runs) has barely moved over the last few updates
+      const a=hs[n-1],b=hs[n-6];if(Math.hypot(a[0]-b[0],a[1]-b[1])>W*0.03)return;this.state='ready';
+      if(tr.pose){[15,16,19,20].forEach(j=>{const q=tr.pose[j];const key=tr.id+'_'+j,pv=this.wr[key];if(!q||q.v<0.5){delete this.wr[key];return;}
+          if((this.f&1)===0){this.wr[key]={x:q.x,y:q.y,vx:pv?(q.x-pv.x)/2:0};}const cur=this.wr[key];if(!cur||Math.abs(cur.vx)<0.6)return;
+          // splat the hand's velocity into the field around the wrist
+          const R=Math.max(2,(tr.h*0.11)/A.sx),cx=cur.x/A.sx,cy=cur.y/A.sy,vg=cur.vx/A.sx;
+          for(let y=Math.max(0,(cy-R)|0);y<=Math.min(h-1,(cy+R)|0);y++)for(let x=Math.max(0,(cx-R)|0);x<=Math.min(w-1,(cx+R)|0);x++){const d2=((x-cx)**2+(y-cy)**2)/(R*R);if(d2>1)continue;const wgt=(1-d2)*0.9,i=y*w+x;E[i]+=wgt;U[i]+=vg*wgt;}});}
+      else{ // no pose model: motion in the upper part of a still person's box (arms and hands)
+        const x0=clamp(((tr.x-tr.w*0.3)/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w*1.3)/A.sx)|0,0,w-1),y0=clamp(((tr.y-tr.h*0.1)/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h*0.62)/A.sy)|0,0,h-1);
+        for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x,e=A.e[i];if(e<0.12)continue;E[i]=e;U[i]=A.u[i]*e;}}});},
+  draw(t,dt){this.f++;const n=this.n,m=this.m,dx=this.dx,vx=this.vx,x0=this.x0,sp=this.sp,w=A.w,h=A.h,U=this.U,E=this.E,g=gainF();
+    // the hand: only someone standing still and moving a hand combs the threads; a walking body does not
+    if((this.f&1)===0)TR.update();this.handField();box5(E,this.tmp,w,h);box5(U,this.tmp,w,h);box5(E,this.tmp,w,h);box5(U,this.tmp,w,h);
+    const y0=-H*0.02,yh=H*1.04/(m-1),kx=w/W,ky=h/H;
+    for(let i=0;i<n;i++){const base=i*m,xi=x0[i];for(let j=0;j<m;j++){const k=base+j,x=xi+dx[k],y=y0+j*yh;
+        let cx=(x*kx)|0,cy=(y*ky)|0;cx=cx<0?0:cx>=w?w-1:cx;cy=cy<0?0:cy>=h?h-1:cy;const c=cy*w+cx,e=E[c];
+        let v=vx[k];if(e>0.03){let hv=U[c]/(e+1e-4)*A.sx*g;const lim=W*0.012;hv=hv<-lim?-lim:hv>lim?lim:hv;const s=Math.min(1,e*1.4)*0.22;v+=(hv-v)*s;}vx[k]=v;}}
+    // a thread is stiff: the push spreads far along its length, so it bends in one long sweep from top to bottom
+    for(let it=0;it<14;it++)for(let i=0;i<n;i++){const b=i*m;let prev=vx[b];vx[b]+=(vx[b+1]-vx[b])*0.5;for(let j=1;j<m-1;j++){const k=b+j,cur=vx[k];vx[k]+=((prev+vx[k+1])*0.5-cur)*0.5;prev=cur;}vx[b+m-1]+=(prev-vx[b+m-1])*0.5;}
+    const DL=W*0.16;for(let k=0;k<n*m;k++){const d=dx[k],far=Math.abs(d)/DL;const v=vx[k]*0.965-d*(0.0026+0.006*far*far);vx[k]=v;dx[k]=clamp(d+v,-DL*1.4,DL*1.4);}
+    for(let it=0;it<2;it++)for(let i=0;i<n;i++){const b=i*m;for(let j=1;j<m-1;j++){const k=b+j;dx[k]+=(dx[k-1]+dx[k+1]-2*dx[k])*0.35;}dx[b]+=(dx[b+1]-dx[b])*0.35;dx[b+m-1]+=(dx[b+m-2]-dx[b+m-1])*0.35;}
+    // threads never cross: they bunch up and push their neighbours instead
+    const g0=sp*0.22;for(let it=0;it<2;it++)for(let j=0;j<m;j++)for(let i=0;i<n-1;i++){const a=i*m+j,b=a+m,gap=(x0[i+1]+dx[b])-(x0[i]+dx[a]);if(gap<g0){const c=(g0-gap)*0.5;dx[a]-=c;dx[b]+=c;const av=(vx[a]+vx[b])*0.5;vx[a]=av;vx[b]=av;}}
+    // render: a projected wall. Bright threads of light on a dark ground, brightest in the middle of the beam
+    ctx.fillStyle='#0d0f10';ctx.fillRect(0,0,W,H);
+    const pth=new Path2D(),amb=t*0.35;
+    for(let i=0;i<n;i++){const base=i*m,xi=x0[i],sw=0.9*Math.sin(amb+i*0.045);pth.moveTo(xi+dx[base]+sw,y0);for(let j=1;j<m;j++)pth.lineTo(xi+dx[base+j]+sw*Math.cos(j*0.06),y0+j*yh);}
+    ctx.lineCap='butt';ctx.lineJoin='round';ctx.lineWidth=clamp(sp*0.42,1,2.6);ctx.strokeStyle='rgba(232,242,240,0.92)';ctx.stroke(pth);
+    const v=ctx.createRadialGradient(W/2,H*0.5,Math.min(W,H)*0.25,W/2,H*0.5,Math.max(W,H)*0.72);v.addColorStop(0,'rgba(6,8,9,0)');v.addColorStop(1,'rgba(6,8,9,0.55)');ctx.fillStyle=v;ctx.fillRect(0,0,W,H);
+  }};
+/* 빛벽: a wall of glowing frosted blocks lit from behind; the person's shadow falls on it block by block */
+const mBlocks={id:'blocks',name:'빛벽',desc:'뒤에서 빛이 비치는 반투명 블록 벽. 사람의 그림자가 블록 단위로 드리워지고, 경계의 블록은 반쯤만 어두워진다',
+  init(){this.cols=isTouch?14:Math.round(clamp(W/56,16,30));this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);const n=this.cols*this.rows;this.d=new Float32Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
+    // one block, pre-rendered: a softly lit square face, brighter in the middle, a darker rim where the frosted edges meet
+    const c=Math.max(4,Math.round(this.cell*DPR)),s=mkCanvas(c,c),x=s.cx,g=x.createRadialGradient(c*0.5,c*0.45,c*0.05,c*0.5,c*0.5,c*0.72);g.addColorStop(0,'#fffcf3');g.addColorStop(0.6,'#f4efe4');g.addColorStop(1,'#ddd5c6');
+    x.fillStyle=g;const r=c*0.08,i=Math.max(1,c*0.03);x.beginPath();if(x.roundRect)x.roundRect(i,i,c-2*i,c-2*i,r);else x.rect(i,i,c-2*i,c-2*i);x.fill();this.sprite=s;this.fine=null;},
+  draw(t){const cols=this.cols,rows=this.rows,c=this.cell,d=this.d,w=A.w,h=A.h,pb=this.pb;ctx.fillStyle='#2a2824';ctx.fillRect(0,0,W,H);
+    // the shadow is a little larger and softer than the person, as from a lamp behind the viewer
+    pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
+    const pS=(x,y)=>{let cx=(x*w/W)|0,cy=(y*h/H)|0;cx=cx<0?0:cx>=w?w-1:cx;cy=cy<0?0:cy>=h?h-1:cy;return pb[cy*w+cx];};
+    for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const i=r*cols+k,x=k*c,y=r*c;let m=0;for(let a=0;a<3;a++)for(let b=0;b<3;b++)m+=pS(x+c*(a+0.5)/3,y+c*(b+0.5)/3);m/=9;d[i]+=(m-d[i])*0.3;
+      const glow=0.94+0.06*hash2(k,r)-0.38*Math.pow(Math.hypot(((k+0.5)/cols-0.5)*1.1,(r+0.5)/rows-0.42),1.6);ctx.globalAlpha=clamp(glow,0.5,1);ctx.drawImage(this.sprite,x,y,c,c);}
+    ctx.globalAlpha=1;
+    // blocks under the shadow darken as a whole; a soft trace of the exact outline shows through the blocks on the edge
+    for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const v=d[r*cols+k];if(v<0.03)continue;const a=clamp(v*1.25,0,1)*0.78;ctx.fillStyle='rgba(44,41,37,'+a.toFixed(3)+')';const i=Math.max(1,c*0.03);ctx.fillRect(k*c+i,r*c+i,c-2*i,c-2*i);}
+    this.fine=upsampleMask(pb,w,h,2,0.3,0.75,[40,37,33],this.fine);ctx.globalAlpha=0.35;ctx.imageSmoothingEnabled=true;ctx.drawImage(this.fine,0,0,W,H);ctx.globalAlpha=1;
+    // the dark seams between blocks stay dark
+    ctx.strokeStyle='rgba(30,28,25,0.45)';ctx.lineWidth=Math.max(1,c*0.035);ctx.beginPath();for(let k=1;k<cols;k++){ctx.moveTo(k*c,0);ctx.lineTo(k*c,H);}for(let r=1;r<rows;r++){ctx.moveTo(0,r*c);ctx.lineTo(W,r*c);}ctx.stroke();
+  }};
+
+/* 유리: people behind a frosted glass screen. Whoever is close to the glass is dark and sharp, whoever is far is a pale blur;
+   hands raised against the glass come through warm */
+const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 유리에 가까운 사람은 짙고 또렷하게, 먼 사람은 옅게 번진다. 유리에 댄 손은 붉게 비친다',
+  init(){this.s1=null;this.b1=mkCanvas(Math.max(2,A.w>>1),Math.max(2,A.h>>1));this.b2=mkCanvas(Math.max(2,(A.w/5)|0),Math.max(2,(A.h/5)|0));this.mid=mkCanvas(Math.max(2,A.w*2),Math.max(2,A.h*2));this.hand=mkCanvas(2,2);this.f=0;
+    this.grain=mkCanvas(200,200);const g=this.grain.cx.createImageData(200,200);for(let i=0;i<g.data.length;i+=4){const v=128+(Math.random()-0.5)*90;g.data[i]=g.data[i+1]=g.data[i+2]=v;g.data[i+3]=16;}this.grain.cx.putImageData(g,0,0);},
+  blurred(src,small,out){ // downsample then upsample twice: a cheap, smooth wide blur that also works on iPhone Safari
+    const s=small.cx;s.setTransform(1,0,0,1,0,0);s.clearRect(0,0,small.width,small.height);s.imageSmoothingEnabled=true;s.drawImage(src,0,0,small.width,small.height);
+    const o=out.cx;o.setTransform(1,0,0,1,0,0);o.clearRect(0,0,out.width,out.height);o.imageSmoothingEnabled=true;o.drawImage(small,0,0,out.width,out.height);return out;},
+  draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();
+    // the lit glass: a pale blue-white field, brightest low in the middle, falling to deep blue at the top
+    let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#16273a');g.addColorStop(0.28,'#8fa9bd');g.addColorStop(0.62,'#e4edf1');g.addColorStop(1,'#b9cad6');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    g=ctx.createRadialGradient(W*0.5,H*0.62,Math.min(W,H)*0.05,W*0.5,H*0.6,Math.max(W,H)*0.6);g.addColorStop(0,'rgba(255,255,255,0.65)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    const ink=[12,24,36];this.s1=upsampleMask(A.p,A.w,A.h,2,0.32,0.62,ink,this.s1);
+    const b1=this.blurred(this.s1,this.b1,this.mid),B1=mkCanvas(this.mid.width,this.mid.height);B1.cx.drawImage(b1,0,0);const B2=this.blurred(this.s1,this.b2,this.mid);
+    ctx.imageSmoothingEnabled=true;const people=PEOPLE.list;
+    if(!people.length){ctx.globalAlpha=0.55;ctx.drawImage(B2,0,0,W,H);ctx.globalAlpha=1;}
+    people.forEach(pp=>{const near=pp.near,x=pp.bx-pp.bw*0.25,y=pp.by-pp.bh*0.15,w=pp.bw*1.5,h=pp.bh*1.35;ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+      ctx.globalAlpha=0.35+0.25*(1-near);ctx.drawImage(B2,0,0,W,H);ctx.globalAlpha=0.25+0.55*near;ctx.drawImage(B1,0,0,W,H);ctx.globalAlpha=Math.pow(near,1.6)*0.85;ctx.drawImage(this.s1,0,0,W,H);ctx.restore();ctx.globalAlpha=1;});
+    // hands against the glass: sharper and warm, where the pose model finds a wrist of a near person
+    TR.tracks.forEach(tr=>{if(!tr.pose||TR.f-tr.seen>2)return;const near=clamp((tr.h/H-0.2)/0.75,0,1);if(near<0.35)return;[[15,19],[16,20]].forEach(([wr,ix])=>{const a=tr.pose[wr],b=tr.pose[ix];if(!a||a.v<0.5)return;
+      const cx=b&&b.v>0.4?(a.x*0.4+b.x*0.6):a.x,cy=b&&b.v>0.4?(a.y*0.4+b.y*0.6):a.y,r=tr.h*0.085,S1=this.s1,k=S1.width/W;
+      if(this.hand.width!==S1.width||this.hand.height!==S1.height)this.hand=mkCanvas(S1.width,S1.height);const hc=this.hand.cx;hc.setTransform(1,0,0,1,0,0);hc.globalCompositeOperation='source-over';hc.clearRect(0,0,S1.width,S1.height);hc.drawImage(S1,0,0);
+      hc.globalCompositeOperation='source-in';hc.fillStyle='#b9513a';hc.fillRect(0,0,S1.width,S1.height);hc.globalCompositeOperation='destination-in';const hg=hc.createRadialGradient(cx*k,cy*k,0,cx*k,cy*k,r*k);hg.addColorStop(0,'rgba(0,0,0,1)');hg.addColorStop(0.65,'rgba(0,0,0,0.85)');hg.addColorStop(1,'rgba(0,0,0,0)');hc.fillStyle=hg;hc.fillRect(0,0,S1.width,S1.height);hc.globalCompositeOperation='source-over';
+      ctx.globalAlpha=0.9*near;ctx.drawImage(this.hand,0,0,W,H);ctx.globalAlpha=1;});});
+    // frost: a faint grain and a soft sheen over everything
+    ctx.globalAlpha=1;const pat=ctx.createPattern(this.grain,'repeat');ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);
+    g=ctx.createLinearGradient(0,0,W,0);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(0.5,'rgba(255,255,255,0.05)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }};
+
+/* 골유리: the scene seen through reeded glass. Each horizontal rib is a small cylindrical lens; the ribs are cut into tiles that shift slightly */
+const mReeded={id:'reeded',name:'골유리',desc:'골이 진 유리 너머로 보이는 장면. 가로 골마다 상이 늘어나고 어긋나며, 조각 유리처럼 잘게 엇갈린다',
+  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.src=mkCanvas(tw,th);this.T=mkCanvas(tw,th);this.ribs=Math.round(clamp(H/26,16,40));this.cols=Math.round(clamp(W/36,18,48));
+    const bh=H/this.ribs,p=mkCanvas(8,Math.max(4,Math.round(bh*DPR))),x=p.cx,g=x.createLinearGradient(0,0,0,p.height);g.addColorStop(0,'rgba(0,0,0,0.38)');g.addColorStop(0.12,'rgba(255,255,255,0.18)');g.addColorStop(0.5,'rgba(255,255,255,0)');g.addColorStop(0.9,'rgba(0,0,0,0.12)');g.addColorStop(1,'rgba(0,0,0,0.3)');
+    x.fillStyle=g;x.fillRect(0,0,8,p.height);this.rib=p;},
+  draw(t){drawFrameTo(this.src);const S=this.src,T=this.T.cx,ribs=this.ribs,bh=H/ribs,k=DPR,step=3;T.setTransform(1,0,0,1,0,0);T.fillStyle='#5f8088';T.fillRect(0,0,this.T.width,this.T.height);
+    // each rib magnifies a narrow band around its centre and nudges it sideways
+    for(let y=0;y<H;y+=step){const r=Math.floor(y/bh),u=(y-r*bh)/bh,sy=r*bh+bh*(0.5+(u-0.5)*0.45)+Math.sin(r*1.9)*bh*0.25,sx=Math.sin(r*2.3)*W*0.018+(u-0.5)*W*0.012;
+      T.drawImage(S,clamp(sx,0,W*0.1)*k,clamp(sy,0,H-1)*k,W*k*0.98,step*0.45*k,0,y*k,W*k,step*k);}
+    // the ribs are also cut into tiles that sit slightly out of line with each other
+    const cols=this.cols,cw=W/cols;ctx.fillStyle='#5f8088';ctx.fillRect(0,0,W,H);
+    for(let r=0;r<ribs;r++)for(let c=0;c<cols;c++){const ox=(hash2(c,r)-0.5)*cw*0.6,oy=(hash2(r,c+31)-0.5)*bh*0.35;ctx.drawImage(this.T,(c*cw+ox)*k,clamp(r*bh+oy,0,H-bh)*k,cw*k,bh*k,c*cw,r*bh,cw+0.5,bh+0.5);}
+    // glass tone: cool teal, a little washed out, and the light and dark edge of every rib
+    ctx.save();ctx.globalCompositeOperation='color';ctx.fillStyle='rgba(84,150,160,0.26)';ctx.fillRect(0,0,W,H);ctx.globalCompositeOperation='screen';ctx.fillStyle='rgba(60,96,104,0.22)';ctx.fillRect(0,0,W,H);ctx.restore();
+    for(let r=0;r<ribs;r++)ctx.drawImage(this.rib,0,0,8,this.rib.height,0,r*bh,W,bh);
+  }};
 const mGaze={id:'gaze',name:'시선',desc:'검은 실루엣이 카메라를 바라보는 동안 안쪽부터 따뜻한 색으로 물든다',
   init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.mask=mkCanvas(A.w,A.h);this.comp=mkCanvas(tw,th);this.warmth={};this.f=0;},
   draw(t,dt){this.f++;if((this.f&1)===0)TR.update();
@@ -718,7 +829,7 @@ const mGaze={id:'gaze',name:'시선',desc:'검은 실루엣이 카메라를 바�
       const w=warm[tr.id]||0;warm[tr.id]=clamp(w+(gazing?dt/9:-dt/6),0,1);});
     Object.keys(warm).forEach(k=>{if(!alive[k]){warm[k]=Math.max(0,warm[k]-dt/5);if(warm[k]<=0)delete warm[k];}});
     // silhouettes: black, then warmth painted only inside each silhouette, rising from the centre
-    buildMask(this.mask,null,A.p,0.35,5);const tw=this.comp.width,th=this.comp.height,c=this.comp.cx;c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='source-over';c.clearRect(0,0,tw,th);c.imageSmoothingEnabled=true;c.drawImage(this.mask,0,0,tw,th);
+    this.mask=upsampleMask(A.p,A.w,A.h,isTouch?3:4,0.34,0.56,[255,255,255],this.mask);const tw=this.comp.width,th=this.comp.height,c=this.comp.cx;c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='source-over';c.clearRect(0,0,tw,th);c.imageSmoothingEnabled=true;c.drawImage(this.mask,0,0,tw,th);
     c.globalCompositeOperation='source-in';c.fillStyle='#2c3d5a';c.fillRect(0,0,tw,th);
     c.globalCompositeOperation='source-atop';c.setTransform(DPR,0,0,DPR,0,0);
     TR.tracks.forEach(tr=>{const w=warm[tr.id]||0;if(w<0.01)return;const e=1-Math.pow(1-w,2);
@@ -981,7 +1092,8 @@ const mDrops={id:'drops',name:'물방울',desc:'사람마다 물방울 하나. �
 /* 등고선: the people raise hills on a slowly flowing terrain; the whole screen is drawn as map contours (or wood grain) */
 const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언덕처럼 솟고, 화면 전체가 지도의 등고선처럼 그 주위를 감싸 흐른다',
   init(){this.up=isTouch?1:2;this.gw=A.w*this.up;this.gh=A.h*this.up;this.hf=new Float32Array(this.gw*this.gh);this.pb=new Float32Array(A.n);this.mem=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
-  draw(t){const P=pal(),w=A.w,h=A.h,pb=this.pb,mem=this.mem,gw=this.gw,gh=this.gh,up=this.up,hf=this.hf;
+  draw(t){const P=pal(),w=A.w,h=A.h,pb=this.pb,mem=this.mem,gw=this.gw,gh=this.gh,up=this.up,hf=this.hf;this.fc=(this.fc||0)+1;
+    if(this.cache&&(this.fc&1)){paper(P.light?'#f3f0e8':P.bg);this.stroke(this.cache,P);return;}
     pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
     for(let i=0;i<A.n;i++){const v=pb[i]*0.5;mem[i]=mem[i]*0.996>v?mem[i]*0.996:v;}
     if(!this.ter||this.ter.length!==A.n)this.ter=new Float32Array(A.n);if((this.f=(this.f||0)+1)%3===1)for(let yy=0;yy<h;yy++){const v=yy/h;for(let xx=0;xx<w;xx++){const u=xx/w;this.ter[yy*w+xx]=0.17*(0.5*Math.sin(u*7.1+t*0.05+Math.sin(v*3.3+t*0.02)*1.3)+0.35*Math.sin(v*9.7-t*0.04+u*2.1)+0.22*Math.sin((u*1.3+v)*13.3+t*0.03));}}
@@ -1001,10 +1113,10 @@ const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언�
         switch(ca){case 1:case 14:seg(li,x,lY,bX,y+1);break;case 2:case 13:seg(li,bX,y+1,x+1,rY);break;case 3:case 12:seg(li,x,lY,x+1,rY);break;
           case 4:case 11:seg(li,tX,y,x+1,rY);break;case 6:case 9:seg(li,tX,y,bX,y+1);break;case 7:case 8:seg(li,x,lY,tX,y);break;
           case 5:seg(li,x,lY,tX,y);seg(li,bX,y+1,x+1,rY);break;case 10:seg(li,tX,y,x+1,rY);seg(li,x,lY,bX,y+1);break;}}}
-    ctx.lineCap='round';ctx.lineJoin='round';
-    ctx.strokeStyle=rgba(ink,0.38);ctx.lineWidth=0.8;ctx.stroke(thin);
-    ctx.strokeStyle=rgba(ink,0.75);ctx.lineWidth=1.4;ctx.stroke(bold);
-    ctx.strokeStyle=rgba(acc,0.85);ctx.lineWidth=1.1;ctx.stroke(hill);
+    this.cache={thin,bold,hill};this.stroke(this.cache,P);
+  },
+  stroke(c,P){const ink=P.light?'#2a2722':P.fg[0],acc=P.light?'#b2442c':P.fg[1];ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.strokeStyle=rgba(ink,0.38);ctx.lineWidth=0.8;ctx.stroke(c.thin);ctx.strokeStyle=rgba(ink,0.75);ctx.lineWidth=1.4;ctx.stroke(c.bold);ctx.strokeStyle=rgba(acc,0.85);ctx.lineWidth=1.1;ctx.stroke(c.hill);
   }};
 
 /* 실: pins around the frame; each thread runs from its pin to the outline of the nearest person and trembles when they move */
@@ -1229,7 +1341,7 @@ const mPoem={id:'poem',name:'시',desc:'앞에 가만히 서 있으면 그 사�
     else if(tr){const pad=Math.max(tr.w,tr.h)*0.05;box=[Math.max(0,tr.x-pad),Math.max(0,tr.y-pad),0,0];box[2]=Math.min(W,tr.x+tr.w+pad)-box[0];box[3]=Math.min(H,tr.y+tr.h+pad)-box[1];
       const gx0=(box[0]/A.sx)|0,gy0=(box[1]/A.sy)|0,gx1=Math.min(A.w-1,((box[0]+box[2])/A.sx)|0),gy1=Math.min(A.h-1,((box[1]+box[3])/A.sy)|0);gw=gx1-gx0+1;gh=gy1-gy0+1;m=new Float32Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++)m[y*gw+x]=A.p[(gy0+y)*A.w+gx0+x];}
     if(m&&gw>2&&gh>2){const sc=Math.min(lw*0.92/box[2],lh*0.84/box[3]),dw=Math.round(box[2]*sc),dh=Math.round(box[3]*sc),dx=Math.round((lw-dw)/2),dy=Math.round(lh*0.93-dh);
-      if(this.sil.width!==gw||this.sil.height!==gh)this.sil=mkCanvas(gw,gh);const img=this.sil.cx.createImageData(gw,gh);for(let i=0;i<gw*gh;i++){let a=(m[i]-0.4)*6;a=a<0?0:a>1?1:a;img.data[i*4]=20;img.data[i*4+1]=32;img.data[i*4+2]=240;img.data[i*4+3]=a*255;}this.sil.cx.putImageData(img,0,0);
+      if(!(this.state!=='idle'&&this.silFor===this.snap)){this.sil=upsampleMask(m,gw,gh,clamp(Math.round(dw/gw),1,6),0.4,0.6,[20,32,240],this.sil);this.silFor=this.state!=='idle'?this.snap:null;}
       // torso width (median extents across the chest rows) and the body's top and bottom, in screen pixels
       let top=-1,bot=-1;const Ls=[],Rs=[];for(let y=0;y<gh;y++){let l=-1,r=-1;for(let x=0;x<gw;x++)if(m[y*gw+x]>0.5){if(l<0)l=x;r=x;}if(l>=0){if(top<0)top=y;bot=y;if(y>gh*0.2&&y<gh*0.52){Ls.push(l);Rs.push(r);}}}
       if(top>=0){Ls.sort((a,b)=>a-b);Rs.sort((a,b)=>a-b);const ml=Ls.length?Ls[Ls.length>>1]:0,mr=Rs.length?Rs[Rs.length>>1]:gw-1;
@@ -1293,14 +1405,14 @@ const mFill={id:'fill',name:'채움',desc:'카메라 속 공간은 그대로 두
   init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.src=mkCanvas(tw,th);this.mk=mkCanvas(A.w,A.h);this.big=mkCanvas(Math.max(1,Math.round(W/2)),Math.max(1,Math.round(H/2)));},
   draw(t){drawFrameTo(this.src);ctx.drawImage(this.src,0,0,W,H);
     // a clean, slightly soft-edged mask scaled up smoothly, then flooded with yellow
-    buildMask(this.mk,null,A.p,0.4,5);const b=this.big.cx,bw=this.big.width,bh=this.big.height;b.setTransform(1,0,0,1,0,0);b.globalCompositeOperation='source-over';b.clearRect(0,0,bw,bh);b.imageSmoothingEnabled=true;b.filter='blur(1px)';b.drawImage(this.mk,0,0,bw,bh);b.filter='none';
+    this.mk=upsampleMask(A.p,A.w,A.h,isTouch?3:4,0.38,0.58,[255,255,255],this.mk);const b=this.big.cx,bw=this.big.width,bh=this.big.height;b.setTransform(1,0,0,1,0,0);b.globalCompositeOperation='source-over';b.clearRect(0,0,bw,bh);b.imageSmoothingEnabled=true;b.drawImage(this.mk,0,0,bw,bh);
     b.globalCompositeOperation='source-in';const g=b.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#fcf86e');g.addColorStop(1,'#f8f262');b.fillStyle=g;b.fillRect(0,0,bw,bh);b.globalCompositeOperation='source-over';
     ctx.drawImage(this.big,0,0,W,H);
   }};
 function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analysis, at a tiny size (one pixel per dot)
   const c=cv.cx;c.setTransform(1,0,0,1,0,0);const el=source.el;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!el||A.remote||!sw||!sh){c.fillStyle='#777';c.fillRect(0,0,w,h);return;}
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;c.save();if(S.mirror){c.translate(w,0);c.scale(-1,1);}c.imageSmoothingEnabled=true;try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(e){}c.restore();}
-const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mPixel,mWave,mAscii,mCurtain,mSketch,mDrops,mTrail,mSpace,mContour,mString,mStars,mRefract,mSlit,mDetect,mPoem,mAura,mFill];
+const MODES=[mComb,mGaze,mShapes,mDots,mDotm,mColorDots,mPixel,mWave,mAscii,mCurtain,mSketch,mDrops,mTrail,mSpace,mContour,mString,mStars,mRefract,mSlit,mBlocks,mFrost,mReeded,mDetect,mPoem,mAura,mFill];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1310,7 +1422,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`~';
+const KEYS='1234567890-=[]\\;\',./`~qwer';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
