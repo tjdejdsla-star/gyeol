@@ -902,14 +902,16 @@ const mSketch={id:'sketch',name:'스케치',desc:'윤곽을 따라가는 연필�
   }};
 
 /* 물방울: each person is a water drop; drops that come close pull together and merge */
-const mDrops={id:'drops',name:'물방울',desc:'사람 한 명 한 명이 물방울이 되고, 가까워지면 서로 끌려 합쳐진다',
+const mDrops={id:'drops',name:'물방울',desc:'사람 한 명 한 명이 물방울이 된다. 가까운 사람은 크고 진하게, 먼 사람은 작고 연하게',
   init(){this.s=isTouch?3:4;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;this.blobs={};},
-  draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const P=pal(),rw=this.rw,rh=this.rh,minR=Math.min(W,H)*0.06,maxR=Math.min(W,H)*0.14,blobs=this.blobs,f=this.f;
-    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;const want=clamp(Math.sqrt(tr.w*tr.h)*0.34,minR,maxR);let b=blobs[tr.id];
+  draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const P=pal(),rw=this.rw,rh=this.rh,minR=Math.min(W,H)*0.05,maxR=Math.min(W,H)*0.14,blobs=this.blobs,f=this.f;
+    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;
+      // distance from the camera, read from how tall the person stands in the frame: tall = near, short = far
+      const near=clamp((tr.h/H-0.2)/0.75,0,1),want=lerp(minR,maxR,near);let b=blobs[tr.id];
       if(!b){ // a track that restarts next to a fading drop takes that drop over instead of popping a new one
         let best=null,bk=null,bd=1e9;for(const k in blobs){const o=blobs[k];if(f-o.seen<=2)continue;const d=Math.hypot(o.x-tr.sx,o.y-tr.sy);if(d<Math.max(o.r,minR)*1.6&&d<bd){bd=d;best=o;bk=k;}}
-        if(best){delete blobs[bk];b=blobs[tr.id]=best;}else b=blobs[tr.id]={x:tr.sx,y:tr.sy,vx:0,vy:0,r:minR*0.2,rt:want,k:0,kv:0,dx:1,dy:0,id:tr.id};}
-      b.tx=tr.sx;b.ty=tr.sy;b.seen=f;b.rt+=(want-b.rt)*0.015;});
+        if(best){delete blobs[bk];b=blobs[tr.id]=best;}else b=blobs[tr.id]={x:tr.sx,y:tr.sy,vx:0,vy:0,r:minR*0.2,rt:want,near,k:0,kv:0,dx:1,dy:0,id:tr.id};}
+      b.tx=tr.sx;b.ty=tr.sy;b.seen=f;b.rt+=(want-b.rt)*0.015;b.near+=(near-b.near)*0.02;});
     for(const key in blobs){const b=blobs[key];const gone=f-b.seen>2;
       // size: slow and bounded, so a drop never balloons or collapses with the detection box
       const rt=gone?0:b.rt,dr=clamp((rt-b.r)*0.05,-(b.r*0.025+0.5),b.r*0.02+0.5);b.r+=dr;if(gone&&b.r<2){delete blobs[key];continue;}
@@ -918,14 +920,17 @@ const mDrops={id:'drops',name:'물방울',desc:'사람 한 명 한 명이 물방
       // squash and stretch on its own spring: stretches while moving, squashes and rebounds when it stops
       const sp=Math.hypot(b.vx,b.vy);if(sp>0.25){b.dx+=(b.vx/sp-b.dx)*0.2;b.dy+=(b.vy/sp-b.dy)*0.2;const dl=Math.hypot(b.dx,b.dy)||1;b.dx/=dl;b.dy/=dl;}
       const kt=Math.min(0.32,sp/(b.r+1)*1.8);b.kv+=(kt-b.k)*0.16;b.kv*=0.74;b.k=clamp(b.k+b.kv,-0.14,0.42);}
-    const pos=Object.values(blobs).map(b=>({x:b.x,y:b.y,r:b.r*(1+0.012*Math.sin(t*2.1+b.id*1.7)),k:b.k,cs:b.dx,sn:b.dy}));
+    const pos=Object.values(blobs).map(b=>({x:b.x,y:b.y,r:b.r*(1+0.012*Math.sin(t*2.1+b.id*1.7)),k:b.k,cs:b.dx,sn:b.dy,tone:1-b.near}));
     // surface tension: within reach, drops lean toward each other before they merge
     for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const a=pos[i],c=pos[j];const d=Math.hypot(a.x-c.x,a.y-c.y)||1,reach=(a.r+c.r)*1.7;if(d<reach){const k=(1-d/reach)*0.3;const ux=(c.x-a.x)/d,uy=(c.y-a.y)/d;const pull=Math.min(d*0.45,(reach-d)*k);a.x+=ux*pull*(c.r/(a.r+c.r));a.y+=uy*pull*(c.r/(a.r+c.r));c.x-=ux*pull*(a.r/(a.r+c.r));c.y-=uy*pull*(a.r/(a.r+c.r));}}
     // metaball field: solid ink drops with crisp, anti-aliased edges and smooth necks where they merge
-    const out=this.img.data,bg=P.light?[239,239,233]:P.bgRGB,col=P.light?[12,12,14]:P.fgRGB[0],kx=W/rw,ky=H/rh;
-    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const px=x*kx,py=y*ky;let fv=0;
-      for(let i=0;i<pos.length;i++){const b=pos[i];if(b.r<1)continue;const ddx=px-b.x,ddy=py-b.y;const lx=(ddx*b.cs+ddy*b.sn)/(1+b.k),ly=(-ddx*b.sn+ddy*b.cs)*(1+b.k);fv+=(b.r*b.r)/(lx*lx+ly*ly+1);}
-      let a=(fv-0.96)/0.08;a=a<0?0:a>1?1:a;a=a*a*(3-2*a);const q=(y*rw+x)*4;out[q]=bg[0]+(col[0]-bg[0])*a;out[q+1]=bg[1]+(col[1]-bg[1])*a;out[q+2]=bg[2]+(col[2]-bg[2])*a;out[q+3]=255;}
+    // far drops are paler: each pixel takes the tone of the drops that make it up, so merged necks blend smoothly
+    const out=this.img.data,bg=P.light?[239,239,233]:P.bgRGB,col=P.light?[12,12,14]:P.fgRGB[0],kx=W/rw,ky=H/rh,FADE=0.68;
+    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const px=x*kx,py=y*ky;let fv=0,tw=0;
+      for(let i=0;i<pos.length;i++){const b=pos[i];if(b.r<1)continue;const ddx=px-b.x,ddy=py-b.y;const lx=(ddx*b.cs+ddy*b.sn)/(1+b.k),ly=(-ddx*b.sn+ddy*b.cs)*(1+b.k);const c=(b.r*b.r)/(lx*lx+ly*ly+1);fv+=c;tw+=c*b.tone;}
+      const q=(y*rw+x)*4;let a=(fv-0.96)/0.08;if(a<=0){out[q]=bg[0];out[q+1]=bg[1];out[q+2]=bg[2];out[q+3]=255;continue;}a=a>1?1:a;a=a*a*(3-2*a);
+      const tn=(tw/fv)*FADE,r0=col[0]+(bg[0]-col[0])*tn,g0=col[1]+(bg[1]-col[1])*tn,b0=col[2]+(bg[2]-col[2])*tn;
+      out[q]=bg[0]+(r0-bg[0])*a;out[q+1]=bg[1]+(g0-bg[1])*a;out[q+2]=bg[2]+(b0-bg[2])*a;out[q+3]=255;}
     this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
   }};
 const MODES=[mGaze,mShapes,mDots,mGlyphs,mPixel,mWave,mAscii,mSketch,mDrops,mTrail,mWords,mPattern,mScribble,mDetect,mFlow,mEcho];
