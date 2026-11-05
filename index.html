@@ -444,7 +444,7 @@ function analyze(){
   if(A.remote||!A.n) return A.remote;
   const el=source.el; if(!el) return false;
   const d2=srcDims(), sw=d2[0], sh=d2[1]; if(!sw||!sh) return false;
-  const w=A.w,h=A.h,n=A.n, SA=w/h; let cw=sw,ch=sw/SA; if(ch>sh){ch=sh;cw=sh*SA;} const sx=(sw-cw)/2, sy=(sh-ch)/2;
+  const w=A.w,h=A.h,n=A.n, SA=w/h; let cw=sw,ch=sw/SA; if(ch>sh){ch=sh;cw=sh*SA;} const sx=(sw-cw)/2, sy=(sh-ch)/2; A.crop=[sx,sy,cw,ch,sw,sh];
   const c=A.cx; if(S.mirror) c.setTransform(-1,0,0,1,w,0); else c.setTransform(1,0,0,1,0,0);
   try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(err){return false;}
   const data=c.getImageData(0,0,w,h).data;
@@ -927,8 +927,8 @@ const STACK={eng:null,pieces:[],fly:[],n:0,people:0,scale:1,zoomLeft:1,acc:0,las
     const st={isStatic:true,friction:0.9,frictionStatic:1,restitution:0};M.Composite.add(this.eng.world,[M.Bodies.rectangle(500,60,1800,120,st),M.Bodies.rectangle(-60,-4000,120,8400,st),M.Bodies.rectangle(1060,-4000,120,8400,st)]);return true;},
   color(){let c;do{c=(Math.random()*this.COLORS.length)|0;}while(c===this.lastC);this.lastC=c;return this.COLORS[c];},
   // a cropped silhouette (values 0..1) becomes a rigid body made of row-merged rectangles, plus a cut-paper texture drawn on top of it
-  make(mask,gw,gh,col,k){const M=window.Matter,R=16;let hW=250*this.scale*(0.92+Math.random()*0.16);if(hW*gw/gh>640*this.scale)hW=640*this.scale*gh/gw;const cell=hW/R,C=Math.max(2,Math.round(gw/gh*R)),wW=C*cell;
-    const on=new Uint8Array(C*R);for(let y=0;y<R;y++)for(let x=0;x<C;x++){let sm=0,n=0;const ax=(x*gw/C)|0,bx=Math.max(ax+1,((x+1)*gw/C)|0),ay=(y*gh/R)|0,by=Math.max(ay+1,((y+1)*gh/R)|0);for(let yy=ay;yy<by&&yy<gh;yy++)for(let xx=ax;xx<bx&&xx<gw;xx++){sm+=mask[yy*gw+xx];n++;}on[y*C+x]=n&&sm/n>0.45?1:0;}
+  make(mask,gw,gh,col,k){const M=window.Matter,R=22;let hW=250*this.scale*(0.92+Math.random()*0.16);if(hW*gw/gh>640*this.scale)hW=640*this.scale*gh/gw;const cell=hW/R,C=Math.max(2,Math.round(gw/gh*R)),wW=C*cell;
+    const on=new Uint8Array(C*R);for(let y=0;y<R;y++)for(let x=0;x<C;x++){let sm=0,n=0,mx=0;const ax=(x*gw/C)|0,bx=Math.max(ax+1,((x+1)*gw/C)|0),ay=(y*gh/R)|0,by=Math.max(ay+1,((y+1)*gh/R)|0);for(let yy=ay;yy<by&&yy<gh;yy++)for(let xx=ax;xx<bx&&xx<gw;xx++){const mv=mask[yy*gw+xx];sm+=mv;n++;if(mv>mx)mx=mv;}on[y*C+x]=n&&(sm/n>0.22||(mx>0.85&&sm/n>0.07))?1:0;}
     keepLargest(on,C,R);const rects=[],open={};for(let y=0;y<R;y++){const runs=[];for(let x=0;x<C;){if(!on[y*C+x]){x++;continue;}let e=x;while(e+1<C&&on[y*C+e+1])e++;runs.push([x,e]);x=e+1;}
       const next={};runs.forEach(([a,b])=>{const key=a+','+b;if(open[key]){open[key].h++;next[key]=open[key];}else{const r={x:a,y,w:b-a+1,h:1};rects.push(r);next[key]=r;}});for(const kk in open)delete open[kk];Object.assign(open,next);}
     if(!rects.length)return null;const visTop=-H/k,px=20+Math.random()*Math.max(1,1000-40-wW),py=visTop-hW-30;
@@ -946,6 +946,12 @@ const STACK={eng:null,pieces:[],fly:[],n:0,people:0,scale:1,zoomLeft:1,acc:0,las
     if(this.zoomLeft<0.999){const f=Math.max(0.992,this.zoomLeft);this.zoomLeft/=f;this.scale*=f;this.pieces.forEach(p=>{M.Body.scale(p.body,f,f,{x:500,y:0});p.ox*=f;p.oy*=f;p.w*=f;p.h*=f;p.pad*=f;});
       if(this.zoomLeft>=0.999)this.pieces.forEach(p=>M.Sleeping.set(p.body,false));}
     else{let top=0;const now=performance.now(),fl=new Set(this.fly.map(f=>f.pc));this.pieces.forEach(p=>{const b=p.body;if(fl.has(p)||now-p.rel<1500)return;if((b.isSleeping||b.speed<0.25)&&b.bounds.min.y<top)top=b.bounds.min.y;});if(top<-(H/k)*0.7)this.zoomLeft=0.8;}}};
+// a clean shape from an uncertain mask: the confident parts, plus every weaker part that touches them (a thin arm the model is unsure of)
+function hyst(src,w,h,hiT,loT,out){const n=w*h;if(!out||out.length!==n)out=new Float32Array(n);out.fill(0);if(!hyst.q||hyst.q.length<n)hyst.q=new Int32Array(n);const q=hyst.q;let hd=0,tl=0;
+  for(let i=0;i<n;i++)if(src[i]>hiT){out[i]=1;q[tl++]=i;}
+  while(hd<tl){const i=q[hd++],x=i%w,l=x>0,r=x<w-1,u=i>=w,d=i<n-w;const t=(j)=>{if(!out[j]&&src[j]>loT){out[j]=1;q[tl++]=j;}};
+    if(l)t(i-1);if(r)t(i+1);if(u){t(i-w);if(l)t(i-w-1);if(r)t(i-w+1);}if(d){t(i+w);if(l)t(i+w-1);if(r)t(i+w+1);}}
+  return out;}
 function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h);let best=0,bestN=0,id=0;for(let s0=0;s0<w*h;s0++){if(!on[s0]||lab[s0])continue;id++;let hd=0,tl=0;q[tl++]=s0;lab[s0]=id;
     while(hd<tl){const i=q[hd++],x=i%w;if(x>0&&on[i-1]&&!lab[i-1]){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&on[i+1]&&!lab[i+1]){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&on[i-w]&&!lab[i-w]){lab[i-w]=id;q[tl++]=i-w;}if(i<w*h-w&&on[i+w]&&!lab[i+w]){lab[i+w]=id;q[tl++]=i+w;}}
     if(tl>bestN){bestN=tl;best=id;}}for(let i=0;i<w*h;i++)if(lab[i]!==best)on[i]=0;}
@@ -954,30 +960,53 @@ const mStack={id:'stack',name:'쌓기',busy(){return this.hold>0.3||STACK.fly.le
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
   // person's box across the whole frame, bridging hairline gaps, so a group that touches comes out as a single piece
-  group(tr){const w=A.w,h=A.h,p=A.p,n=w*h;if(!this.gv||this.gv.length!==n){this.gv=new Uint8Array(n);this.gq=new Int32Array(n);this.gon=new Uint8Array(n);}const vis=this.gv,q=this.gq,on=this.gon;
-    for(let i=0;i<n;i++)on[i]=p[i]>0.5?1:0;vis.fill(0);let hd=0,tl=0;const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1);
-    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(on[i]&&!vis[i]){vis[i]=1;q[tl++]=i;}}
+  // while someone holds still, every frame adds to a short memory of their shape (a fading maximum), so an arm the model loses for a
+  // frame or two is still there at the moment of capture; with the person model running this is kept at three times the grid's detail
+  K:3,
+  accum(cand){const w=A.w,h=A.h,n=w*h;if(!this.accP||this.accP.length!==n)this.accP=new Float32Array(n);const ap=this.accP,p=A.p;for(let i=0;i<n;i++){const v=ap[i]*0.97;ap[i]=p[i]>v?p[i]:v;}
+    if(!(SEG.mask&&performance.now()-SEG.fresh<400&&A.crop)||SEG.fresh===this.lastSeg)return;this.lastSeg=SEG.fresh;
+    const K=this.K,HW=w*K,HH=h*K;if(!this.hi||this.hi.length!==HW*HH){this.hi=new Float32Array(HW*HH);this.hiN=0;}
+    const gb=this.gb||[cand.x,cand.y,cand.w,cand.h],hx0=clamp(((gb[0]/A.sx-6)*K)|0,0,HW-1),hx1=clamp((((gb[0]+gb[2])/A.sx+6)*K)|0,0,HW-1),hy0=clamp(((gb[1]/A.sy-6)*K)|0,0,HH-1),hy1=clamp((((gb[1]+gb[3])/A.sy+6)*K)|0,0,HH-1);
+    const cr=A.crop,sx=cr[0],sy=cr[1],cw=cr[2],ch=cr[3],kx=SEG.mw/cr[4],ky=SEG.mh/cr[5],mw=SEG.mw,mh=SEG.mh,mk=SEG.mask,hi=this.hi;
+    for(let y=hy0;y<=hy1;y++){const my=clamp((sy+(y+0.5)/HH*ch)*ky-0.5,0,mh-1.001),y0=my|0,fy=my-y0;
+      for(let x=hx0;x<=hx1;x++){const u=(x+0.5)/HW,uu=S.mirror?1-u:u,mx=clamp((sx+uu*cw)*kx-0.5,0,mw-1.001),x0=mx|0,fx=mx-x0,i=y0*mw+x0;
+        let v=(mk[i]*(1-fx)+mk[i+1]*fx)*(1-fy)+(mk[i+mw]*(1-fx)+mk[i+mw+1]*fx)*fy;v=v<0?0:v>1?1:v;const j=y*HW+x,o=hi[j]*0.97;hi[j]=v>o?v:o;}}
+    this.hiN=(this.hiN||0)+1;},
+  resetAcc(){if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);if(this.hiN){this.hi.fill(0);this.hiN=0;}},
+  // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
+  // person's box across the whole frame; weaker parts (a thin raised arm) are kept as long as they connect to the body
+  group(tr){const w=A.w,h=A.h,n=w*h,p=this.accP&&this.accP.length===n?this.accP:A.p;if(!this.gv||this.gv.length!==n){this.gv=new Uint8Array(n);this.gq=new Int32Array(n);}const vis=this.gv,q=this.gq;
+    vis.fill(0);let hd=0,tl=0;const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1);
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(p[i]>0.5&&!vis[i]){vis[i]=1;q[tl++]=i;}}
     let mnx=w,mxx=-1,mny=h,mxy=-1;while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(on[j]&&!vis[j]){vis[j]=1;q[tl++]=j;}}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(!vis[j]&&p[j]>0.28){vis[j]=1;q[tl++]=j;}}}
     return mxx<0?null:{vis,mnx,mxx,mny,mxy};},
-  capture(tr,col){const g=this.group(tr);if(!g)return null;const w=A.w,p=A.p,vis=g.vis,gw=g.mxx-g.mnx+3,gh=g.mxy-g.mny+3,m=new Float32Array(gw*gh);
-    for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const sx=g.mnx-1+x,sy=g.mny-1+y;if(sx<0||sy<0||sx>=w||sy>=A.h)continue;let near=0;for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){const xx=sx+dx,yy=sy+dy;if(xx>=0&&yy>=0&&xx<w&&yy<A.h&&vis[yy*w+xx]){near=1;break;}}if(near)m[y*gw+x]=p[sy*w+sx];}
+  capture(tr,col){const g=this.group(tr);if(!g)return null;const w=A.w,h=A.h,vis=g.vis,gx0=g.mnx-2,gy0=g.mny-2,gw=g.mxx-g.mnx+5,gh=g.mxy-g.mny+5;
+    const keep=new Uint8Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const cx=gx0+x,cy=gy0+y;let k=0;for(let dy=-2;dy<=2&&!k;dy++)for(let dx=-2;dx<=2;dx++){const xx=cx+dx,yy=cy+dy;if(xx>=0&&yy>=0&&xx<w&&yy<h&&vis[yy*w+xx]){k=1;break;}}keep[y*gw+x]=k;}
+    let m,mw2,mh2;const K=this.K,hi=this.hi;
+    if(hi&&this.hiN>2){mw2=gw*K;mh2=gh*K;m=new Float32Array(mw2*mh2);const HW=w*K,HH=h*K;for(let y=0;y<mh2;y++){const hy=gy0*K+y;if(hy<0||hy>=HH)continue;for(let x=0;x<mw2;x++){const hx=gx0*K+x;if(hx<0||hx>=HW||!keep[((y/K)|0)*gw+((x/K)|0)])continue;m[y*mw2+x]=hi[hy*HW+hx];}}}
+    else{mw2=gw;mh2=gh;m=new Float32Array(gw*gh);const p=this.accP&&this.accP.length===A.n?this.accP:A.p;for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const cx=gx0+x,cy=gy0+y;if(cx<0||cy<0||cx>=w||cy>=h||!keep[y*gw+x])continue;m[y*gw+x]=p[cy*w+cx];}}
+    // weak but connected parts become solid, edges softened; then one solid piece: specks that do not touch the body are dropped
+    m=hyst(m,mw2,mh2,0.5,0.22);{const tb=new Float32Array(m.length);blur3(m,tb,mw2,mh2);}
+    const on=new Uint8Array(mw2*mh2);for(let i=0;i<on.length;i++)on[i]=m[i]>0.4?1:0;keepLargest(on,mw2,mh2);for(let i=0;i<on.length;i++)if(m[i]>0.4&&!on[i])m[i]=0;
     const bx0=g.mnx*A.sx,bx1=(g.mxx+1)*A.sx,by0=g.mny*A.sy,by1=(g.mxy+1)*A.sy;let ppl=0;TR.tracks.forEach(t=>{if(TR.f-t.seen<=2&&t.sx>=bx0&&t.sx<=bx1&&t.sy>=by0&&t.sy<=by1)ppl++;});
-    return {m,gw,gh,sx:(g.mnx-1)*A.sx,sy:(g.mny-1)*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:Math.max(1,ppl)};},
+    return {m,gw:mw2,gh:mh2,sx:gx0*A.sx,sy:gy0*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:Math.max(1,ppl)};},
   draw(t,dt){dt=dt||0.016;if((this.f=(this.f||0)+1)%2===0)TR.update();const ok=STACK.ensure(),ww=this.wellW(),k=ww/1000,fy=H;
     ctx.fillStyle='#ede8df';ctx.fillRect(0,0,W,H);
     // everyone in front: a quiet warm-grey shadow across the whole screen
     const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);this.live=upsampleMask(pb,w,h,2,0.38,0.62,[214,205,192],this.live);ctx.imageSmoothingEnabled=true;
     const rw=W-ww,vs=Math.min(rw/W*0.96,1),vx=ww+(rw-W*vs)/2,vy=H-H*vs;ctx.drawImage(this.live,vx,vy,W*vs,H*vs);
+    if(this.hold>0.05&&this.hiN>2){const HW=w*this.K,HH=h*this.K;if(this.f%3===0||!this.liveHi){this.disp=hyst(this.hi,HW,HH,0.5,0.22,this.disp);if(!this.dtmp||this.dtmp.length!==HW*HH)this.dtmp=new Float32Array(HW*HH);blur3(this.disp,this.dtmp,HW,HH);
+      this.liveHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,[214,205,192],this.liveHi);this.fillHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,hex(this.col||'#8fa382'),this.fillHi);}ctx.drawImage(this.liveHi,vx,vy,W*vs,H*vs);}else{this.liveHi=null;}
     // who is being measured, and whether they are close enough and still enough
     const now=performance.now();let cand=null;TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2||(tr.hits||0)<6)return;if(!cand||tr.area>cand.area)cand=tr;});
     let state='none';if(cand){const hs=cand.hist,nn=hs.length,still=nn>8&&Math.hypot(hs[nn-1][0]-hs[nn-9][0],hs[nn-1][1]-hs[nn-9][1])<W*0.02;
       const done=cand.stackT&&now-cand.stackT<12000&&Math.hypot(cand.sx-cand.stackX,cand.sy-cand.stackY)<W*0.2;
       state=done?'done':cand.h<H*0.42?'far':cand.y<A.sy*0.6&&cand.h>H*0.8?'close':!still?'move':'hold';if(cand.id!==this.holdId){this.holdId=cand.id;this.hold=0;}}
-    this.hold=state==='hold'?this.hold+dt:Math.max(0,this.hold-dt*1.5);
+    this.hold=state==='hold'?this.hold+dt:Math.max(0,this.hold-dt*1.5);if(this.hold>0.05&&cand)this.accum(cand);else this.resetAcc();
     if(this.hold>0.05&&cand){if(!this.col)this.col=STACK.color();const pr=Math.min(1,this.hold/3),rgb=hex(this.col);const g=(this.f&3)===0||!this.gb?this.group(cand):null;if(g)this.gb=[g.mnx*A.sx,g.mny*A.sy,(g.mxx-g.mnx+1)*A.sx,(g.mxy-g.mny+1)*A.sy];
-      const gb=this.gb||[cand.x,cand.y,cand.w,cand.h];this.fill=upsampleMask(pb,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
-    if(this.hold>=3&&cand&&ok){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;cand.stackT=now;cand.stackX=cand.sx;cand.stackY=cand.sy;
+      const gb=this.gb||[cand.x,cand.y,cand.w,cand.h];this.fill=upsampleMask(pb,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]*1.3+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);if(this.liveHi&&this.fillHi)ctx.drawImage(this.fillHi,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
+    if(this.hold>=3&&cand&&ok){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.resetAcc();cand.stackT=now;cand.stackX=cand.sx;cand.stackY=cand.sy;
       if(c){const pc=STACK.make(c.m,c.gw,c.gh,c.col,k);if(pc){STACK.people+=c.ppl;this.lastPpl=c.ppl;STACK.fly.push({pc,t:0,sx:vx+c.sx*vs,sy:vy+c.sy*vs,sw:c.sw*vs,sh:c.sh*vs});this.msg=2.4;}}}
     // the pile
     if(ok)STACK.step(dt,k);const flying=new Set(STACK.fly.map(f=>f.pc));
@@ -993,68 +1022,75 @@ const mStack={id:'stack',name:'쌓기',busy(){return this.hold>0.3||STACK.fly.le
     this.msg=Math.max(0,this.msg-dt);const txt=this.msg>0?(this.lastPpl>1?this.lastPpl+'명이 함께 쌓였어요':STACK.people+'번째로 쌓였어요'):state==='far'?'조금 더 가까이 와 주세요':state==='close'?'조금만 뒤로 가 주세요':state==='move'?'그대로 멈춰 주세요':state==='hold'?'그대로… '+Math.max(1,Math.ceil(3-this.hold)):state==='done'?'쌓였어요 · 다음 친구도 서 보세요':'앞에 서서 3초 동안 멈춰 보세요';
     ctx.fillStyle='rgba(40,32,24,0.78)';ctx.fillText(txt,cx,ly);ctx.font='500 '+Math.round(fz*0.72)+'px '+SANS;ctx.fillStyle='rgba(40,32,24,0.45)';ctx.fillText('함께 쌓인 사람 '+STACK.people,cx,ly+fz*1.5);ctx.textAlign='left';
     if(!ok){ctx.fillStyle='rgba(40,32,24,0.6)';ctx.fillText('물리 엔진을 불러오지 못했어요',24,H-24);}}};
-/* 피하기: a dodging game. Glowing orbs fly in from the sides (and after a while from above) toward wherever people are standing; the body
-   is the only controller. Everyone in front shares three lives, the time survived is the score, and today's ranking stays until reload */
+/* 피하기: rain that must not touch you. Glowing drops fall from the sky, sparse and slow at first, then thicker and quicker; now and then a
+   shower pours over one stretch of the screen after a clear warning at the top. The body is the only controller; everyone in front
+   shares five lives; the time survived is the score, and today's ranking stays until the page is reloaded */
 const DODGE={scores:[]};
-const mDodge={id:'dodge',name:'피하기',desc:'양옆과 위에서 날아오는 빛을 몸으로 피하는 게임. 앞에 서면 3초 뒤 시작하고, 함께 세 번 맞으면 끝. 버틴 시간이 기록되고 오늘의 순위는 새로고침 전까지 남는다',
-  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.state='idle';this.stT=0;this.t=0;this.orbs=[];this.parts=[];this.sil=null;this.present=0;this.absent=0;this.spawnT=0.6;this.lives=3;this.inv=0;this.flash=0;this.shake=0;this.attract=0;this.sprites={};
-    const bw=Math.max(2,Math.round(W/3)),bh=Math.max(2,Math.round(H/3)),b=mkCanvas(bw,bh),bc=b.cx,g=bc.createRadialGradient(bw/2,bh*0.45,0,bw/2,bh*0.45,Math.hypot(bw,bh)*0.6);
-    g.addColorStop(0,'#171b25');g.addColorStop(1,'#07080c');bc.fillStyle=g;bc.fillRect(0,0,bw,bh);const im=bc.getImageData(0,0,bw,bh),d=im.data;for(let i=0;i<d.length;i+=4){const n=(Math.random()-0.5)*5;d[i]+=n;d[i+1]+=n;d[i+2]+=n;}bc.putImageData(im,0,0);this.bg=b;
+const mDodge={id:'dodge',name:'피하기',desc:'하늘에서 떨어지는 빗방울을 몸으로 피하는 게임. 앞에 서면 3초 뒤 시작하고, 함께 다섯 번 맞으면 끝. 처음엔 드물고 느리게, 갈수록 굵고 빠르게. 버틴 시간이 기록되고 오늘의 순위는 새로고침 전까지 남는다',
+  LIVES:5,COLS:['#b4ff8a','#9cf7a8','#d6ff8c'],
+  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.state='idle';this.stT=0;this.t=0;this.drops=[];this.parts=[];this.rip=[];this.warn=[];this.sil=null;this.present=0;this.absent=0;this.spawnT=1;this.showerT=0;this.lives=this.LIVES;this.inv=0;this.flash=0;this.shake=0;this.attract=0;this.sprites={};
+    const bw=Math.max(2,Math.round(W/3)),bh=Math.max(2,Math.round(H/3)),bg=mkCanvas(bw,bh),bc=bg.cx,g=bc.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#0a0f12');g.addColorStop(0.65,'#0d1418');g.addColorStop(1,'#111b1d');bc.fillStyle=g;bc.fillRect(0,0,bw,bh);
+    const im=bc.getImageData(0,0,bw,bh),d=im.data;for(let i=0;i<d.length;i+=4){const n=(Math.random()-0.5)*5;d[i]+=n;d[i+1]+=n;d[i+2]+=n;}bc.putImageData(im,0,0);this.bg=bg;
     const v=mkCanvas(bw,bh),vc=v.cx,vg=vc.createRadialGradient(bw/2,bh/2,Math.min(bw,bh)*0.3,bw/2,bh/2,Math.hypot(bw,bh)*0.55);vg.addColorStop(0,'rgba(255,90,80,0)');vg.addColorStop(1,'rgba(255,90,80,1)');vc.fillStyle=vg;vc.fillRect(0,0,bw,bh);this.vig=v;},
   busy(){return this.state!=='idle';},
-  sprite(col){if(this.sprites[col])return this.sprites[col];const S2=128,c=mkCanvas(S2,S2),x=c.cx,g=x.createRadialGradient(S2/2,S2/2,0,S2/2,S2/2,S2/2),rgb=hex(col);
-    g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(0.16,'rgba(255,250,240,1)');g.addColorStop(0.3,'rgba('+rgb+',0.95)');g.addColorStop(0.55,'rgba('+rgb+',0.28)');g.addColorStop(1,'rgba('+rgb+',0)');x.fillStyle=g;x.fillRect(0,0,S2,S2);return this.sprites[col]=c;},
-  spawn(bb,soft){const t=this.t,r=H*(0.028+Math.random()*0.024),v=soft?W*0.12:W*Math.min(0.72,0.3+0.012*t),top=!soft&&t>12&&Math.random()<Math.min(0.35,0.08+t*0.008);
-    if(top){const x=bb?clamp(bb[0]+Math.random()*bb[2],r,W-r):r+Math.random()*(W-2*r);this.orbs.push({x,y:-r*2,vx:(Math.random()-0.5)*W*0.04,vy:v*0.8,r,col:'#ffd98a',warn:soft?0:0.75,side:'T',soft});}
-    else{const L=Math.random()<0.5,y=bb&&!soft&&Math.random()<0.8?clamp(bb[1]+r+Math.random()*Math.max(1,bb[3]-r*2),r,H-r):r+Math.random()*(H-2*r);
-      this.orbs.push({x:L?-r*2:W+r*2,y,vx:L?v:-v,vy:(Math.random()-0.5)*H*0.05,r,col:Math.random()<0.5?'#ffb547':'#ff7a5c',warn:soft?0:0.75,side:L?'L':'R',soft});}},
-  over(){this.state='over';this.stT=0;const sc=Math.round(this.t*10)/10;this.score=sc;DODGE.scores.push(sc);DODGE.scores.sort((a,b)=>b-a);this.rank=DODGE.scores.indexOf(sc)+1;this.best=this.rank===1;},
+  sprite(col){if(this.sprites[col])return this.sprites[col];const S2=96,c=mkCanvas(S2,S2),x=c.cx,g=x.createRadialGradient(S2/2,S2/2,0,S2/2,S2/2,S2/2),rgb=hex(col);
+    g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(0.2,'rgba(245,255,240,1)');g.addColorStop(0.36,'rgba('+rgb+',0.9)');g.addColorStop(0.62,'rgba('+rgb+',0.22)');g.addColorStop(1,'rgba('+rgb+',0)');x.fillStyle=g;x.fillRect(0,0,S2,S2);return this.sprites[col]=c;},
+  // one drop. In play a share of the drops fall where people stand, so standing still is not safe, but most of the sky is open
+  drop(bb,soft,x){const t=this.t,big=!soft&&t>20&&Math.random()<0.12,r=H*(big?0.022:0.011+Math.random()*0.007);
+    if(x==null)x=bb&&!soft&&Math.random()<0.32?clamp(bb[0]+Math.random()*bb[2],r,W-r):r+Math.random()*(W-2*r);
+    const vy=soft?H*(0.22+Math.random()*0.08):H*Math.min(0.75,0.3+0.0075*t)*(0.85+Math.random()*0.3)*(big?0.8:1);
+    this.drops.push({x,y:-r*6,vx:0,vy,r,col:this.COLS[(Math.random()*3)|0],soft});},
+  over(){this.state='over';this.stT=0;const sc=Math.round(this.t*10)/10;this.score=sc;DODGE.scores.push(sc);DODGE.scores.sort((a,b)=>b-a);this.rank=DODGE.scores.indexOf(sc)+1;this.best=this.rank===1;this.drops.forEach(q=>q.soft=true);this.warn=[];},
   draw(t,dt){dt=Math.min(dt||0.016,0.05);if((this.f=(this.f||0)+1)%2===0)TR.update();const w=A.w,h=A.h,n=A.n,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
-    // who is there: presence, the box they occupy, how many
     let cnt=0,x0=w,x1=-1,y0=h,y1=-1;for(let i=0;i<n;i++)if(pb[i]>0.5){cnt++;const x=i%w,y=(i/w)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
     const here=cnt>n*0.012,bb=here?[x0*W/w,y0*H/h,(x1-x0+1)*W/w,(y1-y0+1)*H/h]:null;let ppl=0;TR.tracks.forEach(tr=>{if(TR.f-tr.seen<=2&&(tr.hits||0)>=4)ppl++;});
     this.present=here?this.present+dt:0;this.absent=here?0:this.absent+dt;this.stT+=dt;
     const pS=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
+    const wind=Math.sin(t*0.23)*W*0.012;
     // the round
-    if(this.state==='idle'){if(this.present>1){this.state='ready';this.stT=0;this.orbs=this.orbs.filter(o=>o.soft);}}
-    else if(this.state==='ready'){if(this.absent>1){this.state='idle';this.stT=0;}else if(this.stT>=3){this.state='play';this.stT=0;this.t=0;this.lives=3;this.inv=0;this.spawnT=0.4;}}
-    else if(this.state==='play'){this.t+=dt;if(this.absent>2){this.state='idle';this.stT=0;}
-      this.spawnT-=dt;if(this.spawnT<=0){this.spawn(bb,false);if(this.t>10&&Math.random()<0.3)this.spawn(bb,false);this.spawnT=Math.max(0.36,1.15-this.t*0.028)*(0.8+Math.random()*0.4);}}
+    if(this.state==='idle'){if(this.present>1){this.state='ready';this.stT=0;}}
+    else if(this.state==='ready'){if(this.absent>1){this.state='idle';this.stT=0;}else if(this.stT>=3){this.state='play';this.stT=0;this.t=0;this.lives=this.LIVES;this.inv=0;this.spawnT=1;this.showerT=28;this.drops.forEach(q=>q.soft=true);}}
+    else if(this.state==='play'){this.t+=dt;if(this.absent>2){this.state='idle';this.stT=0;this.warn=[];}
+      this.spawnT-=dt;if(this.spawnT<=0){this.drop(bb,false);this.spawnT=Math.max(0.22,0.85-this.t*0.0105)*(0.75+Math.random()*0.5);}
+      // a shower: the top of the screen glows over one stretch for a moment, then that stretch pours
+      this.showerT-=dt;if(this.showerT<=0){const sw=W*0.16,cxs=bb&&Math.random()<0.6?bb[0]+bb[2]/2:sw/2+Math.random()*(W-sw),xa=clamp(cxs-sw/2,0,W-sw);this.warn.push({x:xa,w:sw,t:1.3});this.showerT=9+Math.random()*4;}}
     else if(this.state==='over'){if(this.stT>5.5){if(here){this.state='ready';this.stT=0;}else{this.state='idle';this.stT=0;}}}
-    if(this.state==='idle'||this.state==='over'){this.attract-=dt;if(this.attract<=0){this.spawn(null,true);this.attract=1.2+Math.random()*1.4;}}
+    if(this.state!=='play'){this.attract-=dt;if(this.attract<=0){this.drop(null,true);this.attract=0.18+Math.random()*0.25;}}
+    for(let i=this.warn.length-1;i>=0;i--){const q=this.warn[i];q.t-=dt;if(q.t<=0){for(let k=0;k<9;k++){this.drop(null,false,q.x+(k+0.5)/9*q.w+(Math.random()-0.5)*q.w*0.06);this.drops[this.drops.length-1].y-=Math.random()*H*0.12;}this.warn.splice(i,1);}}
     this.inv=Math.max(0,this.inv-dt);this.flash=Math.max(0,this.flash-dt*2.2);this.shake=Math.max(0,this.shake-dt*3);
-    // orbs move, and in play they are stopped by a body
-    for(let i=this.orbs.length-1;i>=0;i--){const o=this.orbs[i];if(o.warn>0){o.warn-=dt;continue;}o.x+=o.vx*dt;o.y+=o.vy*dt;
-      if(o.x<-o.r*4||o.x>W+o.r*4||o.y>H+o.r*4){this.orbs.splice(i,1);continue;}
-      if(this.state==='play'&&!o.soft&&this.inv<=0){let hit=pS(o.x,o.y)>0.55;for(let k=0;k<8&&!hit;k++){const a=k/8*TAU;if(pS(o.x+Math.cos(a)*o.r*0.72,o.y+Math.sin(a)*o.r*0.72)>0.55)hit=true;}
-        if(hit){this.lives--;this.inv=1.3;this.flash=1;this.shake=1;for(let k=0;k<18;k++){const a=Math.random()*TAU,sp=W*(0.05+Math.random()*0.18);this.parts.push({x:o.x,y:o.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.5+Math.random()*0.4,col:o.col,r:o.r*(0.08+Math.random()*0.12)});}
-          this.orbs.splice(i,1);if(this.lives<=0){this.over();this.orbs.forEach(q=>q.soft=true);}}}}
+    // drops fall; they splash on the floor, and in play only the inside of a body counts as a hit (a forgiving edge)
+    for(let i=this.drops.length-1;i>=0;i--){const o=this.drops[i];o.x+=(o.vx+wind)*dt;o.y+=o.vy*dt;
+      if(o.y>=H-2){this.rip.push({x:o.x,y:H-3,r:o.r,life:0.5,col:o.col});for(let k=0;k<3;k++){const a=-Math.PI/2+(Math.random()-0.5)*1.6,sp=H*(0.08+Math.random()*0.1);this.parts.push({x:o.x,y:H-4,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.35+Math.random()*0.2,col:o.col,r:o.r*0.25});}this.drops.splice(i,1);continue;}
+      if(this.state==='play'&&!o.soft&&this.inv<=0&&(pS(o.x,o.y)>0.62||pS(o.x,o.y-o.r)>0.62)){this.lives--;this.inv=1.6;this.flash=1;this.shake=0.8;
+        for(let k=0;k<14;k++){const a=-Math.PI*Math.random(),sp=H*(0.06+Math.random()*0.16);this.parts.push({x:o.x,y:o.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.45+Math.random()*0.35,col:o.col,r:o.r*(0.2+Math.random()*0.25)});}
+        this.drops.splice(i,1);if(this.lives<=0)this.over();}}
     // ---- picture ----
-    ctx.save();if(this.shake>0){const m=this.shake*this.shake*H*0.012;ctx.translate((Math.random()-0.5)*m,(Math.random()-0.5)*m);}
+    ctx.save();if(this.shake>0){const m=this.shake*this.shake*H*0.01;ctx.translate((Math.random()-0.5)*m,(Math.random()-0.5)*m);}
     ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,-8,-8,W+16,H+16);
-    const hitK=this.inv/1.3,rgb=[Math.round(lerp(232,255,hitK)),Math.round(lerp(237,122,hitK)),Math.round(lerp(245,104,hitK))];this.sil=upsampleMask(pb,w,h,2,0.42,0.6,rgb,this.sil);
+    const hitK=this.inv/1.6,rgb=[Math.round(lerp(232,255,hitK)),Math.round(lerp(237,122,hitK)),Math.round(lerp(245,104,hitK))];this.sil=upsampleMask(pb,w,h,2,0.42,0.6,rgb,this.sil);
     ctx.globalAlpha=this.state==='play'?(this.inv>0?0.55+0.45*(0.5+0.5*Math.cos(this.inv*26)):0.94):0.5;ctx.drawImage(this.sil,0,0,W,H);ctx.globalAlpha=1;
     ctx.globalCompositeOperation='lighter';
-    for(const o of this.orbs){const sp=this.sprite(o.col),al=o.soft?0.55:1;
-      if(o.warn>0){const k=0.5+0.5*Math.sin(o.warn*22),ex=o.side==='L'?0:o.side==='R'?W:o.x,ey=o.side==='T'?0:o.y,rr=o.r*2.2;ctx.globalAlpha=0.25+0.45*k;ctx.drawImage(sp,ex-rr,ey-rr,rr*2,rr*2);continue;}
-      const tl=o.soft?0.45:0.16,tx=o.x-o.vx*tl,ty=o.y-o.vy*tl,g=ctx.createLinearGradient(tx,ty,o.x,o.y),rg=hex(o.col);g.addColorStop(0,'rgba('+rg+',0)');g.addColorStop(1,'rgba('+rg+','+(0.55*al)+')');
-      ctx.globalAlpha=1;ctx.strokeStyle=g;ctx.lineWidth=o.r*0.9;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(o.x,o.y);ctx.stroke();ctx.globalAlpha=al;const R=o.r*(o.soft?1.7:2.4);ctx.drawImage(sp,o.x-R,o.y-R,R*2,R*2);}
-    for(let i=this.parts.length-1;i>=0;i--){const q=this.parts[i];q.life-=dt;if(q.life<=0){this.parts.splice(i,1);continue;}q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=0.94;q.vy=q.vy*0.94+H*0.4*dt;ctx.globalAlpha=Math.min(1,q.life*2);const R=q.r*3;ctx.drawImage(this.sprite(q.col),q.x-R,q.y-R,R*2,R*2);}
-    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;if(this.flash>0){ctx.globalAlpha=this.flash*0.35;ctx.drawImage(this.vig,0,0,W,H);ctx.globalAlpha=1;}ctx.restore();
+    for(const q of this.warn){const k=0.55+0.45*Math.sin(q.t*18),g=ctx.createLinearGradient(0,0,0,H*0.22);g.addColorStop(0,'rgba(180,255,138,'+(0.42*k)+')');g.addColorStop(1,'rgba(180,255,138,0)');ctx.fillStyle=g;ctx.fillRect(q.x,0,q.w,H*0.22);}
+    ctx.lineCap='round';
+    for(const o of this.drops){const al=o.soft?0.45:1,L=o.r*(o.soft?4:5.5),rg=hex(o.col),tx=o.x-wind*0.06,ty=o.y-L,g=ctx.createLinearGradient(tx,ty,o.x,o.y);g.addColorStop(0,'rgba('+rg+',0)');g.addColorStop(1,'rgba('+rg+','+(0.7*al)+')');
+      ctx.globalAlpha=1;ctx.strokeStyle=g;ctx.lineWidth=o.r*0.85;ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(o.x,o.y);ctx.stroke();ctx.globalAlpha=al;const R=o.r*(o.soft?1.6:2.2);ctx.drawImage(this.sprite(o.col),o.x-R,o.y-R,R*2,R*2);}
+    for(let i=this.rip.length-1;i>=0;i--){const q=this.rip[i];q.life-=dt;if(q.life<=0){this.rip.splice(i,1);continue;}const k=1-q.life/0.5,rr=q.r*(1.5+k*5);ctx.globalAlpha=(1-k)*0.55;ctx.strokeStyle=q.col;ctx.lineWidth=1.2;ctx.beginPath();ctx.ellipse(q.x,q.y,rr,rr*0.22,0,0,TAU);ctx.stroke();}
+    for(let i=this.parts.length-1;i>=0;i--){const q=this.parts[i];q.life-=dt;if(q.life<=0){this.parts.splice(i,1);continue;}q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=0.95;q.vy+=H*0.9*dt;ctx.globalAlpha=Math.min(1,q.life*2.2);const R=q.r*3;ctx.drawImage(this.sprite(q.col),q.x-R,q.y-R,R*2,R*2);}
+    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;if(this.flash>0){ctx.globalAlpha=this.flash*0.3;ctx.drawImage(this.vig,0,0,W,H);ctx.globalAlpha=1;}ctx.restore();
     // ---- words ----
     const fz=Math.max(14,Math.min(W,H)*0.03),cx=W/2;ctx.textAlign='center';ctx.textBaseline='alphabetic';
     const list=(y)=>{const top=DODGE.scores.slice(0,3);if(!top.length)return;ctx.font='600 '+Math.round(fz*0.62)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText('오늘의 순위',cx,y);
-      ctx.font='600 '+Math.round(fz*0.9)+'px '+SANS;top.forEach((sc,i)=>{ctx.fillStyle=i===0?'rgba(255,214,140,0.95)':'rgba(255,255,255,0.8)';ctx.fillText((i+1)+'   '+sc.toFixed(1)+'초',cx,y+fz*1.35*(i+1));});};
+      ctx.font='600 '+Math.round(fz*0.9)+'px '+SANS;top.forEach((sc,i)=>{ctx.fillStyle=i===0?'rgba(214,255,160,0.95)':'rgba(255,255,255,0.8)';ctx.fillText((i+1)+'   '+sc.toFixed(1)+'초',cx,y+fz*1.35*(i+1));});};
     if(this.state==='idle'){ctx.font='800 '+Math.round(fz*3)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.95)';ctx.fillText('피하기',cx,H*0.36);
-      ctx.font='500 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillText('앞에 서면 시작해요 · 날아오는 빛을 몸으로 피하세요',cx,H*0.36+fz*1.8);list(H*0.36+fz*4);}
-    else if(this.state==='ready'){const k=3-this.stT,num=Math.max(1,Math.ceil(k)),fr=k-Math.floor(k);ctx.font='500 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.75)';ctx.fillText(ppl>1?ppl+'명이 함께 · 세 번 맞으면 끝나요':'세 번 맞으면 끝나요',cx,H*0.3);
+      ctx.font='500 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillText('앞에 서면 시작해요 · 떨어지는 빗방울을 몸으로 피하세요',cx,H*0.36+fz*1.8);list(H*0.36+fz*4);}
+    else if(this.state==='ready'){const k=3-this.stT,num=Math.max(1,Math.ceil(k)),fr=k-Math.floor(k);ctx.font='500 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.75)';ctx.fillText((ppl>1?ppl+'명이 함께 · ':'')+'다섯 번 맞으면 끝나요 · 옆으로 움직여 피하세요',cx,H*0.3);
       ctx.save();ctx.translate(cx,H*0.52);const sc=1+0.25*fr;ctx.scale(sc,sc);ctx.globalAlpha=0.35+0.65*fr;ctx.font='800 '+Math.round(fz*5)+'px '+SANS;ctx.fillStyle='#ffffff';ctx.textBaseline='middle';ctx.fillText(String(num),0,0);ctx.restore();ctx.globalAlpha=1;ctx.textBaseline='alphabetic';}
     else if(this.state==='play'){ctx.font='700 '+Math.round(fz*2.1)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.95)';const tt=this.t.toFixed(1),tw=ctx.measureText('8'.repeat(tt.length-1)+'.').width,x0=cx-tw/2-fz*0.45,aw=ctx.measureText(tt).width;ctx.textAlign='left';ctx.fillText(tt,x0,fz*3.1);
       ctx.font='600 '+Math.round(fz*0.8)+'px '+SANS;ctx.fillText('초',x0+aw+fz*0.12,fz*3.1);ctx.textAlign='center';
-      for(let i=0;i<3;i++){const x=cx+(i-1)*fz*1.1,y=fz*4.1;ctx.beginPath();ctx.arc(x,y,fz*0.24,0,TAU);if(i<this.lives){ctx.fillStyle='#ffffff';ctx.fill();}else{ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1.5;ctx.stroke();}}
+      for(let i=0;i<this.LIVES;i++){const x=cx+(i-(this.LIVES-1)/2)*fz*0.95,y=fz*4.1;ctx.beginPath();ctx.arc(x,y,fz*0.22,0,TAU);if(i<this.lives){ctx.fillStyle='#ffffff';ctx.fill();}else{ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1.5;ctx.stroke();}}
       if(DODGE.scores.length){ctx.font='500 '+Math.round(fz*0.62)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText('오늘의 기록 '+DODGE.scores[0].toFixed(1)+'초',cx,fz*5.2);}}
-    else if(this.state==='over'){ctx.fillStyle='rgba(7,8,12,'+Math.min(0.55,this.stT*1.5)+')';ctx.fillRect(0,0,W,H);
-      ctx.font='600 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle=this.best?'rgba(255,214,140,0.95)':'rgba(255,255,255,0.75)';ctx.fillText(this.best?'오늘의 새 기록!':'오늘 '+DODGE.scores.length+'번 중 '+this.rank+'위',cx,H*0.27);
+    else if(this.state==='over'){ctx.fillStyle='rgba(7,10,12,'+Math.min(0.55,this.stT*1.5)+')';ctx.fillRect(0,0,W,H);
+      ctx.font='600 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle=this.best?'rgba(214,255,160,0.95)':'rgba(255,255,255,0.75)';ctx.fillText(this.best?'오늘의 새 기록!':'오늘 '+DODGE.scores.length+'번 중 '+this.rank+'위',cx,H*0.27);
       ctx.font='800 '+Math.round(fz*3.6)+'px '+SANS;ctx.fillStyle='#ffffff';ctx.fillText(this.score.toFixed(1)+'초',cx,H*0.27+fz*4);list(H*0.27+fz*6);
       ctx.font='500 '+Math.round(fz*0.7)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillText(here?'잠시 뒤 다시 시작해요':'다음 친구도 도전해 보세요',cx,H-fz*2.2-(isTouch?50:0));}
     ctx.textAlign='left';}};
