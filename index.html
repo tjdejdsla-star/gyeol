@@ -171,7 +171,7 @@ textarea.ta{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15
     </div>
   </div>
 
-  <div class="group"><h4>문장 (글자 모드)</h4>
+  <div class="group"><h4>문장 (활자 모드)</h4>
     <div class="rows"><div class="row"><textarea class="ta" id="text" rows="4" aria-label="문장"></textarea></div></div>
     <p class="foot">줄바꿈으로 문장을 나눠요. 바꾸면 바로 반영됩니다.</p>
   </div>
@@ -473,97 +473,40 @@ function decodePacket(buf){
 }
 
 /* ---------- modes ---------- */
-const mShapes={id:'shapes',name:'도형',key:'1',desc:'기본 도형이 움직임에 밀리고 늘어난다',
-  init(){const cols=isTouch?24:40;this.cols=cols;this.cell=W/cols;this.rows=Math.ceil(H/this.cell);const m=cols*this.rows;['ox','oy','vx','vy','sz','rot','st','en','pp'].forEach(k=>{this[k]=new Float32Array(m);});},
-  draw(){
-    fade(lerp(0.9,0.3,(S.trail-1)/9)); const P=pal(),g=gainF(),cols=this.cols,rows=this.rows,cell=this.cell,lim=cell*3;
-    const rest=new Path2D(),pres=new Path2D(),edge=new Path2D(),ma=new Path2D(),mb=new Path2D();
-    const ox=this.ox,oy=this.oy,vx=this.vx,vy=this.vy,sz=this.sz,rot=this.rot,st=this.st,en=this.en,pp=this.pp;
-    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c;const hx=(c+0.5)*cell,hy=(r+0.5)*cell;const f=at(hx+ox[i],hy+oy[i]);
-      en[i]+=(f.e-en[i])*0.3; pp[i]+=(f.p-pp[i])*0.25;
-      vx[i]=vx[i]*0.86+f.u*g*0.35-ox[i]*0.06; vy[i]=vy[i]*0.86+f.v*g*0.35-oy[i]*0.06; ox[i]=clamp(ox[i]+vx[i],-lim,lim); oy[i]=clamp(oy[i]+vy[i],-lim,lim);
-      const m=Math.hypot(f.u,f.v); st[i]+=(Math.min(2.2,m*0.25*g)-st[i])*0.25;
-      if(m>0.8&&f.e>0.1){const tr=Math.atan2(f.v,f.u);let d=tr-rot[i];d=Math.atan2(Math.sin(d),Math.cos(d));rot[i]+=d*0.3;}
-      const base=cell*0.5, inP=pp[i]>0.5?1:pp[i]>0.2?0.6:0, target=base*(0.22+0.6*inP)+en[i]*base*0.8; sz[i]+=(target-sz[i])*0.3; const s=sz[i];
-      const x=hx+ox[i],y=hy+oy[i],rx=s*(1+st[i]),ry=s/(1+st[i]*0.6),ro=rot[i];
-      const path=en[i]>0.15?(f.u>=0?ma:mb):(pp[i]>0.5?pres:pp[i]>0.2?edge:rest);
-      if(((r+c)&1)===0){path.moveTo(x+rx*Math.cos(ro),y+rx*Math.sin(ro));path.ellipse(x,y,rx,ry,ro,0,TAU);}
-      else{const cs=Math.cos(ro),sn=Math.sin(ro);const ax=rx*cs,ay=rx*sn,bx=-ry*sn,by=ry*cs;path.moveTo(x+ax+bx,y+ay+by);path.lineTo(x-ax+bx,y-ay+by);path.lineTo(x-ax-bx,y-ay-by);path.lineTo(x+ax-bx,y+ay-by);path.closePath();}
-    }
-    ctx.lineWidth=1;ctx.strokeStyle=rgba(P.fg[0],0.5);ctx.stroke(rest);ctx.lineWidth=1.5;ctx.strokeStyle=P.fg[2];ctx.stroke(edge);ctx.fillStyle=P.fg[2];ctx.fill(pres);ctx.fillStyle=P.fg[1];ctx.fill(ma);ctx.fillStyle=P.fg[3];ctx.fill(mb);
+const mShapes={id:'shapes',name:'도형',desc:'격자 위 기본 도형들이 제자리에서 피어나고 사라지며 사람을 그린다. 움직이는 곳은 도형이 바뀐다',
+  init(){const cols=isTouch?24:40;this.cols=cols;this.cell=W/cols;this.rows=Math.ceil(H/this.cell);const m=cols*this.rows;
+    this.a=new Float32Array(m);this.rate=new Float32Array(m);this.type=new Uint8Array(m);this.next=new Uint8Array(m);this.mo=new Float32Array(m);this.cool=new Float32Array(m);
+    for(let i=0;i<m;i++){this.rate[i]=0.06+Math.random()*0.1;this.type[i]=(Math.random()*4)|0;}},
+  shape(path,k,x,y,s){if(s<0.4)return;if(k===0){path.moveTo(x+s,y);path.arc(x,y,s,0,TAU);}else if(k===1){path.rect(x-s*0.86,y-s*0.86,s*1.72,s*1.72);}
+    else if(k===2){path.moveTo(x,y-s);path.lineTo(x+s*0.95,y+s*0.75);path.lineTo(x-s*0.95,y+s*0.75);path.closePath();}else{path.moveTo(x,y-s);path.lineTo(x+s,y);path.lineTo(x,y+s);path.lineTo(x-s,y);path.closePath();}},
+  draw(t,dt){const P=pal();paper(P.light?'#f6f5f1':P.bg);const cols=this.cols,rows=this.rows,cell=this.cell,a=this.a,rate=this.rate,type=this.type,next=this.next,mo=this.mo,cool=this.cool;
+    const rest=new Path2D(),fill=new Path2D(),hot=new Path2D(),R=cell*0.42;
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c,x=(c+0.5)*cell,y=(r+0.5)*cell;const f=at(x,y);
+      // each shape eases in or out at its own pace, so the figure blooms rather than switching on
+      const target=f.p>0.5?1:f.p>0.25?0.55:0;a[i]+=(target-a[i])*rate[i];
+      // where something moves, the shape turns into another one: shrink out, swap, grow back
+      cool[i]=Math.max(0,cool[i]-dt);if(mo[i]===0&&f.e>0.3&&a[i]>0.3&&cool[i]===0){mo[i]=0.0001;next[i]=(type[i]+1+((Math.random()*3)|0))%4;}
+      let s1=a[i],morph=false;if(mo[i]>0){mo[i]+=dt*3.2;morph=true;if(mo[i]>=1){type[i]=next[i];mo[i]=0;cool[i]=0.6+Math.random()*0.6;}}
+      const k=morph&&mo[i]>0.5?next[i]:type[i],ph=morph?Math.abs(1-mo[i]*2):1,sz=R*s1*ph;
+      if(sz>0.6)this.shape(morph?hot:fill,k,x,y,sz);else{const q=cell*0.07;rest.rect(x-q,y-q,q*2,q*2);}}
+    ctx.fillStyle=rgba(P.fg[0],0.28);ctx.fill(rest);ctx.fillStyle=P.fg[2];ctx.fill(fill);ctx.fillStyle=P.fg[1];ctx.fill(hot);
   }};
-const mDots={id:'dots',name:'점',key:'2',desc:'흩어진 점들이 사람에게 모여들어 움직임을 따라간다',
-  init(){const n=clamp(Math.round(W*H/(isTouch?230:130)),1500,9000);this.n=n;['x','y','vx','vy','sz','tx','ty'].forEach(k=>{this[k]=new Float32Array(n);});this.col=new Uint8Array(n);this.att=new Uint8Array(n);this.ti=new Int32Array(n).fill(-1);
-    for(let i=0;i<n;i++){this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;const r=Math.random();this.col[i]=r<0.5?1:r<0.85?2:3;this.sz[i]=1.1+Math.random()*1.9;this.att[i]=Math.random()<0.72?1:0;}},
-  pick(i){ // nearest of a few random silhouette cells, so each dot gathers to the closest person and stays with them
-    let best=-1,bd=1e12,bx=0,by=0;for(let k=0;k<5;k++){const ci=A.pres[(Math.random()*A.presN)|0];const cx=((ci%A.w)+Math.random())*A.sx,cy=(((ci/A.w)|0)+Math.random())*A.sy;const d=(cx-this.x[i])**2+(cy-this.y[i])**2;if(d<bd){bd=d;best=ci;bx=cx;by=cy;}}
-    this.ti[i]=best;this.tx[i]=bx;this.ty[i]=by;},
-  draw(){
-    fade(lerp(0.75,0.22,(S.trail-1)/9)); const P=pal(),g=gainF(),n=this.n,x=this.x,y=this.y,vx=this.vx,vy=this.vy,sz=this.sz,col=this.col,att=this.att,ti=this.ti,tx=this.tx,ty=this.ty;
-    const dots=[null,new Path2D(),new Path2D(),new Path2D()],lines=[null,new Path2D(),new Path2D(),new Path2D()];
-    const hasPres=A.presN>Math.max(12,A.n*0.004),maxSp=3+5*Math.min(1.6,W/1280),pr=A.p;
-    for(let i=0;i<n;i++){const f=at(x[i],y[i]);let nvx=vx[i],nvy=vy[i];let t=ti[i];
-      // gatherers pick a target cell on the silhouette (staggered), and re-pick when that cell empties as the person moves
-      if(hasPres&&att[i]){if(t<0){if(Math.random()<0.04){this.pick(i);t=ti[i];}}else if(pr[t]<0.3||Math.random()<0.01){this.pick(i);t=ti[i];}}
-      else if(t>=0){t=-1;ti[i]=-1;nvx+=(Math.random()-0.5)*5;nvy+=(Math.random()-0.5)*5;}
-      if(t>=0){const dx=tx[i]-x[i],dy=ty[i]-y[i],d=Math.sqrt(dx*dx+dy*dy)+0.001;const sp=Math.min(maxSp,d*0.14);
-        nvx+=(dx/d*sp-nvx)*0.12;nvy+=(dy/d*sp-nvy)*0.12;
-        if(d<4){nvx*=0.6;nvy*=0.6;nvx+=(Math.random()-0.5)*0.45;nvy+=(Math.random()-0.5)*0.45;}}
-      else{nvx=nvx*0.92+(Math.random()-0.5)*0.5;nvy=nvy*0.92+(Math.random()-0.5)*0.5;}
-      if(f.e>0.08){nvx+=f.u*g*0.45;nvy+=f.v*g*0.45;}
-      const px=x[i],py=y[i];let nx=px+nvx,ny=py+nvy;
-      if(nx<0||nx>W||ny<0||ny>H){nx=Math.random()*W;ny=Math.random()*H;nvx=0;nvy=0;ti[i]=-1;}
-      x[i]=nx;y[i]=ny;vx[i]=nvx;vy[i]=nvy;
-      const spd=Math.abs(nvx)+Math.abs(nvy),c=col[i];
-      if(spd>4){lines[c].moveTo(px,py);lines[c].lineTo(nx,ny);}
-      else{const s=sz[i]*(0.9+f.p*0.6+f.e*0.8);dots[c].rect(nx-s/2,ny-s/2,s,s);}}
-    ctx.lineCap='round';ctx.lineWidth=1.1;
-    for(let k=1;k<4;k++){ctx.fillStyle=P.fg[k];ctx.fill(dots[k]);ctx.strokeStyle=P.fg[k];ctx.stroke(lines[k]);}
-  }};
-const mGlyphs={id:'glyphs',name:'기호',key:'3',desc:'방향을 가리키는 기호가 실루엣을 이룬다',
-  init(){this.cols=isTouch?40:64;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);},
-  draw(){
-    fade(lerp(0.5,0.12,(S.trail-1)/9)); const P=pal(),cols=this.cols,rows=this.rows,cell=this.cell;
-    const aa=new Path2D(),ab=new Path2D(),da=new Path2D(),db=new Path2D();
-    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const x=(c+0.5)*cell,y=(r+0.5)*cell;const f=at(x,y);if(f.p<0.3&&f.e<0.1)continue;const m=Math.hypot(f.u,f.v);
-      if(f.e>0.12&&m>0.6){const ang=Math.atan2(f.v,f.u),len=cell*(0.6+Math.min(1.6,m/7)),cs=Math.cos(ang),sn=Math.sin(ang);const x2=x+cs*len,y2=y+sn*len,hx=x2-cs*cell*0.4,hy=y2-sn*cell*0.4;const p=f.u>=0?aa:ab;
-        p.moveTo(x-cs*len*0.35,y-sn*len*0.35);p.lineTo(x2,y2);p.moveTo(x2,y2);p.lineTo(hx-sn*cell*0.28,hy+cs*cell*0.28);p.moveTo(x2,y2);p.lineTo(hx+sn*cell*0.28,hy-cs*cell*0.28);}
-      else{const rad=cell*(0.12+0.22*f.p);const p=((r+c)&1)?da:db;if((r&1)===0){p.moveTo(x+rad,y);p.arc(x,y,rad,0,TAU);}else{p.moveTo(x,y-rad*1.15);p.lineTo(x+rad*1.1,y+rad*0.85);p.lineTo(x-rad*1.1,y+rad*0.85);p.closePath();}}
-    }
-    ctx.lineWidth=Math.max(1,cell*0.16);ctx.lineCap='round';ctx.lineJoin='round';
-    ctx.fillStyle=P.fg[1];ctx.fill(da);ctx.fillStyle=P.fg[3];ctx.fill(db);
-    ctx.strokeStyle=P.fg[1];ctx.stroke(aa);ctx.strokeStyle=P.fg[3];ctx.stroke(ab);
+const mDots={id:'dots',name:'점',desc:'화면 가득 흩뿌려진 점들 중 사람이 선 자리의 점만 제자리에서 차오르고, 떠나면 천천히 스러진다',
+  init(){const n=clamp(Math.round(W*H/(isTouch?120:80)),2500,14000);this.n=n;this.x=new Float32Array(n);this.y=new Float32Array(n);this.sz=new Float32Array(n);this.v=new Float32Array(n);this.rate=new Float32Array(n);this.col=new Uint8Array(n);this.pop=new Float32Array(n);
+    for(let i=0;i<n;i++){this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;this.sz[i]=1+Math.random()*2.2;this.rate[i]=0.04+Math.random()*0.12;const r=Math.random();this.col[i]=r<0.5?1:r<0.85?2:3;}},
+  draw(t,dt){const P=pal();paper(P.light?'#f6f5f1':P.bg);const n=this.n,x=this.x,y=this.y,sz=this.sz,v=this.v,rate=this.rate,col=this.col,pop=this.pop,LV=6;
+    const paths=[];for(let c=0;c<4;c++){paths.push([]);for(let l=0;l<LV;l++)paths[c].push(new Path2D());}
+    for(let i=0;i<n;i++){const f=at(x[i],y[i]);const target=f.p>0.45?1:0.08;v[i]+=(target-v[i])*rate[i];
+      if(f.e>0.3&&pop[i]<0.05)pop[i]=1;pop[i]*=0.9;
+      const vis=v[i];if(vis<0.05)continue;const s=sz[i]*(0.55+0.7*vis+0.9*pop[i]);const lv=Math.min(LV-1,(vis*LV)|0);const c=vis>0.4?col[i]:0;
+      paths[c][lv].rect(x[i]-s/2,y[i]-s/2,s,s);}
+    for(let c=0;c<4;c++){const base=c===0?P.fg[0]:P.fg[c];for(let l=0;l<LV;l++){ctx.fillStyle=rgba(base,c===0?0.22:Math.min(1,(l+1)/LV*1.15));ctx.fill(paths[c][l]);}}
   }};
 function drawSilhouette(cv,img,rgb,alpha){
   if(cv.width!==A.w||cv.height!==A.h){cv.width=A.w;cv.height=A.h;img=new ImageData(A.w,A.h);}
   const d=img.data,p=A.p,n=A.n;for(let i=0;i<n;i++){const o=i*4;d[o]=rgb[0];d[o+1]=rgb[1];d[o+2]=rgb[2];let a=(p[i]-0.22)*3;a=a<0?0:a>1?1:a;d[o+3]=a*alpha*255;}
   cv.cx.putImageData(img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(cv,0,0,W,H);
 }
-const mFlow={id:'flow',name:'흐름',key:'5',desc:'움직임을 따라 흐르는 입자',
-  init(){const n=clamp(Math.round(W*H/(isTouch?320:220)),800,6000);this.n=n;['x','y','vx','vy','life'].forEach(k=>{this[k]=new Float32Array(n);});for(let i=0;i<n;i++)this.spawn(i,true);},
-  spawn(i,any){if(!any&&A.presN>0&&Math.random()<0.5){const c=A.pres[(Math.random()*A.presN)|0];this.x[i]=((c%A.w)+Math.random())*A.sx;this.y[i]=(((c/A.w)|0)+Math.random())*A.sy;this.vx[i]=0;this.vy[i]=0;this.life[i]=60+Math.random()*300;return;}if(!any&&A.hotN>0&&Math.random()<0.7){const c=A.hot[(Math.random()*A.hotN)|0];this.x[i]=((c%A.w)+Math.random())*A.sx;this.y[i]=(((c/A.w)|0)+Math.random())*A.sy;}else{this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;}this.vx[i]=0;this.vy[i]=0;this.life[i]=60+Math.random()*300;},
-  draw(t){
-    fade(trailAlpha()); const P=pal(),g=gainF()*0.16,n=this.n,x=this.x,y=this.y,vx=this.vx,vy=this.vy,life=this.life;
-    const paths=[new Path2D(),new Path2D(),new Path2D(),new Path2D(),new Path2D()];
-    for(let i=0;i<n;i++){const f=at(x[i],y[i]);const inside=f.p>0.5;const ax=Math.sin(y[i]*0.012+t*0.4)*0.03,ay=Math.cos(x[i]*0.011-t*0.3)*0.03;let nvx=vx[i]*(inside?0.84:0.9)+f.u*g+ax,nvy=vy[i]*(inside?0.84:0.9)+f.v*g+ay;const sp=Math.hypot(nvx,nvy);if(sp>28){nvx*=28/sp;nvy*=28/sp;}
-      const px=x[i],py=y[i];x[i]=px+nvx;y[i]=py+nvy;vx[i]=nvx;vy[i]=nvy;life[i]-=1;
-      if(life[i]<0||x[i]<0||x[i]>W||y[i]<0||y[i]>H){this.spawn(i,false);continue;}
-      const b=inside?(sp<4?4:sp<12?2:3):(sp<1.4?0:sp<5?1:sp<12?2:3);paths[b].moveTo(px,py);paths[b].lineTo(x[i],y[i]);}
-    ctx.lineCap='round';const lw=[1,1.3,1.8,2.4,1.6],cm=[0,2,1,3,2];for(let b=0;b<5;b++){ctx.strokeStyle=b===0?rgba(P.fg[0],0.14):b===4?rgba(P.fg[2],0.85):P.fg[cm[b]];ctx.lineWidth=lw[b];ctx.stroke(paths[b]);}
-  }};
-const mEcho={id:'echo',name:'잔상',key:'8',desc:'지나간 움직임이 색층으로 남는다',
-  init(){this.K=7;this.ring=[];for(let k=0;k<this.K;k++)this.ring.push(new Float32Array(A.n));this.head=0;this.f=0;this.img=new ImageData(A.w,A.h);this.cv=mkCanvas(A.w,A.h);},
-  draw(){
-    const P=pal(),n=A.n,K=this.K,every=Math.round(lerp(3,9,(S.trail-1)/9));
-    if((this.f++%every)===0){this.ring[this.head].set(A.p);this.head=(this.head+1)%K;}
-    const out=this.img.data,bg=P.bgRGB,fg=P.fgRGB,e=A.e,cols=[fg[1],fg[3],fg[2]];
-    for(let i=0;i<n;i++){let r=bg[0],g=bg[1],b=bg[2];
-      // older silhouettes in the accent colours, the newest in ink; moving parts flash in the first accent
-      for(let k=0;k<K;k++){const val=this.ring[(this.head+k)%K][i];if(val>0.3){const col=k===K-1?fg[2]:cols[k%3];let a=(val-0.3)*2.5;a=a>1?1:a;a*=k===K-1?1:0.85;r+=(col[0]-r)*a;g+=(col[1]-g)*a;b+=(col[2]-b)*a;}}
-      const ee=e[i];if(ee>0.25){const col=fg[1],a=(ee-0.25)*1.2;r+=(col[0]-r)*a;g+=(col[1]-g)*a;b+=(col[2]-b)*a;}
-      const q=i*4;out[q]=r;out[q+1]=g;out[q+2]=b;out[q+3]=255;}
-    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
-  }};
 function buildMask(cv,_img,arr,lo,k){
   if(cv.width!==A.w||cv.height!==A.h||!cv.img||cv.img.width!==A.w||cv.img.height!==A.h){cv.width=A.w;cv.height=A.h;cv.img=new ImageData(A.w,A.h);}
   const d=cv.img.data,n=A.n;for(let i=0;i<n;i++){let a=(arr[i]-lo)*k;a=a<0?0:a>1?1:a;const o=i*4;d[o]=255;d[o+1]=255;d[o+2]=255;d[o+3]=a*255;}
@@ -576,75 +519,20 @@ function drawFrameTo(cv){ // current camera frame, cropped like the analysis, in
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;
   c.save();if(S.mirror){c.translate(W,0);c.scale(-1,1);}try{c.drawImage(el,sx,sy,cw,ch,0,0,W,H);}catch(e){}c.restore();
 }
-const mWords={id:'words',name:'글자',desc:'사람의 형태가 글로 채워진다',
-  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.T=mkCanvas(tw,th);this.Sc=mkCanvas(tw,th);this.tmp=mkCanvas(tw,th);this.mask=mkCanvas(A.w,A.h);this.mask.img=new ImageData(A.w,A.h);this.mask2=mkCanvas(A.w,A.h);this.mask2.img=new ImageData(A.w,A.h);this.renderText();},
-  renderText(){const P=pal(),c=this.T.cx,s=this.Sc.cx,rnd=seeded(11);
-    const words=String(S.text||DEF.text).replace(/\n/g,' ').split(/\s+/).filter(Boolean);if(!words.length)words.push('결');
-    c.setTransform(DPR,0,0,DPR,0,0);c.clearRect(0,0,W,H);c.fillStyle=P.fg[0];c.textBaseline='alphabetic';
-    const base=isTouch?11:14;let y=0,wi=0;
-    while(y<H+30){const fs=Math.round(base*(0.7+rnd()*1.5)),lh=fs*1.1;y+=lh;c.font='700 '+fs+'px '+SANS;let x=-rnd()*60;
-      while(x<W){const wd=words[wi++%words.length];const m=c.measureText(wd).width;c.fillText(wd,x,y-fs*0.15);x+=m+fs*0.45;}}
-    s.setTransform(DPR,0,0,DPR,0,0);s.clearRect(0,0,W,H);s.fillStyle=P.fg[0];
-    for(let k=0;k<Math.round(W*H/30000);k++){const fs=base*(0.8+rnd()*0.9);s.font='700 '+fs+'px '+SANS;s.fillText(words[(rnd()*words.length)|0],rnd()*W,rnd()*H);}},
-  draw(){const P=pal();fillBg();const tw=this.T.width,th=this.T.height,t=this.tmp.cx;
-    ctx.globalAlpha=0.3;ctx.drawImage(this.Sc,0,0,W,H);ctx.globalAlpha=1;
-    buildMask(this.mask,this.mask.img,A.p,0.22,3);
-    t.setTransform(1,0,0,1,0,0);t.globalCompositeOperation='source-over';t.clearRect(0,0,tw,th);t.imageSmoothingEnabled=true;t.drawImage(this.mask,0,0,tw,th);t.globalCompositeOperation='source-in';t.drawImage(this.T,0,0);t.globalCompositeOperation='source-over';
-    ctx.drawImage(this.tmp,0,0,W,H);
-    buildMask(this.mask2,this.mask2.img,A.e,0.15,2.5);
-    t.clearRect(0,0,tw,th);t.drawImage(this.mask2,0,0,tw,th);t.globalCompositeOperation='source-in';t.drawImage(this.T,0,0);t.fillStyle=P.fg[1];t.fillRect(0,0,tw,th);t.globalCompositeOperation='source-over';
-    ctx.drawImage(this.tmp,0,0,W,H);
-  }};
-const mPattern={id:'pattern',name:'패턴',desc:'사람의 형태가 무늬 조각으로 채워진다',
-  init(){this.cols=isTouch?28:48;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.tiles=this.makeTiles();const m=this.cols*this.rows;this.pick=new Uint8Array(m);for(let i=0;i<m;i++)this.pick[i]=(Math.random()*this.tiles.length)|0;},
-  makeTiles(){const P=pal(),s=Math.max(4,Math.round(this.cell*DPR)),col=P.fg[3];
-    const mk=f=>{const c=mkCanvas(s,s),x=c.cx;x.fillStyle=col;x.strokeStyle=col;x.lineWidth=Math.max(1,s*0.12);x.lineCap='square';f(x,s);return c;};
-    return [
-      mk((x,s)=>x.fillRect(0,0,s,s)),
-      mk((x,s)=>{x.fillRect(0,0,s/2,s/2);x.fillRect(s/2,s/2,s/2,s/2);}),
-      mk((x,s)=>{for(let i=0;i<4;i++)for(let j=0;j<4;j++)if((i+j)&1)x.fillRect(i*s/4,j*s/4,s/4,s/4);}),
-      mk((x,s)=>{x.beginPath();x.moveTo(0,s);x.lineTo(s,0);x.moveTo(0,s/2);x.lineTo(s/2,0);x.moveTo(s/2,s);x.lineTo(s,s/2);x.stroke();}),
-      mk((x,s)=>{for(let i=0;i<3;i++)for(let j=0;j<3;j++){x.beginPath();x.arc((i+0.5)*s/3,(j+0.5)*s/3,s*0.09,0,TAU);x.fill();}}),
-      mk((x,s)=>{x.beginPath();x.moveTo(0,0);x.lineTo(s,0);x.lineTo(0,s);x.closePath();x.fill();}),
-      mk((x,s)=>{x.beginPath();x.moveTo(0,0);x.arc(0,0,s,0,Math.PI/2);x.closePath();x.fill();}),
-      mk((x,s)=>{x.beginPath();x.moveTo(0,s/2);x.lineTo(s,s/2);x.moveTo(s/2,0);x.lineTo(s/2,s);x.stroke();}),
-      mk((x,s)=>{x.beginPath();x.arc(s/2,s/2,s*0.34,0,TAU);x.stroke();}),
-      mk((x,s)=>{x.beginPath();x.arc(s/2,s/2,s*0.3,0,TAU);x.fill();}),
-      mk((x,s)=>{x.strokeRect(s*0.18,s*0.18,s*0.64,s*0.64);}),
-      mk((x,s)=>{for(let i=0;i<3;i++){x.fillRect(0,i*s/3,s,s/6);}}),
-    ];},
-  draw(){fillBg();const P=pal(),cols=this.cols,rows=this.rows,cell=this.cell,tiles=this.tiles,pick=this.pick,grid=new Path2D();
-    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c,x=c*cell,y=r*cell;const f=at(x+cell/2,y+cell/2);
-      if(f.p>0.45){if(f.e>0.25&&Math.random()<0.35)pick[i]=(Math.random()*tiles.length)|0;ctx.drawImage(tiles[pick[i]],x,y,cell,cell);}
-      else if(f.p>0.12)grid.rect(x,y,cell,cell);}
-    ctx.lineWidth=1;ctx.strokeStyle=rgba(P.fg[3],0.5);ctx.stroke(grid);
-  }};
-const mScribble={id:'scribble',name:'낙서',desc:'볼펜 낙서가 사람의 형태를 그린다',
-  init(){this.cv=mkCanvas(Math.max(1,Math.round(W*DPR)),Math.max(1,Math.round(H*DPR)));this.clear();},
-  clear(){const c=this.cv.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle=pal().bg;c.fillRect(0,0,W,H);},
-  draw(){const P=pal(),c=this.cv.cx,w=A.w;
-    c.fillStyle=rgba(P.bg,lerp(0.08,0.015,(S.trail-1)/9));c.fillRect(0,0,W,H);
-    if(A.presN>0){const n=isTouch?45:90;c.strokeStyle=rgba(P.fg[3],0.6);c.lineWidth=isTouch?0.9:1.1;c.lineJoin='round';c.lineCap='round';
-      for(let k=0;k<n;k++){const ci=A.pres[(Math.random()*A.presN)|0];const x=((ci%w)+Math.random())*A.sx,y=(((ci/w)|0)+Math.random())*A.sy,e=A.e[ci];
-        let ang=Math.random()*TAU;if(e>0.15)ang=Math.atan2(A.v[ci],A.u[ci])+(Math.random()-0.5)*0.7;
-        const cs=Math.cos(ang),sn=Math.sin(ang),amp=A.sx*(1.2+e*2.5),step=A.sx*0.8,steps=5+((Math.random()*9)|0);
-        c.beginPath();c.moveTo(x,y);
-        for(let s=1;s<=steps;s++){const side=(s&1)?1:-1,a=amp*side*(0.5+Math.random()*0.7);const px=x+cs*step*s-sn*a,py=y+sn*step*s+cs*a;const f=at(px,py);if(f.p<0.25)break;c.lineTo(px,py);}
-        c.stroke();}}
-    ctx.drawImage(this.cv,0,0,W,H);
-  }};
-const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,ftime:-1e9,otime:-1e9};
-const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500);
+const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,ftime:-1e9,otime:-1e9,pose:null,pres:null,plast:0,ptime:-1e9};
+const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze',wantObj=id==='detect'||id==='trail'||id==='drops'||id==='gaze';if(!wantFace&&!wantObj)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='drops'||id==='space',wantPose=wantFace||id==='string'||id==='stars',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
+  if(wantPose&&FACE.pose&&now-FACE.plast>70){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
   if(wantObj&&FACE.obj&&now-FACE.olast>140){FACE.olast=now;try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;}catch(e){FACE.ores=null;}}}
 async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='loading';
   try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
     FACE.det=await vision.FaceDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});
     FACE.state='ready';toast('얼굴 인식 모델 준비됨');
+    try{FACE.pose=await vision.PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:4,minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});toast('자세 인식 모델 준비됨');}catch(e){}
     try{FACE.obj=await vision.ObjectDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',delegate:'GPU'},runningMode:'VIDEO',scoreThreshold:0.4,maxResults:8});toast('사물 인식 모델 준비됨');}catch(e){}
   }catch(e){FACE.state='offline';}}
 const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
@@ -657,33 +545,53 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
       if(cnt>=minCnt)out.push({x:minx*A.sx,y:miny*A.sy,w:(maxx-minx+1)*A.sx,h:(maxy-miny+1)*A.sy,cx:(sx/cnt+0.5)*A.sx,cy:(sy/cnt+0.5)*A.sy,conf:Math.min(0.99,0.6+sum/cnt*0.4),area:cnt});}
     return out;},
   track(bl){this.f++;const T=this.tracks,now=this.f;bl.forEach(b=>{let best=null,bd=1e9;T.forEach(t=>{if(t.used)return;const d=Math.hypot(t.cx-b.cx,t.cy-b.cy);if(d<bd&&d<Math.max(W,H)*0.22){bd=d;best=t;}});
-      if(best){Object.assign(best,b);best.used=true;best.seen=now;best.sx+=(b.cx-best.sx)*0.2;best.sy+=(b.cy-best.sy)*0.2;best.hist.push([best.sx,best.sy]);if(best.hist.length>60)best.hist.shift();}
-      else{const t=Object.assign({id:this.nextId++,seen:now,born:now,sx:b.cx,sy:b.cy,hist:[[b.cx,b.cy]],used:true},b);T.push(t);this.log.unshift('motion '+t.id+' at '+(t.x|0)+','+(t.y|0));if(this.log.length>6)this.log.pop();}});
+      if(best){Object.assign(best,b);best.used=true;best.seen=now;best.hits=(best.hits||0)+1;best.sx+=(b.cx-best.sx)*0.2;best.sy+=(b.cy-best.sy)*0.2;best.hist.push([best.sx,best.sy]);if(best.hist.length>60)best.hist.shift();}
+      else{const t=Object.assign({id:this.nextId++,seen:now,born:now,hits:1,sx:b.cx,sy:b.cy,hist:[[b.cx,b.cy]],used:true},b);T.push(t);this.log.unshift('motion '+t.id+' at '+(t.x|0)+','+(t.y|0));if(this.log.length>6)this.log.pop();}});
     for(let i=T.length-1;i>=0;i--){T[i].used=false;if(now-T[i].seen>240){this.log.unshift('motion '+T[i].id+' ended');if(this.log.length>6)this.log.pop();T.splice(i,1);}}},
-  merge(bl){ // pieces of one person (a hand, a head) that sit close together become one blob
-    const mx=W*0.09,my=H*0.16;let changed=true;
+  splitWide(bl){ // a silhouette much wider than one person, with a clear valley in its column profile, is split at that valley
+    const out=[],w=A.w;const sub=(x0,x1,y0,y1)=>{let mnx=1e9,mxx=-1,mny=1e9,mxy=-1,n=0,sx=0,sy=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)if(A.p[y*w+x]>0.45){n++;sx+=x;sy+=y;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;}
+      return n?{x:mnx*A.sx,y:mny*A.sy,w:(mxx-mnx+1)*A.sx,h:(mxy-mny+1)*A.sy,cx:(sx/n+0.5)*A.sx,cy:(sy/n+0.5)*A.sy,conf:0.8,area:n}:null;};
+    const go=(b,depth)=>{if(depth>2||b.w<b.h*0.7){out.push(b);return;}const x0=(b.x/A.sx)|0,x1=Math.min(w-1,((b.x+b.w)/A.sx)|0),y0=(b.y/A.sy)|0,y1=Math.min(A.h-1,((b.y+b.h)/A.sy)|0);
+      const prof=[];for(let x=x0;x<=x1;x++){let c=0;for(let y=y0;y<=y1;y++)if(A.p[y*w+x]>0.45)c++;prof.push(c);}const sm=prof.map((v,i)=>(v+(prof[i-1]||v)+(prof[i+1]||v))/3),mx=Math.max(...sm);
+      let best=-1,bv=1e9;for(let i=2;i<sm.length-2;i++){const L=Math.max(...sm.slice(0,i)),R=Math.max(...sm.slice(i));if(L<mx*0.5||R<mx*0.5)continue;if(sm[i]<0.35*Math.min(L,R)&&sm[i]<bv){bv=sm[i];best=i;}}
+      if(best<0){out.push(b);return;}const a=sub(x0,x0+best,y0,y1),c=sub(x0+best+1,x1,y0,y1);if(a)go(a,depth+1);if(c)go(c,depth+1);};
+    bl.forEach(b=>go(b,0));return out;},
+  merge(bl,detector){ // pieces of one person (head, arm, legs) become one blob; people standing apart stay separate
+    let changed=true;
     while(changed){changed=false;for(let i=0;i<bl.length&&!changed;i++)for(let j=i+1;j<bl.length;j++){const a=bl[i],b=bl[j];
-      if(a.x-mx<b.x+b.w&&b.x-mx<a.x+a.w&&a.y-my<b.y+b.h&&b.y-my<a.y+a.h){const x0=Math.min(a.x,b.x),y0=Math.min(a.y,b.y),x1=Math.max(a.x+a.w,b.x+b.w),y1=Math.max(a.y+a.h,b.y+b.h),n=a.area+b.area;
+      const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+      const inside=ox>0.6*Math.min(a.w,b.w)&&oy>0.6*Math.min(a.h,b.h);
+      const stacked=!detector&&ox>0.35*Math.min(a.w,b.w)&&oy>-H*0.22,beside=!detector&&oy>0.35*Math.min(a.h,b.h)&&ox>-W*0.03;
+      if(inside||stacked||beside){const x0=Math.min(a.x,b.x),y0=Math.min(a.y,b.y),x1=Math.max(a.x+a.w,b.x+b.w),y1=Math.max(a.y+a.h,b.y+b.h),n=a.area+b.area;
         bl[i]={x:x0,y:y0,w:x1-x0,h:y1-y0,cx:(a.cx*a.area+b.cx*b.area)/n,cy:(a.cy*a.area+b.cy*b.area)/n,conf:Math.max(a.conf,b.conf),area:n};bl.splice(j,1);changed=true;break;}}}
     return bl;},
   update(){
-    // prefer real person detections when the on-device model is running
+    // best: one skeleton per person from the pose model; each becomes one body with its joints attached
+    if(poseFresh()&&FACE.pres.landmarks&&FACE.pres.landmarks.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;const bl=[];
+      FACE.pres.landmarks.forEach(lm=>{const L=lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility};});
+        let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.forEach(q=>{if(q.v<0.4)return;x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);});if(x1<x0)return;
+        const hipOK=L[23].v>0.4&&L[24].v>0.4,cx=hipOK?(L[23].x+L[24].x)/2:(x0+x1)/2,cy=hipOK?(L[23].y+L[24].y)/2:(y0+y1)/2,pad=(y1-y0)*0.06;
+        bl.push({x:x0-pad,y:y0-pad*2,w:x1-x0+pad*2,h:y1-y0+pad*3,cx,cy,conf:0.9,area:(x1-x0)*(y1-y0),pose:L});});
+      this.track(this.merge(bl,true));return;}
+    // next: person boxes from the object model
     if(objFresh()&&FACE.ores.detections&&FACE.ores.detections.some(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person')){
       const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;const bl=[];
       FACE.ores.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;bl.push({x,y,w,h,cx:x+w/2,cy:y+h/2,conf:c.score,area:w*h});});
-      this.track(bl);return;}
-    this.track(this.merge(this.blobs(A.p,0.45,Math.max(10,A.n*0.003))));}
+      this.track(this.merge(bl,true));return;}
+    this.track(this.splitWide(this.merge(this.blobs(A.p,0.45,Math.max(12,A.n*0.004)),false)));}
 };
-const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 하나의 동선이 가는 실선 다발로 흐르다 옅어지고, 겹친 곳은 진하게 쌓인다',
-  init(){this.f=0;this.paths={};this.fadeT=lerp(14,60,(S.trail-1)/9);},
+const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 동선 하나. 얼굴로 같은 사람을 이어 그리고, 정해진 시간이 지나면 사라지며, 겹친 곳은 진하다',
+  init(){this.f=0;this.paths={};},
   clear(){this.paths={};},
-  draw(t,dt){const P=pal();this.f++;fillBg();if((this.f&1)===0)TR.update();
-    const paths=this.paths,cols=[P.fg[1],P.fg[3],P.fg[2]],R=Math.max(12,W*0.012),R2=R*R,fadeT=this.fadeT;
-    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>1)return;let pa=paths[tr.id];if(!pa){pa=paths[tr.id]={id:tr.id,pts:[],col:cols[tr.id%3],ov:new Set(),seen:t};}
+  draw(t,dt){const P=pal();this.f++;fillBg();
+    if((this.f&1)===0){PEOPLE.update();PEOPLE.takeRenames().forEach(([ka,kb])=>{const pa=this.paths[ka];if(!pa)return;const pb=this.paths[kb];
+      if(pb){pb.pts=pa.pts.concat(pb.pts).sort((x,y)=>x[2]-y[2]);pa.ov.forEach(o=>pb.ov.add(o));}else{this.paths[kb]=pa;pa.key=kb;}delete this.paths[ka];});}
+    const paths=this.paths,cols=[P.fg[1],P.fg[3],P.fg[2]],R=Math.max(12,W*0.012),R2=R*R,fadeT=[6,12,24][S.trailp|0]||12;
+    PEOPLE.list.forEach(pp=>{let pa=paths[pp.key];if(!pa){let hsum=0;for(const ch of pp.key)hsum+=ch.charCodeAt(0)*7;pa=paths[pp.key]={key:pp.key,pts:[],col:cols[hsum%3],ov:new Set(),seen:t};}
       pa.seen=t;const last=pa.pts[pa.pts.length-1];
-      if(!last||Math.hypot(tr.sx-last[0],tr.sy-last[1])>3){
-        for(const k in paths){const o=paths[k];if(o===pa||o.ov.has(pa.id))continue;const pts=o.pts;for(let i=0;i<pts.length;i+=2){const dx=pts[i][0]-tr.sx,dy=pts[i][1]-tr.sy;if(dx*dx+dy*dy<R2){pa.ov.add(o.id);o.ov.add(pa.id);break;}}}
-        pa.pts.push([tr.sx,tr.sy,t]);}});
+      if(!last||Math.hypot(pp.x-last[0],pp.y-last[1])>3){
+        for(const k in paths){const o=paths[k];if(o===pa||o.ov.has(pa.key))continue;const pts=o.pts;for(let i=0;i<pts.length;i+=2){const dx=pts[i][0]-pp.x,dy=pts[i][1]-pp.y;if(dx*dx+dy*dy<R2){pa.ov.add(o.key);o.ov.add(pa.key);break;}}}
+        pa.pts.push([pp.x,pp.y,t]);}});
     // each path is a small bundle of hairlines: thickest and darkest at the head, thinning and fading with age.
     // Multiply (or add, on dark palettes) makes every crossing read darker without extra marks.
     const BANDS=10,base=Math.max(1.1,Math.min(2,W/1000)),gap=base*3;
@@ -694,7 +602,7 @@ const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 하나의 동선�
       for(let i=0;i<n;i++){const a=pts[Math.max(0,i-2)],c=pts[Math.min(n-1,i+2)];let vx=c[0]-a[0],vy=c[1]-a[1];const l=Math.hypot(vx,vy)||1;nx[i]=-vy/l;ny[i]=vx/l;}
       const rgb=hex(pa.col);
       [-1,0,1].forEach(sd=>{const bands=[];for(let b=0;b<BANDS;b++)bands.push(new Path2D());
-        const off=i=>sd*gap*(0.55+0.45*Math.sin(i*0.09+pa.id*1.3));
+        const off=i=>sd*gap*(0.55+0.45*Math.sin(i*0.09+pa.key.length*1.3));
         for(let i=1;i<n-1;i++){const a=pts[i-1],b=pts[i],c=pts[i+1];const oa=off(i-1),ob=off(i),oc=off(i+1);
           const m1x=(a[0]+nx[i-1]*oa+b[0]+nx[i]*ob)/2,m1y=(a[1]+ny[i-1]*oa+b[1]+ny[i]*ob)/2,m2x=(b[0]+nx[i]*ob+c[0]+nx[i+1]*oc)/2,m2y=(b[1]+ny[i]*ob+c[1]+ny[i+1]*oc)/2;
           const bi=Math.min(BANDS-1,(((t-b[2])/fadeT)*BANDS)|0);bands[bi].moveTo(m1x,m1y);bands[bi].quadraticCurveTo(b[0]+nx[i]*ob,b[1]+ny[i]*ob,m2x,m2y);}
@@ -708,44 +616,76 @@ const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 하나의 동선�
       ctx.strokeStyle=note;ctx.lineWidth=0.75;ctx.beginPath();ctx.moveTo(e[0]+6,e[1]-6);ctx.lineTo(e[0]+18,e[1]-18);ctx.stroke();
       ctx.fillStyle=note;ctx.fillText('겹침 '+String(pa.ov.size).padStart(2,'0'),e[0]+21,e[1]-20);}
   }};
-const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 움직임·사람·사물·얼굴 인식 박스를 겹친다',
-  init(){this.f=0;},
-  drawSource(){const el=source.el;if(!el||A.remote){fillBg();return;}const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh){fillBg();return;}
-    const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;
-    ctx.save();if(S.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(el,sx,sy,cw,ch,0,0,W,H);}catch(e){}ctx.restore();
-    ctx.fillStyle='rgba(0,0,0,0.18)';ctx.fillRect(0,0,W,H);},
-  draw(t){this.f++;this.drawSource();const P=pal(),red='#FF2A2A',blue='#2F6BFF';
-    if((this.f&1)===0){TR.update();}
-    // real face detection (on-device model) when a video source is available
-    const mono=(isTouch?11:13)+'px '+'ui-monospace,Menlo,monospace';
-    // flow vectors in blue, sampled sparsely
-    ctx.strokeStyle=rgba(blue,0.9);ctx.lineWidth=1;const vec=new Path2D(),st=Math.max(3,Math.round(A.w/40));
-    for(let y=0;y<A.h;y+=st)for(let x=0;x<A.w;x+=st){const i=y*A.w+x;if(A.e[i]<0.12)continue;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;vec.moveTo(px,py);vec.lineTo(px+A.u[i]*A.sx*4,py+A.v[i]*A.sy*4);}
-    ctx.stroke(vec);
-    ctx.font=mono;ctx.textBaseline='top';ctx.textAlign='left';
-    TR.tracks.forEach(tr=>{const x=tr.x,y=tr.y,w=tr.w,h=tr.h,cl=w*0.18;
-      ctx.strokeStyle=blue;ctx.lineWidth=isTouch?1.2:1.5;ctx.strokeRect(x,y,w,h);
-      ctx.lineWidth=isTouch?3:4;ctx.beginPath();ctx.moveTo(x,y+cl);ctx.lineTo(x,y);ctx.lineTo(x+cl,y);ctx.moveTo(x+w-cl,y);ctx.lineTo(x+w,y);ctx.lineTo(x+w,y+cl);ctx.moveTo(x,y+h-cl);ctx.lineTo(x,y+h);ctx.lineTo(x+cl,y+h);ctx.moveTo(x+w-cl,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w,y+h-cl);ctx.stroke();
-      const lab='motion '+tr.conf.toFixed(2)+'  id:'+tr.id;const tw=ctx.measureText(lab).width+8;ctx.fillStyle=blue;ctx.fillRect(x,y-18,tw,16);ctx.fillStyle='#fff';ctx.fillText(lab,x+4,y-16);
-      ctx.fillStyle=blue;ctx.fillText((tr.cx|0)+','+(tr.cy|0)+'  '+(tr.w|0)+'x'+(tr.h|0),x,y+h+3);
-      if(tr.hist.length>2){ctx.strokeStyle=rgba(blue,0.8);ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();tr.hist.forEach((pt,i)=>{if(i)ctx.lineTo(pt[0],pt[1]);else ctx.moveTo(pt[0],pt[1]);});ctx.stroke();ctx.setLineDash([]);}
-      ctx.fillStyle=blue;ctx.beginPath();ctx.arc(tr.cx,tr.cy,3,0,TAU);ctx.fill();});
-    // objects and people from the on-device detector (red)
-    if(objFresh()&&FACE.ores.detections&&FACE.ores.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
-      FACE.ores.detections.forEach(o=>{const bb=o.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;const cat=o.categories&&o.categories[0];const name=cat?cat.categoryName:'object',sc=cat?cat.score:0;
-        ctx.strokeStyle=red;ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);const lab=name+' '+sc.toFixed(2);const tw=ctx.measureText(lab).width+8;ctx.fillStyle=red;ctx.fillRect(x,y-18,tw,16);ctx.fillStyle='#fff';ctx.fillText(lab,x+4,y-16);});}
-    // real faces (when the model is loaded)
-    if(faceFresh()&&FACE.res.detections&&FACE.res.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
-      FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;const sc=f.categories&&f.categories[0]?f.categories[0].score:0;
-        ctx.strokeStyle='#FFD400';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);ctx.fillStyle='#FFD400';ctx.fillText('face '+sc.toFixed(2),x,y-14);
-        (f.keypoints||[]).forEach(kp=>{let px=(kp.x*sw-sx0)*k,py=(kp.y*sh-sy0)*k;if(S.mirror)px=W-px;ctx.beginPath();ctx.arc(px,py,2.5,0,TAU);ctx.fill();});});}
-    // data readout + the sentence as a handwritten note
-    const lines=String(S.text||DEF.text).split('\n').filter(Boolean);const note=lines[(this.f/240|0)%lines.length];
-    ctx.font='italic 700 '+(isTouch?20:28)+'px '+SANS;ctx.fillStyle=red;ctx.fillText(note,16,16+(S.debug?0:0));
-    ctx.font=mono;ctx.fillStyle=blue;const y0=H-16-(TR.log.length+2)*16;
-    ctx.fillText('tracks:'+TR.tracks.length+'  motion:'+(A.level*100|0)+'%  grid:'+A.w+'x'+A.h+'  model:'+FACE.state+(FACE.obj?'+objects':'')+'  seg:'+SEG.state+'  t:'+t.toFixed(1),16,y0);
-    TR.log.forEach((l,i)=>ctx.fillText(l,16,y0+16*(i+1)));
-    ctx.strokeStyle=rgba(blue,0.6);ctx.lineWidth=1;ctx.strokeRect(10,y0-6,Math.min(W-20,320),(TR.log.length+1)*16+12);
+/* 인식: no footage. A surveillance-style rig: each person's silhouette as scan lines, the body split into head / torso / arms / legs
+   with bones, joints and angles, and remembered faces. Uses the on-device pose model when available, an estimate otherwise. */
+const BONES={HEAD:[[0,11],[0,12],[7,0],[8,0]],TORSO:[[11,12],[11,23],[12,24],[23,24]],'ARM.L':[[11,13],[13,15],[15,19]],'ARM.R':[[12,14],[14,16],[16,20]],'LEG.L':[[23,25],[25,27],[27,31]],'LEG.R':[[24,26],[26,28],[28,32]]};
+const PART_COL={HEAD:'#e9e6df',TORSO:'#ff5a47','ARM.L':'#f2b84b','ARM.R':'#f2b84b','LEG.L':'#53c6b8','LEG.R':'#53c6b8'};
+const JOINT_NAME={11:'SHOULDER.L',12:'SHOULDER.R',13:'ELBOW.L',14:'ELBOW.R',15:'WRIST.L',16:'WRIST.R',23:'HIP.L',24:'HIP.R',25:'KNEE.L',26:'KNEE.R',27:'ANKLE.L',28:'ANKLE.R'};
+const ANGLES={13:[11,13,15],14:[12,14,16],25:[23,25,27],26:[24,26,28]};
+function rigFromSilhouette(tr){ // rough joints from the person's shape when no pose model is running
+  const w=A.w,x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,A.h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,A.h-1);
+  const row=fr=>{const y=clamp(Math.round(y0+(y1-y0)*fr),0,A.h-1);let mn=1e9,mx=-1,sx=0,n=0;for(let x=x0;x<=x1;x++)if(A.p[y*w+x]>0.5){if(x<mn)mn=x;if(x>mx)mx=x;sx+=x;n++;}return n?{l:(mn+0.5)*A.sx,r:(mx+0.5)*A.sx,c:(sx/n+0.5)*A.sx,y:(y+0.5)*A.sy}:null;};
+  const hd=row(0.07),sh=row(0.2),el=row(0.36),wr=row(0.5),hp=row(0.55),kn=row(0.75),an=row(0.96);if(!hd||!sh||!hp)return null;
+  const L=[];const put=(i,x,y)=>{L[i]={x,y,v:1};};
+  put(0,hd.c,hd.y);put(11,sh.l+(sh.r-sh.l)*0.18,sh.y);put(12,sh.r-(sh.r-sh.l)*0.18,sh.y);
+  if(el){put(13,el.l,el.y);put(14,el.r,el.y);}if(wr){put(15,wr.l,wr.y);put(16,wr.r,wr.y);}
+  put(23,hp.c-(hp.r-hp.l)*0.22,hp.y);put(24,hp.c+(hp.r-hp.l)*0.22,hp.y);if(kn){put(25,kn.c-(kn.r-kn.l)*0.25,kn.y);put(26,kn.c+(kn.r-kn.l)*0.25,kn.y);}if(an){put(27,an.l+(an.r-an.l)*0.2,an.y);put(28,an.r-(an.r-an.l)*0.2,an.y);}
+  return L;}
+function isoPath(field,w,h,lv,sx,sy,path){ // marching squares: one contour level of a grid field into a path, in screen space
+  for(let y=0;y<h-1;y++)for(let x=0;x<w-1;x++){const i=y*w+x,a=field[i],b=field[i+1],c=field[i+w+1],d=field[i+w];const ca=(a>lv?8:0)|(b>lv?4:0)|(c>lv?2:0)|(d>lv?1:0);if(ca===0||ca===15)continue;
+    const tX=x+(lv-a)/(b-a),rY=y+(lv-b)/(c-b),bX=x+(lv-d)/(c-d),lY=y+(lv-a)/(d-a);const seg=(x1,y1,x2,y2)=>{path.moveTo((x1+0.5)*sx,(y1+0.5)*sy);path.lineTo((x2+0.5)*sx,(y2+0.5)*sy);};
+    switch(ca){case 1:case 14:seg(x,lY,bX,y+1);break;case 2:case 13:seg(bX,y+1,x+1,rY);break;case 3:case 12:seg(x,lY,x+1,rY);break;case 4:case 11:seg(tX,y,x+1,rY);break;
+      case 6:case 9:seg(tX,y,bX,y+1);break;case 7:case 8:seg(x,lY,tX,y);break;case 5:seg(x,lY,tX,y);seg(bX,y+1,x+1,rY);break;case 10:seg(tX,y,x+1,rY);seg(x,lY,bX,y+1);break;}}}
+const mDetect={id:'detect',name:'인식',desc:'실제 화면 없이, 여러 겹으로 따라 그린 윤곽선과 상자로 사람·머리·몸통·팔·다리·얼굴을 구분해 읽는 관찰 화면. 얼굴은 기억한다',
+  init(){this.f=0;this.seenIds={};this.log=[];this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
+  say(m){const d=new Date();this.log.unshift(d.toTimeString().slice(0,8)+'  '+m);if(this.log.length>5)this.log.pop();},
+  capsule(p,q,wid,col){ // a limb as a hollow capsule with a fine centre line
+    ctx.lineCap='round';ctx.strokeStyle=rgba(col,0.9);ctx.lineWidth=wid;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+    ctx.strokeStyle='#0a0b0d';ctx.lineWidth=Math.max(0,wid-2.4);ctx.stroke();ctx.strokeStyle=rgba(col,0.55);ctx.lineWidth=0.8;ctx.stroke();},
+  draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();const mono=(isTouch?9:10)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace',monoB='600 '+(isTouch?9:11)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+    ctx.fillStyle='#0a0b0d';ctx.fillRect(0,0,W,H);
+    // the body traced again and again: concentric contours of the blurred silhouette, drifting outward slowly
+    const pb=this.pb,w=A.w,h=A.h;pb.set(A.p);blur3(pb,this.tmp,w,h);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
+    const LV=7,drift=(t*0.35)%1;for(let k=0;k<LV;k++){const lv=0.06+((k+drift)/LV)*0.7;const pth=new Path2D();isoPath(pb,w,h,lv,A.sx,A.sy,pth);const al=0.12+0.5*(lv/0.76);
+      ctx.strokeStyle='rgba(205,228,226,'+al.toFixed(3)+')';ctx.lineWidth=k===LV-1?1.2:0.8;ctx.lineJoin='round';ctx.stroke(pth);}
+    ctx.font=mono;ctx.textBaseline='alphabetic';ctx.textAlign='left';
+    const bodies=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=4),alive={};
+    bodies.forEach(tr=>{alive[tr.id]=1;if(!this.seenIds[tr.id]){this.seenIds[tr.id]=t;this.say('SUBJECT '+String(tr.id).padStart(3,'0')+'  ENTERED');}
+      // no rig: the person, and each part of the body, as a plain box with a quiet label
+      ctx.lineWidth=1;ctx.strokeStyle='rgba(240,240,236,0.75)';ctx.strokeRect(tr.x,tr.y,tr.w,tr.h);
+      ctx.font=monoB;ctx.fillStyle='rgba(240,240,236,0.92)';ctx.fillText('SUBJECT '+String(tr.id).padStart(3,'0'),tr.x,tr.y-7);ctx.font=mono;
+      ctx.fillStyle='rgba(200,205,200,0.6)';ctx.fillText((tr.w|0)+'×'+(tr.h|0)+'  '+(t-this.seenIds[tr.id]).toFixed(1)+'s',tr.x,tr.y+tr.h+13);
+      const L=tr.pose||rigFromSilhouette(tr);if(!L)return;const ok=i=>L[i]&&L[i].v>0.4,sc=Math.max(10,tr.h);
+      const PARTS={HEAD:[0,7,8],TORSO:[11,12,23,24],'ARM.L':[11,13,15,19],'ARM.R':[12,14,16,20],'LEG.L':[23,25,27,31],'LEG.R':[24,26,28,32]};
+      for(const part in PARTS){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,n=0;PARTS[part].forEach(j=>{if(!ok(j))return;n++;x0=Math.min(x0,L[j].x);y0=Math.min(y0,L[j].y);x1=Math.max(x1,L[j].x);y1=Math.max(y1,L[j].y);});if(n<2)continue;
+        const pad=part==='HEAD'?sc*0.05:sc*0.025;x0-=pad;y0-=pad*(part==='HEAD'?1.4:1);x1+=pad;y1+=pad;const col=PART_COL[part];
+        ctx.strokeStyle=rgba(col,0.85);ctx.lineWidth=1;ctx.strokeRect(x0,y0,x1-x0,y1-y0);ctx.fillStyle=rgba(col,0.9);ctx.fillText(part,x0+3,y0+10);}});
+    for(const id in this.seenIds)if(!alive[id]){this.say('SUBJECT '+String(id).padStart(3,'0')+'  LEFT');delete this.seenIds[id];}
+    // faces: a rounded frame and the number this session remembers the face by
+    PEOPLE.faces.forEach(fc=>{const M=fc.mem!=null?FM.get(fc.mem):null,back=M&&M.visits>1,c=back?'#ff5a47':'#e9e6df';const r=Math.min(fc.sw,fc.sh)*0.18;
+      ctx.strokeStyle=rgba(c,0.85);ctx.lineWidth=1;ctx.beginPath();if(ctx.roundRect)ctx.roundRect(fc.sx,fc.sy,fc.sw,fc.sh,r);else ctx.rect(fc.sx,fc.sy,fc.sw,fc.sh);ctx.stroke();
+      ctx.font=monoB;ctx.fillStyle=c;ctx.fillText(M?('ID '+String(M.id).padStart(4,'0')+(back?'  ·  RETURNING ×'+M.visits:'')):'ID ····',fc.sx,fc.sy+fc.sh+14);ctx.font=mono;});
+    ctx.font=monoB;ctx.fillStyle='rgba(240,240,236,0.88)';ctx.fillText('결 · OBSERVATION',18,26);ctx.font=mono;ctx.fillStyle='rgba(200,205,200,0.6)';
+    ctx.fillText(String(bodies.length).padStart(2,'0')+' SUBJECTS   '+String(FM.mem.length).padStart(3,'0')+' FACES REMEMBERED   '+(FACE.pose?'POSE':'ESTIMATE')+'   '+new Date().toTimeString().slice(0,8),18,42);
+    this.log.forEach((l,i)=>{ctx.fillStyle='rgba(200,205,200,'+(0.6-i*0.1).toFixed(2)+')';ctx.fillText(l,18,H-20-i*14-(isTouch?70:0));});
+    ctx.fillStyle='rgba(0,0,0,0.12)';for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
+  }};
+/* 도트: a dot-matrix print. Round dots on a square grid; a dot's size is how much of its cell the person covers,
+   in four steps, and parts that just moved leave a short trail of small dots. */
+const mDotm={id:'dotm',name:'도트',desc:'정사각 격자 위 둥근 점의 크기로 사람을 찍는 도트 매트릭스. 움직인 자리에는 작은 점이 잠시 남는다',
+  init(){this.cols=isTouch?36:60;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);const n=this.cols*this.rows;this.mem=new Float32Array(n);this.rad=new Float32Array(n);},
+  draw(t){const P=pal(),bg=P.light?'#e2e3df':P.bg,ink=P.light?'#1532b5':P.fg[3];paper(bg);
+    const cols=this.cols,rows=this.rows,c=this.cell,mem=this.mem,R=c*0.5,steps=[0.24,0.44,0.66,0.9],big=new Path2D(),small=new Path2D();
+    for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const i=r*cols+k,x=(k+0.5)*c,y=(r+0.5)*c;
+      // coverage of the cell, sampled at nine points
+      let m=0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)m+=pAt(x+a*c*0.33,y+b*c*0.33);m/=9;
+      const prev=mem[i];mem[i]=m>prev*0.86?m:prev*0.86;
+      let lv=m>0.82?3:m>0.55?2:m>0.3?1:m>0.12?0:-1;
+      if(lv>=0&&lv<3&&at(x,y).e>0.25&&hash2(k+((t*10)|0),r)<0.35)lv=Math.max(0,lv-1); // moving edges flicker a size down
+      // the trail of what just left keeps a small dot; every dot eases toward its size, growing in and shrinking out in place
+      const want=lv>=0?R*steps[lv]:prev>0.3?R*(prev>0.6?0.3:0.18):0;const cur=this.rad[i];this.rad[i]=cur+(want-cur)*(want>cur?0.35:0.18);
+      const rad=this.rad[i];if(rad>0.5){(lv>=0?big:small).moveTo(x+rad,y);(lv>=0?big:small).arc(x,y,rad,0,TAU);}}
+    ctx.fillStyle=ink;ctx.fill(big);ctx.fill(small);
   }};
 /* ---------- exhibition pieces: 시선의 온도 / 찰나의 기록 ---------- */
 const ASSET={logo:null,shield:null,scene:null};
@@ -790,18 +730,24 @@ function pAt(x,y){let cx=(x*A.w/W)|0,cy=(y*A.h/H)|0;cx=cx<0?0:cx>=A.w?A.w-1:cx;c
 function paper(col){ctx.fillStyle=col;ctx.fillRect(0,0,W,H);}
 
 /* 픽셀: the silhouette as a mosaic of blue blocks, rings and dots at two scales; moving parts shed loose pixels */
-const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 블록과 점으로 조립된다',
-  init(){this.cols=isTouch?26:40;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.seed=(Math.random()*1000)|0;this.loose=[];},
-  draw(t){const P=pal();paper(P.light?'#f3f4f2':P.bg);const col=P.light?'#1f8be6':P.fg[3];const cell=this.cell,cols=this.cols,rows=this.rows,h=cell/2;
+const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 블록과 점으로 조립된다. 블록은 제자리에서 자라나고 줄어들며, 움직이는 곳은 무늬가 바뀐다',
+  init(){this.cols=isTouch?26:40;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.seed=(Math.random()*1000)|0;const m=this.cols*this.rows;
+    this.q=new Float32Array(m*4);this.full=new Float32Array(m);this.kind=new Float32Array(m);this.rate=new Float32Array(m);for(let i=0;i<m;i++){this.rate[i]=0.07+Math.random()*0.1;this.kind[i]=hash2(i,this.seed);}},
+  draw(t,dt){const P=pal();paper(P.light?'#f3f4f2':P.bg);const col=P.light?'#1f8be6':P.fg[3];const cell=this.cell,cols=this.cols,rows=this.rows,h=cell/2,Q=this.q,F=this.full,rate=this.rate,kind=this.kind;
     const fill=new Path2D(),ring=new Path2D(),dots=new Path2D(),small=new Path2D();
-    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const x=c*cell,y=r*cell;
-      const p00=pAt(x+h*0.5,y+h*0.5),p10=pAt(x+h*1.5,y+h*0.5),p01=pAt(x+h*0.5,y+h*1.5),p11=pAt(x+h*1.5,y+h*1.5);const m=(p00+p10+p01+p11)/4;if(m<0.12)continue;
-      const e=at(x+h,y+h).e;const k=hash2(c+this.seed,r+((e>0.25)?(t*8|0):0));
-      if(m>0.72){if(k<0.55)fill.rect(x+1,y+1,cell-2,cell-2);else if(k<0.75){ring.rect(x+2,y+2,cell-4,cell-4);ring.rect(x+cell*0.3,y+cell*0.3,cell*0.4,cell*0.4);}else if(k<0.9){dots.moveTo(x+h+cell*0.3,y+h);dots.arc(x+h,y+h,cell*0.3,0,TAU);}else{for(let i=0;i<2;i++)for(let j=0;j<2;j++){small.moveTo(x+h*i+h/2+h*0.22,y+h*j+h/2);small.arc(x+h*i+h/2,y+h*j+h/2,h*0.22,0,TAU);}}}
-      else{const q=[p00,p10,p01,p11];for(let i=0;i<4;i++){if(q[i]<0.5)continue;const sx=x+(i&1)*h,sy=y+(i>>1)*h;if(hash2(c*2+(i&1)+this.seed,r*2+(i>>1))<0.7)small.rect(sx+1,sy+1,h-2,h-2);else{dots.moveTo(sx+h/2+h*0.3,sy+h/2);dots.arc(sx+h/2,sy+h/2,h*0.3,0,TAU);}}}
-      if(e>0.35&&Math.random()<0.25)this.loose.push({x:x+h,y:y+h,vx:(Math.random()-0.5)*4,vy:-1-Math.random()*3,s:h*(0.3+Math.random()*0.5),life:1});}
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c,x=c*cell,y=r*cell,cx=x+h,cy=y+h;
+      const ps=[pAt(x+h*0.5,y+h*0.5),pAt(x+h*1.5,y+h*0.5),pAt(x+h*0.5,y+h*1.5),pAt(x+h*1.5,y+h*1.5)],m=(ps[0]+ps[1]+ps[2]+ps[3])/4,rt=rate[i];
+      F[i]+=((m>0.72?1:0)-F[i])*rt;for(let k=0;k<4;k++)Q[i*4+k]+=((ps[k]>0.5&&m<=0.72?1:0)-Q[i*4+k])*rt;
+      // motion changes the pattern of a block in place
+      if(at(cx,cy).e>0.3&&Math.random()<0.08)kind[i]=Math.random();
+      const fs=F[i];if(fs>0.03){const k=kind[i],s=fs;
+        if(k<0.55)fill.rect(cx-(h-1)*s,cy-(h-1)*s,(cell-2)*s,(cell-2)*s);
+        else if(k<0.75){ring.rect(cx-(h-2)*s,cy-(h-2)*s,(cell-4)*s,(cell-4)*s);ring.rect(cx-cell*0.2*s,cy-cell*0.2*s,cell*0.4*s,cell*0.4*s);}
+        else if(k<0.9){dots.moveTo(cx+cell*0.3*s,cy);dots.arc(cx,cy,cell*0.3*s,0,TAU);}
+        else{for(let a=0;a<2;a++)for(let b=0;b<2;b++){const qx=x+h*a+h/2,qy=y+h*b+h/2;dots.moveTo(qx+h*0.22*s,qy);dots.arc(qx,qy,h*0.22*s,0,TAU);}}}
+      for(let k=0;k<4;k++){const s=Q[i*4+k];if(s<0.03)continue;const qx=x+(k&1)*h+h/2,qy=y+(k>>1)*h+h/2;
+        if(hash2(c*2+(k&1)+this.seed,r*2+(k>>1))<0.7)small.rect(qx-(h/2-1)*s,qy-(h/2-1)*s,(h-2)*s,(h-2)*s);else{dots.moveTo(qx+h*0.3*s,qy);dots.arc(qx,qy,h*0.3*s,0,TAU);}}}
     ctx.fillStyle=col;ctx.fill(fill);ctx.fill(small);ctx.fill(dots);ctx.fill(ring,'evenodd');
-    for(let i=this.loose.length-1;i>=0;i--){const q=this.loose[i];q.x+=q.vx;q.y+=q.vy;q.vy+=0.08;q.life-=0.02;if(q.life<=0||this.loose.length>400){this.loose.splice(i,1);continue;}ctx.globalAlpha=q.life;ctx.fillRect(q.x-q.s/2,q.y-q.s/2,q.s,q.s);}ctx.globalAlpha=1;
   }};
 
 /* 파동: a clean silhouette that tears into waveforms and block noise while moving, and settles back when still */
@@ -906,38 +852,285 @@ const mSketch={id:'sketch',name:'스케치',desc:'윤곽을 따라가는 연필�
   }};
 
 /* 물방울: each person is a water drop; drops that come close pull together and merge */
-const mDrops={id:'drops',name:'물방울',desc:'사람 한 명 한 명이 물방울이 된다. 가까운 사람은 크고 진하게, 먼 사람은 작고 연하게',
-  init(){this.s=isTouch?3:4;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;this.blobs={};},
-  draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const P=pal(),rw=this.rw,rh=this.rh,minR=Math.min(W,H)*0.05,maxR=Math.min(W,H)*0.14,blobs=this.blobs,f=this.f;
-    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;
-      // distance from the camera, read from how tall the person stands in the frame: tall = near, short = far
-      const near=clamp((tr.h/H-0.2)/0.75,0,1),want=lerp(minR,maxR,near);let b=blobs[tr.id];
-      if(!b){ // a track that restarts next to a fading drop takes that drop over instead of popping a new one
-        let best=null,bk=null,bd=1e9;for(const k in blobs){const o=blobs[k];if(f-o.seen<=2)continue;const d=Math.hypot(o.x-tr.sx,o.y-tr.sy);if(d<Math.max(o.r,minR)*1.6&&d<bd){bd=d;best=o;bk=k;}}
-        if(best){delete blobs[bk];b=blobs[tr.id]=best;}else b=blobs[tr.id]={x:tr.sx,y:tr.sy,vx:0,vy:0,r:minR*0.2,rt:want,near,k:0,kv:0,dx:1,dy:0,id:tr.id};}
-      b.tx=tr.sx;b.ty=tr.sy;b.seen=f;b.rt+=(want-b.rt)*0.015;b.near+=(near-b.near)*0.02;});
+/* ---------- face memory: a light, in-session re-identification so a returning face keeps its number ----------
+   Nothing is stored: descriptors live in memory only and vanish on reload. It is approximate by design. */
+const FM={mem:[],live:[],nextMem:1,tc:null,hc:null,
+  desc(fc){if(!this.tc){this.tc=mkCanvas(16,16);this.hc=mkCanvas(12,12);}const vw=video.videoWidth,vh=video.videoHeight;if(!vw)return null;
+    const x=clamp(fc.vx,0,vw-2),y=clamp(fc.vy,0,vh-2),w=clamp(fc.vw,2,vw-x),h=clamp(fc.vh,2,vh-y);
+    const c=this.tc.cx;try{c.drawImage(video,x,y,w,h,0,0,16,16);}catch(e){return null;}const d=c.getImageData(0,0,16,16).data,g=new Float32Array(256);let m=0;
+    for(let i=0;i<256;i++){g[i]=d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114;m+=g[i];}m/=256;let nn=0;for(let i=0;i<256;i++){g[i]-=m;nn+=g[i]*g[i];}nn=Math.sqrt(nn)||1;for(let i=0;i<256;i++)g[i]/=nn;
+    // colour of the face and the hair above it, as a small hue histogram
+    const hy=clamp(y-h*0.6,0,vh-2),hh=clamp(h*1.6,2,vh-hy),k=this.hc.cx;try{k.drawImage(video,x,hy,w,hh,0,0,12,12);}catch(e){return null;}const e=k.getImageData(0,0,12,12).data,hist=new Float32Array(14);
+    for(let i=0;i<144;i++){const r=e[i*4]/255,gg=e[i*4+1]/255,b=e[i*4+2]/255,mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),dl=mx-mn;if(mx<0.18){hist[12]++;continue;}if(dl<0.08){hist[13]++;continue;}
+      let hu=mx===r?((gg-b)/dl)%6:mx===gg?(b-r)/dl+2:(r-gg)/dl+4;if(hu<0)hu+=6;hist[Math.min(11,(hu*2)|0)]+=dl/mx;}
+    let hs=0;for(let i=0;i<14;i++)hs+=hist[i];for(let i=0;i<14;i++)hist[i]/=hs||1;return {g,hist};},
+  avg(list){const g=new Float32Array(256),hist=new Float32Array(14);list.forEach(d=>{for(let i=0;i<256;i++)g[i]+=d.g[i];for(let i=0;i<14;i++)hist[i]+=d.hist[i]/list.length;});let nn=0;for(let i=0;i<256;i++)nn+=g[i]*g[i];nn=Math.sqrt(nn)||1;for(let i=0;i<256;i++)g[i]/=nn;return {g,hist};},
+  sim(a,b){let c=0;for(let i=0;i<256;i++)c+=a.g[i]*b.g[i];let hi=0;for(let i=0;i<14;i++)hi+=Math.min(a.hist[i],b.hist[i]);return 0.55*c+0.45*hi;},
+  get(id){return this.mem.find(m=>m.id===id);},
+  update(faces){const now=performance.now();
+    faces.forEach(fc=>{let best=null,bd=1e9;for(const L of this.live){if(L.used)continue;const d=Math.hypot(L.cx-fc.cx,L.cy-fc.cy);if(d<Math.max(L.sw,fc.sw)*0.9&&d<bd){bd=d;best=L;}}
+      if(!best){best={cx:fc.cx,cy:fc.cy,sw:fc.sw,ds:[],mem:null,seen:now};this.live.push(best);}
+      best.used=true;best.cx=fc.cx;best.cy=fc.cy;best.sw=fc.sw;best.seen=now;
+      if(best.ds.length<8&&fc.frontal){const d=this.desc(fc);if(d)best.ds.push(d);}
+      if(best.mem==null&&best.ds.length>=4){const dd=this.avg(best.ds);let bm=null,bs=0;
+        for(const M of this.mem){if(this.live.some(o=>o!==best&&o.mem===M.id))continue;const s=this.sim(dd,M.d);if(s>bs){bs=s;bm=M;}}
+        if(bm&&bs>0.74){best.mem=bm.id;if(now-bm.last>4000)bm.visits++;bm.d=this.avg([bm.d,dd]);}
+        else{const M={id:this.nextMem++,d:dd,visits:1,first:now,last:now};this.mem.push(M);if(this.mem.length>300)this.mem.shift();best.mem=M.id;}}
+      if(best.mem!=null){const M=this.get(best.mem);if(M)M.last=now;}fc.mem=best.mem;});
+    this.live=this.live.filter(L=>{L.used=false;return now-L.seen<1500;});}
+};
+
+/* ---------- people: one entry per person, from body tracks and faces together ----------
+   A face inside a body box names that body, so a person who is briefly lost and found again keeps one key. */
+const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
+  faceBoxes(){const out=[];if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detections))return out;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw)return out;
+    const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
+    FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;
+      let frontal=true;const kp=f.keypoints;if(kp&&kp.length>=3){const ex=(kp[0].x+kp[1].x)/2,span=Math.abs(kp[1].x-kp[0].x)||1e-3;frontal=Math.abs(kp[2].x-ex)/span<0.45;}
+      out.push({sx:x,sy:y,sw:w,sh:h,cx:x+w/2,cy:y+h/2,vx:bb.originX,vy:bb.originY,vw:bb.width,vh:bb.height,frontal,score:f.categories&&f.categories[0]?f.categories[0].score:0,kp:kp||[]});});
+    return out;},
+  update(){TR.update();const faces=this.faceBoxes();FM.update(faces);this.faces=faces;const now=performance.now(),list=[],taken=new Set();
+    const bodies=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=4);
+    faces.forEach(fc=>{if(fc.mem==null)return;let best=null,bd=1e9;for(const tr of bodies){if(fc.cx<tr.x-tr.w*0.15||fc.cx>tr.x+tr.w*1.15||fc.cy<tr.y-fc.sh||fc.cy>tr.y+tr.h*0.6)continue;const d=Math.abs(fc.cx-tr.cx);if(d<bd){bd=d;best=tr;}}
+      if(best){this.trackFace[best.id]={mem:fc.mem,t:now,face:fc};fc.body=best;}});
+    bodies.sort((a,b)=>a.id-b.id).forEach(tr=>{const tf=this.trackFace[tr.id],faceId=tf&&now-tf.t<10000?tf.mem:null,key=faceId!=null?'f'+faceId:'t'+tr.id;if(taken.has(key))return;taken.add(key);
+      const prev=this.trackKey[tr.id];if(prev&&prev!==key)this.renames.push([prev,key]);this.trackKey[tr.id]=key;const fc=tf&&now-tf.t<400?tf.face:null;
+      const near=fc?clamp((fc.sh/H-0.05)/0.22,0,1):clamp((tr.h/H-0.2)/0.75,0,1);
+      list.push({key,x:tr.sx,y:tr.sy,bx:tr.x,by:tr.y,bw:tr.w,bh:tr.h,near,faceId,face:fc});});
+    faces.forEach(fc=>{if(fc.body||fc.mem==null)return;const key='f'+fc.mem;if(taken.has(key))return;taken.add(key);const ty=fc.cy+fc.sh*2.2;
+      const s=this.sm[key]||(this.sm[key]={x:fc.cx,y:ty});s.x+=(fc.cx-s.x)*0.25;s.y+=(ty-s.y)*0.25;
+      list.push({key,x:s.x,y:s.y,bx:fc.sx-fc.sw,by:fc.sy,bw:fc.sw*3,bh:fc.sh*7,near:clamp((fc.sh/H-0.05)/0.22,0,1),faceId:fc.mem,face:fc});});
+    for(const id in this.trackFace)if(now-this.trackFace[id].t>15000)delete this.trackFace[id];
+    this.list=list;},
+  takeRenames(){const r=this.renames;this.renames=[];return r;}
+};
+
+/* 활자: a cloth simulation. The text is printed on fabric hanging from a rod; only where a hand moves does it push, fold and swing back */
+const mCurtain={id:'curtain',name:'활자',desc:'여러 줄의 글자가 인쇄된 천. 손이 지나간 자리만 밀리고 접혔다가 천천히 제자리로 늘어진다',
+  init(){const cw=isTouch?11:9;this.nx=Math.ceil(W/cw)+1;this.ny=isTouch?24:32;this.cw=W/(this.nx-1);this.ch=H/(this.ny-1);const n=this.nx*this.ny;
+    ['px','py','qx','qy','rx','ry'].forEach(k=>{this[k]=new Float32Array(n);});
+    for(let j=0;j<this.ny;j++)for(let i=0;i<this.nx;i++){const k=j*this.nx+i;this.px[k]=this.qx[k]=this.rx[k]=i*this.cw;this.py[k]=this.qy[k]=this.ry[k]=j*this.ch;}
+    this.rows=clamp(Math.round(H/(isTouch?64:104)),5,12);this.T=mkCanvas(Math.max(1,Math.round(W*DPR)),Math.max(1,Math.round(H*DPR)));this.renderText();},
+  renderText(){const P=pal(),c=this.T.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle=P.bg;c.fillRect(0,0,W,H);
+    const lines=String(S.text||DEF.text).split('\n').map(s=>s.trim()).filter(Boolean);if(!lines.length)lines.push('결');
+    const rows=this.rows,rh=H/rows,fs=rh*0.76;c.font='800 '+fs+'px '+SANS;c.textBaseline='middle';c.textAlign='left';try{c.letterSpacing='0.04em';}catch(e){}
+    for(let r=0;r<rows;r++){const t=lines[r%lines.length]+'    ';const wdt=Math.max(10,c.measureText(t).width);c.fillStyle=(r%2)?rgba(P.fg[3],0.78):P.fg[3];let x=-((r*173)%Math.round(wdt));while(x<W){c.fillText(t,x,(r+0.5)*rh);x+=wdt;}}
+    c.strokeStyle=rgba(P.fg[0],0.18);c.lineWidth=1;const k=Math.max(3,Math.round(W/160));for(let x=k*0.5;x<W;x+=k){c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();}
+    c.setTransform(1,0,0,1,0,0);},
+  draw(t){const P=pal(),nx=this.nx,ny=this.ny,cw=this.cw,ch=this.ch,px=this.px,py=this.py,qx=this.qx,qy=this.qy,rx=this.rx,ry=this.ry,g=gainF();
+    // integrate: inertia, gravity, a gentle pull home, and a push only where the camera sees motion (a hand)
+    for(let j=1;j<ny;j++)for(let i=0;i<nx;i++){const k=j*nx+i;const vx=(px[k]-qx[k])*0.965,vy=(py[k]-qy[k])*0.965;qx[k]=px[k];qy[k]=py[k];
+      const f=at(rx[k],ry[k]);let fx=0,fy=0;if(f.e>0.15){fx=f.u*f.e*0.55*g;fy=f.v*f.e*0.3*g;}
+      px[k]+=vx+fx+(rx[k]-px[k])*0.0025;py[k]+=vy+fy+0.06+(ry[k]-py[k])*0.0025;}
+    // keep the cloth together: rows may not stretch (they fold instead), columns hold their length; the top row hangs from the rod
+    for(let it=0;it<4;it++){
+      for(let j=1;j<ny;j++)for(let i=0;i<nx;i++){const k=j*nx+i,u=k-nx;const dx=px[k]-px[u],dy=py[k]-py[u],d=Math.hypot(dx,dy)||1,diff=(d-ch)/d;
+        if(j===1){px[k]-=dx*diff;py[k]-=dy*diff;}else{px[k]-=dx*diff*0.5;py[k]-=dy*diff*0.5;px[u]+=dx*diff*0.5;py[u]+=dy*diff*0.5;}}
+      for(let j=1;j<ny;j++)for(let i=0;i<nx-1;i++){const k=j*nx+i,r=k+1;const dx=px[r]-px[k],dy=py[r]-py[k],d=Math.hypot(dx,dy)||1;if(d<=cw*1.02)continue;const diff=(d-cw*1.02)/d*0.5;px[k]+=dx*diff;py[k]+=dy*diff;px[r]-=dx*diff;py[r]-=dy*diff;}}
+    // draw each cell of fabric with its slice of the printed text; folds (compressed cells) darken, stretched ones lift
+    ctx.fillStyle=P.bg;ctx.fillRect(0,0,W,H);const T=this.T,sw=cw*DPR,sh=ch*DPR,dark=P.light?'0,0,0':'0,0,0';ctx.imageSmoothingEnabled=true;
+    for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){const k=j*nx+i;const x=px[k],y=py[k];const w=px[k+1]-x,h=py[k+nx]-y;
+      ctx.drawImage(T,i*sw,j*sh,sw,sh,x,y,Math.max(0.6,w)+0.6,Math.max(0.6,h)+0.6);
+      const comp=1-w/cw;if(comp>0.08){ctx.fillStyle='rgba('+dark+','+Math.min(0.28,(comp-0.08)*0.5).toFixed(3)+')';ctx.fillRect(x,y,Math.max(0.6,w)+0.6,Math.max(0.6,h)+0.6);}}
+  }};
+const mDrops={id:'drops',name:'물방울',desc:'사람마다 물방울 하나. 가까울수록 크고 진하며, 서로 다가가면 닿기 직전까지 끌려가 늘어나고, 멀어지면 톡 떨어진다',
+  init(){this.s=isTouch?3:4;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;this.blobs={};this.links={};},
+  field(px,py,list){let fv=0;for(let i=0;i<list.length;i++){const b=list[i];if(b.r<1)continue;const ddx=px-b.x,ddy=py-b.y;const lx=(ddx*b.cs+ddy*b.sn)/(1+b.k),ly=(-ddx*b.sn+ddy*b.cs)*(1+b.k);fv+=(b.r*b.r)/(lx*lx+ly*ly+1);}return fv;},
+  draw(t,dt){this.f++;const P=pal(),rw=this.rw,rh=this.rh,S0=Math.min(W,H),minR=S0*0.08,maxR=S0*0.22,blobs=this.blobs,f=this.f;
+    if((this.f&1)===0){PEOPLE.update();PEOPLE.takeRenames().forEach(([ka,kb])=>{if(blobs[ka]&&!blobs[kb]){blobs[kb]=blobs[ka];blobs[kb].key=kb;delete blobs[ka];}});}
+    // one drop per person; a visible face names the person, so the drop survives the body tracker losing them for a moment.
+    // distance: face size when a face is seen, otherwise how tall the body stands in the frame
+    PEOPLE.list.forEach(pp=>{const near=pp.near,want=lerp(minR,maxR,Math.pow(near,0.85));let b=blobs[pp.key];
+      if(!b){let best=null,bk=null,bd=1e9;for(const k in blobs){const o=blobs[k];if(f-o.seen<=2)continue;const d=Math.hypot(o.x-pp.x,o.y-pp.y);if(d<Math.max(o.r,minR)*1.8&&d<bd){bd=d;best=o;bk=k;}}
+        if(best){delete blobs[bk];best.key=pp.key;b=blobs[pp.key]=best;}else b=blobs[pp.key]={key:pp.key,seed:Math.random()*10,x:pp.x,y:pp.y,vx:0,vy:0,r:minR*0.3,rt:want,near,k:0,kv:0,dx:1,dy:0};}
+      b.tx=pp.x;b.ty=pp.y;b.seen=f;b.rt+=(want-b.rt)*0.02;b.near+=(near-b.near)*0.03;});
     for(const key in blobs){const b=blobs[key];const gone=f-b.seen>2;
-      // size: slow and bounded, so a drop never balloons or collapses with the detection box
-      const rt=gone?0:b.rt,dr=clamp((rt-b.r)*0.05,-(b.r*0.025+0.5),b.r*0.02+0.5);b.r+=dr;if(gone&&b.r<2){delete blobs[key];continue;}
-      // position: a soft spring with a little overshoot, which is what makes it feel chewy
+      const rt=gone?0:b.rt,dr=clamp((rt-b.r)*0.05,-(b.r*0.025+0.5),b.r*0.02+0.6);b.r+=dr;if(gone&&b.r<2){delete blobs[key];continue;}
       b.vx+=(b.tx-b.x)*0.045;b.vy+=(b.ty-b.y)*0.045;b.vx*=0.84;b.vy*=0.84;b.x+=b.vx;b.y+=b.vy;
-      // squash and stretch on its own spring: stretches while moving, squashes and rebounds when it stops
       const sp=Math.hypot(b.vx,b.vy);if(sp>0.25){b.dx+=(b.vx/sp-b.dx)*0.2;b.dy+=(b.vy/sp-b.dy)*0.2;const dl=Math.hypot(b.dx,b.dy)||1;b.dx/=dl;b.dy/=dl;}
-      const kt=Math.min(0.32,sp/(b.r+1)*1.8);b.kv+=(kt-b.k)*0.16;b.kv*=0.74;b.k=clamp(b.k+b.kv,-0.14,0.42);}
-    const pos=Object.values(blobs).map(b=>({x:b.x,y:b.y,r:b.r*(1+0.012*Math.sin(t*2.1+b.id*1.7)),k:b.k,cs:b.dx,sn:b.dy,tone:1-b.near}));
-    // surface tension: within reach, drops lean toward each other before they merge
-    for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const a=pos[i],c=pos[j];const d=Math.hypot(a.x-c.x,a.y-c.y)||1,reach=(a.r+c.r)*1.7;if(d<reach){const k=(1-d/reach)*0.3;const ux=(c.x-a.x)/d,uy=(c.y-a.y)/d;const pull=Math.min(d*0.45,(reach-d)*k);a.x+=ux*pull*(c.r/(a.r+c.r));a.y+=uy*pull*(c.r/(a.r+c.r));c.x-=ux*pull*(a.r/(a.r+c.r));c.y-=uy*pull*(a.r/(a.r+c.r));}}
-    // metaball field: solid ink drops with crisp, anti-aliased edges and smooth necks where they merge
-    // far drops are paler: each pixel takes the tone of the drops that make it up, so merged necks blend smoothly
+      const kt=Math.min(0.3,sp/(b.r+1)*1.8);b.kv+=(kt-b.k)*0.16;b.kv*=0.74;b.k=clamp(b.k+b.kv,-0.16,0.42);}
+    const pos=Object.values(blobs).map(b=>({b,x:b.x,y:b.y,r:b.r*(1+0.01*Math.sin(t*2.1+b.seed)),k:b.k,cs:b.dx,sn:b.dy,tone:1-b.near}));
+    // relations: drops latch when they come close, lean together until a hair-thin gap remains, and let go with a snap
+    const BETA=0.8,SEP=Math.sqrt(1+BETA)*1.09;
+    for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const a=pos[i],c=pos[j];const ia=a.b.key,ic=c.b.key,key=ia<ic?ia+'|'+ic:ic+'|'+ia;
+      const L=this.links[key]||(this.links[key]={on:false,s:0});L.seen=f;const d=Math.hypot(c.x-a.x,c.y-a.y)||1,ux=(c.x-a.x)/d,uy=(c.y-a.y)/d,rs=a.r+c.r;
+      if(!L.on&&d<rs*SEP*1.15){L.on=true;a.b.kv+=0.06;c.b.kv+=0.06;}else if(L.on&&d>rs*2.05){L.on=false;a.b.kv-=0.24;c.b.kv-=0.24;}
+      L.s+=((L.on?1:0)-L.s)*0.12;if(L.s<0.02)continue;
+      const lean=L.s*Math.max(0,d-rs*SEP)*0.38;a.x+=ux*lean*(c.r/rs);a.y+=uy*lean*(c.r/rs);c.x-=ux*lean*(a.r/rs);c.y-=uy*lean*(a.r/rs);
+      // while latched each drop stretches toward the other, like two beads of water reaching
+      const k=0.16*L.s;if(k>a.k){a.k=k;a.cs=ux;a.sn=uy;}if(k>c.k){c.k=k;c.cs=ux;c.sn=uy;}}
+    for(const k in this.links)if(this.links[k].seen!==f)delete this.links[k];
+    for(let it=0;it<4;it++)for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const a=pos[i],c=pos[j];const ra=a.r*(1+Math.max(0,a.k)),rc=c.r*(1+Math.max(0,c.k)),need=(ra+rc)*SEP;
+      let d=Math.hypot(c.x-a.x,c.y-a.y);if(d>=need)continue;let ux=1,uy=0;if(d>0.5){ux=(c.x-a.x)/d;uy=(c.y-a.y)/d;}const gap=need-d,wa=rc/(ra+rc),wc=ra/(ra+rc);a.x-=ux*gap*wa;a.y-=uy*gap*wa;c.x+=ux*gap*wc;c.y+=uy*gap*wc;}
+    // render: the strongest field plus a share of the second gives the bulge between neighbours but never a bridge
     const out=this.img.data,bg=P.light?[239,239,233]:P.bgRGB,col=P.light?[12,12,14]:P.fgRGB[0],kx=W/rw,ky=H/rh,FADE=0.68;
-    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const px=x*kx,py=y*ky;let fv=0,tw=0;
-      for(let i=0;i<pos.length;i++){const b=pos[i];if(b.r<1)continue;const ddx=px-b.x,ddy=py-b.y;const lx=(ddx*b.cs+ddy*b.sn)/(1+b.k),ly=(-ddx*b.sn+ddy*b.cs)*(1+b.k);const c=(b.r*b.r)/(lx*lx+ly*ly+1);fv+=c;tw+=c*b.tone;}
-      const q=(y*rw+x)*4;let a=(fv-0.96)/0.08;if(a<=0){out[q]=bg[0];out[q+1]=bg[1];out[q+2]=bg[2];out[q+3]=255;continue;}a=a>1?1:a;a=a*a*(3-2*a);
-      const tn=(tw/fv)*FADE,r0=col[0]+(bg[0]-col[0])*tn,g0=col[1]+(bg[1]-col[1])*tn,b0=col[2]+(bg[2]-col[2])*tn;
+    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const px=x*kx,py=y*ky;let m1=0,m2=0,t1=0,t2=0;
+      for(let i=0;i<pos.length;i++){const b=pos[i];if(b.r<1)continue;const ddx=px-b.x,ddy=py-b.y;const lx=(ddx*b.cs+ddy*b.sn)/(1+b.k),ly=(-ddx*b.sn+ddy*b.cs)*(1+b.k);const c=(b.r*b.r)/(lx*lx+ly*ly+1);
+        if(c>m1){m2=m1;t2=t1;m1=c;t1=b.tone;}else if(c>m2){m2=c;t2=b.tone;}}
+      const fv=m1+BETA*m2,q=(y*rw+x)*4;let a=(fv-0.96)/0.06;if(a<=0){out[q]=bg[0];out[q+1]=bg[1];out[q+2]=bg[2];out[q+3]=255;continue;}a=a>1?1:a;a=a*a*(3-2*a);
+      const tn=((t1*m1+t2*BETA*m2)/fv)*FADE,r0=col[0]+(bg[0]-col[0])*tn,g0=col[1]+(bg[1]-col[1])*tn,b0=col[2]+(bg[2]-col[2])*tn;
       out[q]=bg[0]+(r0-bg[0])*a;out[q+1]=bg[1]+(g0-bg[1])*a;out[q+2]=bg[2]+(b0-bg[2])*a;out[q+3]=255;}
     this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
   }};
-const MODES=[mGaze,mShapes,mDots,mGlyphs,mPixel,mWave,mAscii,mSketch,mDrops,mTrail,mWords,mPattern,mScribble,mDetect,mFlow,mEcho];
+
+/* 등고선: the people raise hills on a slowly flowing terrain; the whole screen is drawn as map contours (or wood grain) */
+const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언덕처럼 솟고, 화면 전체가 지도의 등고선처럼 그 주위를 감싸 흐른다',
+  init(){this.up=isTouch?1:2;this.gw=A.w*this.up;this.gh=A.h*this.up;this.hf=new Float32Array(this.gw*this.gh);this.pb=new Float32Array(A.n);this.mem=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
+  draw(t){const P=pal(),w=A.w,h=A.h,pb=this.pb,mem=this.mem,gw=this.gw,gh=this.gh,up=this.up,hf=this.hf;
+    pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
+    for(let i=0;i<A.n;i++){const v=pb[i]*0.5;mem[i]=mem[i]*0.996>v?mem[i]*0.996:v;}
+    if(!this.ter||this.ter.length!==A.n)this.ter=new Float32Array(A.n);if((this.f=(this.f||0)+1)%3===1)for(let yy=0;yy<h;yy++){const v=yy/h;for(let xx=0;xx<w;xx++){const u=xx/w;this.ter[yy*w+xx]=0.17*(0.5*Math.sin(u*7.1+t*0.05+Math.sin(v*3.3+t*0.02)*1.3)+0.35*Math.sin(v*9.7-t*0.04+u*2.1)+0.22*Math.sin((u*1.3+v)*13.3+t*0.03));}}
+    const mw=w-1.001,mh=h-1.001;
+    for(let y=0;y<gh;y++){let gy=(y+0.5)/up-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,v=y/gh;
+      for(let x=0;x<gw;x++){let gx=(x+0.5)/up-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0,i0=y0*w+x0,u=x/gw;
+        const pv=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy,mv=(mem[i0]*(1-fx)+mem[i0+1]*fx)*(1-fy)+(mem[i0+w]*(1-fx)+mem[i0+w+1]*fx)*fy;
+        const tv=(this.ter[i0]*(1-fx)+this.ter[i0+1]*fx)*(1-fy)+(this.ter[i0+w]*(1-fx)+this.ter[i0+w+1]*fx)*fy;
+        hf[y*gw+x]=tv+pv*1.15+mv*0.45;}}
+    paper(P.light?'#f3f0e8':P.bg);const ink=P.light?'#2a2722':P.fg[0],acc=P.light?'#b2442c':P.fg[1];
+    const L0=-0.32,STEP=0.06,thin=new Path2D(),bold=new Path2D(),hill=new Path2D(),sx=W/gw,sy=H/gh;
+    const seg=(li,x1,y1,x2,y2)=>{const lv=L0+li*STEP,pth=lv>0.3?hill:(li%5===0?bold:thin);pth.moveTo((x1+0.5)*sx,(y1+0.5)*sy);pth.lineTo((x2+0.5)*sx,(y2+0.5)*sy);};
+    for(let y=0;y<gh-1;y++)for(let x=0;x<gw-1;x++){const i=y*gw+x,a=hf[i],b=hf[i+1],c=hf[i+gw+1],d=hf[i+gw];
+      const mn=Math.min(a,b,c,d),mx=Math.max(a,b,c,d);let l0=Math.ceil((mn-L0)/STEP),l1=Math.floor((mx-L0)/STEP);
+      for(let li=l0;li<=l1;li++){const lv=L0+li*STEP;const ca=(a>lv?8:0)|(b>lv?4:0)|(c>lv?2:0)|(d>lv?1:0);if(ca===0||ca===15)continue;
+        const tX=x+(lv-a)/(b-a),rY=y+(lv-b)/(c-b),bX=x+(lv-d)/(c-d),lY=y+(lv-a)/(d-a);
+        switch(ca){case 1:case 14:seg(li,x,lY,bX,y+1);break;case 2:case 13:seg(li,bX,y+1,x+1,rY);break;case 3:case 12:seg(li,x,lY,x+1,rY);break;
+          case 4:case 11:seg(li,tX,y,x+1,rY);break;case 6:case 9:seg(li,tX,y,bX,y+1);break;case 7:case 8:seg(li,x,lY,tX,y);break;
+          case 5:seg(li,x,lY,tX,y);seg(li,bX,y+1,x+1,rY);break;case 10:seg(li,tX,y,x+1,rY);seg(li,x,lY,bX,y+1);break;}}}
+    ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.strokeStyle=rgba(ink,0.38);ctx.lineWidth=0.8;ctx.stroke(thin);
+    ctx.strokeStyle=rgba(ink,0.75);ctx.lineWidth=1.4;ctx.stroke(bold);
+    ctx.strokeStyle=rgba(acc,0.85);ctx.lineWidth=1.1;ctx.stroke(hill);
+  }};
+
+/* 실: pins around the frame; each thread runs from its pin to the outline of the nearest person and trembles when they move */
+const mString={id:'string',name:'실',desc:'화면 둘레의 못에서 뻗은 실들이 사람의 윤곽에 걸려 팽팽해지고, 움직이면 떨린다',
+  init(){const m=16,nx=isTouch?26:44,ny=Math.max(8,Math.round(nx*H/W)),pins=[];
+    for(let i=0;i<nx;i++)pins.push({x:m+(W-2*m)*(i+0.5)/nx,y:m});for(let i=0;i<ny;i++)pins.push({x:W-m,y:m+(H-2*m)*(i+0.5)/ny});
+    for(let i=nx-1;i>=0;i--)pins.push({x:m+(W-2*m)*(i+0.5)/nx,y:H-m});for(let i=ny-1;i>=0;i--)pins.push({x:m,y:m+(H-2*m)*(i+0.5)/ny});
+    const N=pins.length,hop=Math.round(N*0.41);pins.forEach((p,i)=>{const q=pins[(i+hop)%N];p.ex=q.x;p.ey=q.y;p.vx=0;p.vy=0;p.vib=0;p.ph=Math.random()*TAU;p.idle=(i+hop)%N;});this.pins=pins;this.f=0;},
+  edge(cx,cy,tx,ty){ // walk from the person's centre toward the pin and stop where the body ends
+    const dx=tx-cx,dy=ty-cy,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,step=Math.min(A.sx,A.sy)*0.6;let inside=false,ex=cx,ey=cy;
+    for(let s=0;s<len;s+=step){const x=cx+ux*s,y=cy+uy*s;const v=pAt(x,y);if(v>0.45){inside=true;ex=x;ey=y;}else if(inside&&v<0.3)break;}
+    return [ex,ey];},
+  draw(t){this.f++;if((this.f&1)===0)TR.update();const P=pal();paper(P.light?'#f2f0eb':P.bg);const ink=P.light?'#1d1d22':P.fg[0];
+    const people=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=5),pins=this.pins;
+    ctx.lineCap='round';const thread=new Path2D(),tight=new Path2D();
+    for(const p of pins){let tx,ty,hit=false;
+      if(people.length){let best=people[0],bd=1e18;for(const tr of people){const d=(tr.cx-p.x)**2+(tr.cy-p.y)**2;if(d<bd){bd=d;best=tr;}}const e=this.edge(best.cx,best.cy,p.x,p.y);tx=e[0];ty=e[1];hit=true;}
+      else{const q=pins[p.idle];tx=q.x;ty=q.y;}
+      p.vx+=(tx-p.ex)*0.11;p.vy+=(ty-p.ey)*0.11;p.vx*=0.72;p.vy*=0.72;p.ex+=p.vx;p.ey+=p.vy;p.vib=Math.min(1,p.vib*0.95+Math.hypot(p.vx,p.vy)*0.012);
+      const dx=p.ex-p.x,dy=p.ey-p.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,amp=p.vib*Math.min(26,len*0.05)*Math.sin(t*22+p.ph);
+      const cx=(p.x+p.ex)/2+nx*amp,cy=(p.y+p.ey)/2+ny*amp+len*0.006;const pth=hit?tight:thread;pth.moveTo(p.x,p.y);pth.quadraticCurveTo(cx,cy,p.ex,p.ey);}
+    ctx.strokeStyle=rgba(ink,0.22);ctx.lineWidth=0.7;ctx.stroke(thread);
+    ctx.strokeStyle=rgba(ink,0.55);ctx.lineWidth=0.8;ctx.stroke(tight);
+    ctx.fillStyle=ink;for(const p of pins){ctx.beginPath();ctx.arc(p.x,p.y,1.6,0,TAU);ctx.fill();}
+  }};
+
+/* 별자리: points of each body become stars joined into a constellation; people standing near each other are linked */
+const mStars={id:'stars',name:'별자리',desc:'사람마다 몸의 점들이 별이 되어 별자리를 이루고, 가까이 선 사람들은 가는 선으로 이어진다',
+  init(){this.sky=[];const n=isTouch?120:260;for(let i=0;i<n;i++)this.sky.push([Math.random()*W,Math.random()*H,Math.random()*1.1+0.2,Math.random()*TAU]);this.cons={};this.f=0;},
+  points(tr){ // centroids of the body inside a 3 x 6 grid over the person's box, plus head, hands and feet
+    const w=A.w,x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,A.h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,A.h-1);
+    const GX=3,GY=6,acc=new Float32Array(GX*GY*3),ext=[[0,0,1e9],[0,0,-1e9],[0,0,1e9],[0,0,-1e9]];let any=false;
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){if(A.p[y*w+x]<0.5)continue;any=true;const gx=Math.min(GX-1,((x-x0)/(x1-x0+1)*GX)|0),gy=Math.min(GY-1,((y-y0)/(y1-y0+1)*GY)|0),k=(gy*GX+gx)*3;acc[k]+=x;acc[k+1]+=y;acc[k+2]++;
+      if(y<ext[0][2])ext[0]=[x,y,y];if(x-y*0.2>ext[1][2]){ext[1]=[x,y,x-y*0.2];}if(x+y*0.2<ext[2][2]){ext[2]=[x,y,x+y*0.2];}if(y>ext[3][2])ext[3]=[x,y,y];}
+    const pts=[];if(!any)return pts;
+    for(let k=0;k<GX*GY;k++){const c=acc[k*3+2];pts.push(c>3?[(acc[k*3]/c+0.5)*A.sx,(acc[k*3+1]/c+0.5)*A.sy]:null);}
+    ext.forEach(e=>pts.push(e[2]===1e9||e[2]===-1e9?null:[(e[0]+0.5)*A.sx,(e[1]+0.5)*A.sy]));return pts;},
+  draw(t){this.f++;if((this.f&1)===0)TR.update();
+    const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#070b17');g.addColorStop(1,'#111a2e');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    for(const s of this.sky){const a=0.25+0.25*Math.sin(t*0.8+s[3]);ctx.fillStyle='rgba(210,220,255,'+a.toFixed(3)+')';ctx.fillRect(s[0],s[1],s[2],s[2]);}
+    const alive={};const cons=this.cons;
+    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2||(tr.hits||0)<5)return;alive[tr.id]=1;const pts=this.points(tr);let c=cons[tr.id];if(!c){c=cons[tr.id]={slots:pts.map(p=>p?{x:p[0],y:p[1],a:0}:{x:tr.cx,y:tr.cy,a:0})};}
+      pts.forEach((p,i)=>{const s=c.slots[i];if(p){if(s.a<0.05){s.x=p[0];s.y=p[1];}s.x+=(p[0]-s.x)*0.25;s.y+=(p[1]-s.y)*0.25;s.a+=(1-s.a)*0.15;}else s.a*=0.85;});c.seen=this.f;});
+    for(const k in cons){if(!alive[k]){cons[k].slots.forEach(s=>s.a*=0.92);if(cons[k].slots.every(s=>s.a<0.02))delete cons[k];}}
+    const groups=[];
+    for(const k in cons){const S=cons[k].slots.filter(s=>s.a>0.08);if(S.length<2)continue;groups.push(S);
+      // minimum spanning tree: the shortest set of lines that joins every star of this body
+      const n=S.length,inT=new Uint8Array(n),dist=new Float32Array(n).fill(1e18),par=new Int16Array(n).fill(-1);dist[0]=0;const edges=[];
+      for(let it=0;it<n;it++){let u=-1;for(let i=0;i<n;i++)if(!inT[i]&&(u<0||dist[i]<dist[u]))u=i;inT[u]=1;if(par[u]>=0)edges.push([S[par[u]],S[u]]);
+        for(let v=0;v<n;v++)if(!inT[v]){const d=(S[u].x-S[v].x)**2+(S[u].y-S[v].y)**2;if(d<dist[v]){dist[v]=d;par[v]=u;}}}
+      ctx.lineWidth=0.9;for(const e of edges){const a=Math.min(e[0].a,e[1].a)*0.45;ctx.strokeStyle='rgba(190,205,255,'+a.toFixed(3)+')';ctx.beginPath();ctx.moveTo(e[0].x,e[0].y);ctx.lineTo(e[1].x,e[1].y);ctx.stroke();}
+      S.forEach((s,i)=>{const tw=0.75+0.25*Math.sin(t*2.3+i*1.7),r=(i>=18?2.6:1.8)*tw;const gl=ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,r*5);gl.addColorStop(0,'rgba(220,230,255,'+(0.35*s.a)+')');gl.addColorStop(1,'rgba(220,230,255,0)');ctx.fillStyle=gl;ctx.fillRect(s.x-r*5,s.y-r*5,r*10,r*10);ctx.fillStyle='rgba(245,248,255,'+s.a.toFixed(3)+')';ctx.beginPath();ctx.arc(s.x,s.y,r,0,TAU);ctx.fill();});}
+    // people standing near each other: their closest stars are joined by a faint dashed line
+    ctx.setLineDash([3,5]);ctx.lineWidth=0.8;
+    for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){let best=null,bd=1e18;for(const a of groups[i])for(const b of groups[j]){const d=(a.x-b.x)**2+(a.y-b.y)**2;if(d<bd){bd=d;best=[a,b];}}
+      const d=Math.sqrt(bd),lim=W*0.28;if(d<lim){const al=0.5*(1-d/lim);ctx.strokeStyle='rgba(255,214,150,'+al.toFixed(3)+')';ctx.beginPath();ctx.moveTo(best[0].x,best[0].y);ctx.lineTo(best[1].x,best[1].y);ctx.stroke();}}
+    ctx.setLineDash([]);
+  }};
+
+/* 굴절: fine stripes cover the screen; a person bends them like glass and turns their direction inside the body */
+const mRefract={id:'refract',name:'굴절',desc:'촘촘한 줄무늬 위로 사람이 유리처럼 지나가며 무늬를 휘게 하고, 몸 안에서는 줄의 방향이 돌아간다',
+  init(){this.s=isTouch?2:3;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.ph=0;},
+  draw(t,dt){const P=pal(),w=A.w,h=A.h,pb=this.pb,rw=this.rw,rh=this.rh,s=this.s,out=this.img.data;
+    pb.set(A.p);blur3(pb,this.tmp,w,h);blur3(pb,this.tmp,w,h);this.ph+=dt*0.5;
+    const ink=P.light?[18,18,20]:P.fgRGB[0],bg=P.light?[240,239,235]:P.bgRGB,period=Math.max(2.6,(isTouch?6:7)/(W/rw)),K=TAU/period,disp=rw*0.035,mw=w-1.001,mh=h-1.001,ph=this.ph;
+    for(let y=0;y<rh;y++){let gy=(y+0.5)/s-0.5;gy=gy<1?1:gy>mh-1?mh-1:gy;const y0=gy|0,fy=gy-y0;
+      for(let x=0;x<rw;x++){let gx=(x+0.5)/s-0.5;gx=gx<1?1:gx>mw-1?mw-1:gx;const x0=gx|0,fx=gx-x0,i=y0*w+x0;
+        const v=(pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;
+        const ddx=(pb[i+1]-pb[i-1]+pb[i+w+1]-pb[i+w-1])*0.25,ddy=(pb[i+w]-pb[i-w]+pb[i+w+1]-pb[i-w+1])*0.25;
+        const X=x+ddx*disp,Y=y+ddy*disp,a=v*v*(3-2*v)*Math.PI*0.5,u=X*Math.cos(a)+Y*Math.sin(a);
+        let sv=Math.sin(u*K+ph)*1.6;sv=sv<-1?-1:sv>1?1:sv;const k=0.5+0.5*sv;
+        const q=(y*rw+x)*4;out[q]=bg[0]+(ink[0]-bg[0])*k;out[q+1]=bg[1]+(ink[1]-bg[1])*k;out[q+2]=bg[2]+(ink[2]-bg[2])*k;out[q+3]=255;}}
+    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
+  }};
+
+/* 시간: slit-scan. Each column shows the silhouette from a different moment, so motion stretches into time */
+const mSlit={id:'slit',name:'시간',desc:'화면 왼쪽은 지금, 오른쪽으로 갈수록 더 먼 과거. 멈춘 사람은 그대로, 움직이는 사람은 시간 속으로 길게 늘어난다',
+  init(){this.N=isTouch?72:120;this.ring=[];for(let i=0;i<this.N;i++)this.ring.push(new Uint8Array(A.n));this.head=0;this.s=2;this.rw=A.w*2;this.rh=A.h*2;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;},
+  draw(){this.f++;const P=pal(),w=A.w,h=A.h,N=this.N,ring=this.ring,rw=this.rw,rh=this.rh,out=this.img.data;
+    this.head=(this.head+1)%N;const cur=ring[this.head];for(let i=0;i<A.n;i++)cur[i]=A.p[i]*255;
+    const bg=P.light?[242,240,236]:P.bgRGB,inkN=P.light?[16,16,20]:P.fgRGB[0],inkO=P.light?[78,120,196]:P.fgRGB[3],mw=w-1.001,mh=h-1.001;
+    for(let x=0;x<rw;x++){const age=x/(rw-1),fr=ring[(this.head-Math.round(age*(N-1))+N*2)%N];let gx=(x+0.5)/2-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0;
+      const cr=inkN[0]+(inkO[0]-inkN[0])*age,cg=inkN[1]+(inkO[1]-inkN[1])*age,cb=inkN[2]+(inkO[2]-inkN[2])*age,fade=1-age*0.45;
+      for(let y=0;y<rh;y++){let gy=(y+0.5)/2-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,i=y0*w+x0;
+        const v=((fr[i]*(1-fx)+fr[i+1]*fx)*(1-fy)+(fr[i+w]*(1-fx)+fr[i+w+1]*fx)*fy)/255;let a=(v-0.38)/0.2;a=a<0?0:a>1?1:a;a=a*a*(3-2*a)*fade;
+        const q=(y*rw+x)*4;out[q]=bg[0]+(cr-bg[0])*a;out[q+1]=bg[1]+(cg-bg[1])*a;out[q+2]=bg[2]+(cb-bg[2])*a;out[q+3]=255;}}
+    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
+  }};
+/* 공간: every person is an attractor. Their fields amalgamate into one volume, drawn as stacked contour slices:
+   faster people swell their field, and places people keep returning to slowly rise. */
+const mSpace={id:'space',name:'공간',desc:'사람마다 끌개가 되어 공간을 부풀린다. 빠를수록 크게, 자주 머문 자리일수록 높게 쌓여 겹겹의 등고선 입체가 된다',
+  init(){this.up=isTouch?1:2;this.gw=A.w*this.up;this.gh=A.h*this.up;this.hf=new Float32Array(this.gw*this.gh);this.freq=new Float32Array(A.n);this.fsm=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.att={};this.f=0;},
+  clear(){this.freq.fill(0);this.fsm.fill(0);this.att={};},
+  draw(t,dt){this.f++;if((this.f&1)===0)PEOPLE.update();const P=pal(),light=!!P.light,bg=light?'#fbfaf8':P.bg;paper(bg);
+    const att=this.att,S0=Math.min(W,H),f=this.f;
+    PEOPLE.list.forEach(pp=>{let a=att[pp.key];if(!a)a=att[pp.key]={x:pp.x,y:pp.y,r:0,sp:0,lx:pp.x,ly:pp.y,path:[]};
+      const inst=Math.hypot(pp.x-a.lx,pp.y-a.ly)/Math.max(dt,0.008);a.lx=pp.x;a.ly=pp.y;a.sp+=(Math.min(inst,W*1.5)-a.sp)*0.08;
+      a.x+=(pp.x-a.x)*0.15;a.y+=(pp.y-a.y)*0.15;a.seen=f;
+      // a field's reach grows with the person's size and with how fast they move
+      const base=clamp(Math.max(pp.bw,pp.bh)*0.42,S0*0.1,S0*0.34),rt=base*(0.8+Math.min(0.8,a.sp/(W*0.3)));a.r+=(rt-a.r)*0.05;
+      if(!a.path.length||Math.hypot(a.x-a.path[a.path.length-1][0],a.y-a.path[a.path.length-1][1])>6){a.path.push([a.x,a.y]);if(a.path.length>90)a.path.shift();}});
+    for(const k in att){const a=att[k];if(f-a.seen>2){a.r*=0.97;if(a.r<2)delete att[k];}}
+    // frequency: the floor rises slowly where people keep standing (a few minutes to fill), and sinks back just as slowly
+    const fq=this.freq,fs=this.fsm,w=A.w,h=A.h;for(let i=0;i<A.n;i++){let v=fq[i]*0.9996+A.p[i]*0.0011;fq[i]=v>1?1:v;}
+    if(f%6===1){fs.set(fq);box5(fs,this.tmp,w,h);box5(fs,this.tmp,w,h);box5(fs,this.tmp,w,h);}
+    const gw=this.gw,gh=this.gh,up=this.up,hf=this.hf,mw=w-1.001,mh=h-1.001,list=Object.values(att),kx=W/gw,ky=H/gh;
+    for(let y=0;y<gh;y++){let gy=(y+0.5)/up-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,py=(y+0.5)*ky;
+      for(let x=0;x<gw;x++){let gx=(x+0.5)/up-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0,i0=y0*w+x0,px=(x+0.5)*kx;
+        let v=((fs[i0]*(1-fx)+fs[i0+1]*fx)*(1-fy)+(fs[i0+w]*(1-fx)+fs[i0+w+1]*fx)*fy)*1.1;
+        for(let k=0;k<list.length;k++){const a=list[k];if(a.r<1)continue;const dx=px-a.x,dy=py-a.y,q=(dx*dx+dy*dy)/(a.r*a.r);if(q<1){const u=1-q;v+=1.5*u*u;}}
+        hf[y*gw+x]=v;}}
+    // one marching pass sorts every crossing into its level; each level is lifted a little, low in blue, high in magenta
+    const N=28,L0=0.08,L1=2.6,lift=S0*0.004,paths=[];for(let k=0;k<N;k++)paths.push(new Path2D());const lvl=k=>L0+(L1-L0)*Math.pow(k/(N-1),1.25);
+    const lv=new Float32Array(N);for(let k=0;k<N;k++)lv[k]=lvl(k);
+    for(let y=0;y<gh-1;y++)for(let x=0;x<gw-1;x++){const i=y*gw+x,a=hf[i],b=hf[i+1],c=hf[i+gw+1],d=hf[i+gw];const mx=Math.max(a,b,c,d);if(mx<L0)continue;const mn=Math.min(a,b,c,d);
+      for(let k=0;k<N;k++){const L=lv[k];if(L>mx)break;if(L<=mn)continue;const ca=(a>L?8:0)|(b>L?4:0)|(c>L?2:0)|(d>L?1:0);const pth=paths[k],oy=-k*lift;
+        const tX=x+(L-a)/(b-a),rY=y+(L-b)/(c-b),bX=x+(L-d)/(c-d),lY=y+(L-a)/(d-a);const sg=(x1,y1,x2,y2)=>{pth.moveTo((x1+0.5)*kx,(y1+0.5)*ky+oy);pth.lineTo((x2+0.5)*kx,(y2+0.5)*ky+oy);};
+        switch(ca){case 1:case 14:sg(x,lY,bX,y+1);break;case 2:case 13:sg(bX,y+1,x+1,rY);break;case 3:case 12:sg(x,lY,x+1,rY);break;case 4:case 11:sg(tX,y,x+1,rY);break;
+          case 6:case 9:sg(tX,y,bX,y+1);break;case 7:case 8:sg(x,lY,tX,y);break;case 5:sg(x,lY,tX,y);sg(bX,y+1,x+1,rY);break;case 10:sg(tX,y,x+1,rY);sg(x,lY,bX,y+1);break;}}}
+    const blue=hex(light?'#3d44d6':P.fg[3]),mag=hex(light?'#e2237f':P.fg[1]);ctx.lineJoin='round';
+    for(let k=0;k<N;k++){const tn=k/(N-1),r=blue[0]+(mag[0]-blue[0])*tn,g=blue[1]+(mag[1]-blue[1])*tn,b=blue[2]+(mag[2]-blue[2])*tn;
+      ctx.strokeStyle='rgba('+(r|0)+','+(g|0)+','+(b|0)+','+(k===0?0.9:0.3+0.5*tn).toFixed(3)+')';ctx.lineWidth=k===0?1.6:0.8;ctx.stroke(paths[k]);}
+    // attractors: a point, its field ring and the dashed route it has walked
+    ctx.setLineDash([4,4]);ctx.lineWidth=0.9;
+    list.forEach(a=>{if(a.path.length>2){ctx.strokeStyle=light?'rgba(70,80,200,0.5)':'rgba(170,180,255,0.5)';ctx.beginPath();a.path.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.stroke();}});
+    ctx.setLineDash([]);
+    list.forEach(a=>{ctx.fillStyle='#e0262c';ctx.beginPath();ctx.arc(a.x,a.y,2.6,0,TAU);ctx.fill();ctx.strokeStyle='rgba(224,38,44,0.7)';ctx.lineWidth=0.9;ctx.beginPath();ctx.arc(a.x,a.y,11,0,TAU);ctx.stroke();});
+    ctx.font=(isTouch?9:10)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';ctx.fillStyle=light?'rgba(40,40,50,0.55)':'rgba(230,230,240,0.6)';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.fillText('ATTRACTOR POINTS '+String(list.length).padStart(2,'0')+'   FIELD · AMALGAMATION · SPACE DEFINITION',18,H-18-(isTouch?70:0));
+  }};
+const MODES=[mGaze,mShapes,mDots,mDotm,mPixel,mWave,mAscii,mCurtain,mSketch,mDrops,mTrail,mSpace,mContour,mString,mStars,mRefract,mSlit,mDetect];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -947,7 +1140,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;';
+const KEYS='1234567890-=[]\\;\',';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
@@ -1110,7 +1303,7 @@ S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=cl
 resize();useDemo();setMode(S.mode);syncCtl();document.body.classList.add('ui-on');
 const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
-window.__gyeol={S,A,SEG,FACE,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
