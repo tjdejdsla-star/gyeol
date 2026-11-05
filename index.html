@@ -89,6 +89,7 @@ body.role-sensor .ui{display:none}
 .seg button[aria-pressed="true"]{background:var(--segsel);box-shadow:0 3px 8px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
 .seg.wide{display:flex;width:100%}
 .seg.wide button{flex:1}
+#modeList .l small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .switch{position:relative;width:51px;height:31px;flex:none}
 .switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
 .switch span{position:absolute;inset:0;border-radius:16px;background:var(--fill);transition:background .2s}
@@ -187,6 +188,11 @@ body.role-sensor #exhibit{display:none}
       <button class="row btnrow red" id="btnKeyClear">키 지우기</button></div>
     <p class="foot"><b>시</b> 모드에서 앞에 4초 가만히 서 있으면 Claude가 시를 씁니다. 키는 이 기기 브라우저에만 저장되고, 보내는 것은 <b>실루엣 모양과 측정값뿐</b>입니다 (사진·얼굴은 보내지 않음). 키가 없으면 결이 직접 짧은 시를 씁니다.</p>
   </div>
+  <div class="group"><h4>필터 켜고 끄기</h4>
+    <div class="rows" id="modeList"></div>
+    <div class="rows" style="margin-top:8px"><button class="row btnrow" id="btnAllOn">모든 필터 켜기</button></div>
+    <p class="foot">끈 필터는 아래 막대, 자동 전환, 화면 밀기, 키보드에서 모두 빠져요. 다시 켜면 돌아와요. 하나 이상은 켜 두어야 해요.</p>
+  </div>
   <div class="group"><h4>전시 제목</h4>
     <div class="rows"><div class="row"><input id="exIn" type="text" autocomplete="off" spellcheck="false" aria-label="전시 제목" style="flex:1;min-width:0;font:inherit;font-size:15px;background:transparent;border:0;color:var(--label);padding:4px 0"></div></div>
     <p class="foot">화면 왼쪽 위에 학교 로고와 함께 늘 보입니다. 첫 단어는 굵게 표시돼요. 비우면 숨겨요.</p>
@@ -195,11 +201,6 @@ body.role-sensor #exhibit{display:none}
     <div class="rows"><div class="row"><textarea class="ta" id="verses" rows="6" aria-label="말씀"></textarea></div></div>
     <p class="foot">한 줄에 한 구절, 출처는 줄 끝 괄호 안에 적어요. 예) 여호와는 나의 목자시니 내가 부족함이 없으리로다 (시편 23:1)</p>
   </div>
-  <div class="group"><h4>문장 (활자 모드)</h4>
-    <div class="rows"><div class="row"><textarea class="ta" id="text" rows="4" aria-label="문장"></textarea></div></div>
-    <p class="foot">줄바꿈으로 문장을 나눠요. 바꾸면 바로 반영됩니다.</p>
-  </div>
-
   <div class="group"><h4>동작</h4>
     <div class="rows">
       <button class="row btnrow" id="btnFull">전체화면</button>
@@ -320,8 +321,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',
-  text:'움직임은 결이 되고\nMOVEMENT BECOMES TEXTURE\n빛은 기억이 된다\nLIGHT TURNS INTO MEMORY\n여기 있는 당신의 흔적\nTRACES OF YOU HERE'};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion'};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
 function save(){try{localStorage.setItem('gyeol.settings',JSON.stringify(S));}catch(e){}}
@@ -556,7 +556,7 @@ const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,fti
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',wantPose=wantFace||id==='string'||id==='comb'||id==='curtain'||id==='frost'||id==='thermal'||id==='stack',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',wantPose=wantFace||id==='frost'||id==='thermal'||id==='stack',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&now-FACE.plast>70){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
@@ -743,7 +743,6 @@ function largestFace(){if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detectio
     if(!best||w*h>best.w*best.h)best={x,y,w,h,cx:x+w/2,cy:y+h/2,frontal};});
   return best;}
 
-/* 시선의 온도: a cold still scene; a held gaze warms it and flowers grow where the viewer looks */
 /* smooth silhouette: bilinear upsampling of a coarse person field with a smoothstep edge, so contours are smooth instead of grid steps */
 function upsampleMask(m,gw,gh,s,lo,hi,rgb,cv){const sw=Math.max(1,gw*s),sh=Math.max(1,gh*s);if(!cv||cv.width!==sw||cv.height!==sh){cv=mkCanvas(sw,sh);cv.img=null;}if(!cv.img)cv.img=cv.cx.createImageData(sw,sh);
   const d=cv.img.data,mw=gw-1.001,mh=gh-1.001,inv=1/(hi-lo),r=rgb[0],g=rgb[1],b=rgb[2];
@@ -752,69 +751,6 @@ function upsampleMask(m,gw,gh,s,lo,hi,rgb,cv){const sw=Math.max(1,gw*s),sh=Math.
       const v=(m[o0+x0]*(1-fx)+m[o0+x0+1]*fx)*(1-fy)+(m[o1+x0]*(1-fx)+m[o1+x0+1]*fx)*fy;let a=(v-lo)*inv;a=a<0?0:a>1?1:a;a=a*a*(3-2*a);
       const q=(y*sw+x)*4;d[q]=r;d[q+1]=g;d[q+2]=b;d[q+3]=a*255;}}
   cv.cx.putImageData(cv.img,0,0);return cv;}
-
-/* 결: hundreds of threads of light hang across the wall; a moving hand combs them aside, and they ease slowly back */
-/* hanging strings shared by 결 and 활자: physics only; each mode paints them its own way */
-function makeStrings(def){return Object.assign({
-  init(){const n=def.count();this.n=n;this.m=isTouch?40:48;const N=n*this.m;this.sp=W/(n+1);this.x0=new Float32Array(n);this.dx=new Float32Array(N);this.vx=new Float32Array(N);
-    for(let i=0;i<n;i++)this.x0[i]=this.sp*(i+1)+(def.jitter?(hash2(i,7)-0.5)*this.sp*0.3:0);this.U=new Float32Array(A.n);this.E=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.f=0;this.wr={};if(def.setup)def.setup.call(this);},
-  clear(){this.dx.fill(0);this.vx.fill(0);},
-  handField(){const w=A.w,h=A.h,E=this.E,U=this.U;E.fill(0);U.fill(0);this.wr=this.wr||{};const seen={};
-    TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2||(tr.hits||0)<3)return;const hs=tr.hist,n=hs.length;
-      // a walking body does not comb: skip anyone whose centre (the hips, with the pose model) is travelling
-      if(n<6)return;{const a=hs[n-1],b=hs[Math.max(0,n-9)];if(Math.hypot(a[0]-b[0],a[1]-b[1])>W*0.03)return;}
-      if(tr.pose){[15,16,19,20].forEach(j=>{const q=tr.pose[j],key=tr.id+'_'+j;if(!q||q.v<0.45)return;seen[key]=1;let st=this.wr[key];
-          // the pose model updates a few times a second; velocity is measured between its updates and held smoothly in between
-          if(!st){st=this.wr[key]={x:q.x,y:q.y,vx:0,vy:0,age:0};}else if(q.x!==st.x||q.y!==st.y){const fr=Math.max(1,st.age);st.vx=st.vx*0.3+((q.x-st.x)/fr)*0.7;st.vy=(q.y-st.y)/fr;st.x=q.x;st.y=q.y;st.age=0;}else{st.age++;st.vx*=0.9;}
-          if(Math.abs(st.vx)<0.4)return;const lead=Math.min(st.age,3),cxp=st.x+st.vx*lead,cyp=st.y+st.vy*lead;
-          const R=Math.max(3,(tr.h*0.15)/A.sx),cx=cxp/A.sx,cy=cyp/A.sy,vg=st.vx/A.sx;
-          for(let y=Math.max(0,(cy-R)|0);y<=Math.min(h-1,(cy+R)|0);y++)for(let x=Math.max(0,(cx-R)|0);x<=Math.min(w-1,(cx+R)|0);x++){const d2=((x-cx)**2+(y-cy)**2)/(R*R);if(d2>1)continue;const wgt=(1-d2),i=y*w+x;E[i]+=wgt;U[i]+=vg*wgt;}});}
-      else{ // no pose model: motion in the upper part of a still person's box (arms and hands)
-        const x0=clamp(((tr.x-tr.w*0.35)/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w*1.35)/A.sx)|0,0,w-1),y0=clamp(((tr.y-tr.h*0.1)/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h*0.65)/A.sy)|0,0,h-1);
-        for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x,e=A.er[i];if(e<0.1)continue;E[i]=e;U[i]=A.u[i]*e;}}});
-    for(const k in this.wr)if(!seen[k])delete this.wr[k];},
-  step(){const n=this.n,m=this.m,dx=this.dx,vx=this.vx,x0=this.x0,sp=this.sp,w=A.w,h=A.h,U=this.U,E=this.E,g=gainF();
-    if((this.f&1)===0)TR.update();this.handField();box5(E,this.tmp,w,h);box5(U,this.tmp,w,h);
-    const y0=-H*0.02,yh=H*1.04/(m-1),kx=w/W,ky=h/H;this.y0=y0;this.yh=yh;
-    for(let i=0;i<n;i++){const base=i*m,xi=x0[i];for(let j=0;j<m;j++){const k=base+j,x=xi+dx[k],y=y0+j*yh;
-        let cx=(x*kx)|0,cy=(y*ky)|0;cx=cx<0?0:cx>=w?w-1:cx;cy=cy<0?0:cy>=h?h-1:cy;const c=cy*w+cx,e=E[c];
-        let v=vx[k];if(e>0.02){let hv=U[c]/(e+1e-4)*A.sx*g*1.15;const lim=W*0.045;hv=hv<-lim?-lim:hv>lim?lim:hv;const s=Math.min(1,e*3)*0.8;v+=(hv-v)*s;}vx[k]=v;}}
-    // a string is light: the hand's pull spreads only a little way along it, so it swings in a loose curve
-    for(let it=0;it<5;it++)for(let i=0;i<n;i++){const b=i*m;let prev=vx[b];vx[b]+=(vx[b+1]-vx[b])*0.5;for(let j=1;j<m-1;j++){const k=b+j,cur=vx[k];vx[k]+=((prev+vx[k+1])*0.5-cur)*0.5;prev=cur;}vx[b+m-1]+=(prev-vx[b+m-1])*0.5;}
-    // swing home: a lively spring with light damping, so a swept string overshoots a little and settles within a second or so
-    const DL=W*0.3;for(let k=0;k<n*m;k++){const d=dx[k],far=Math.abs(d)/DL;const v=vx[k]*0.93-d*(0.006+0.01*far*far);vx[k]=v;dx[k]=d+v;}
-    for(let it=0;it<2;it++)for(let i=0;i<n;i++){const b=i*m;for(let j=1;j<m-1;j++){const k=b+j;dx[k]+=(dx[k-1]+dx[k+1]-2*dx[k])*0.35;}dx[b]+=(dx[b+1]-dx[b])*0.35;dx[b+m-1]+=(dx[b+m-2]-dx[b+m-1])*0.35;}
-    // neighbours lean on each other a little instead of piling up hard against one another
-    const g0=sp*0.2;for(let j=0;j<m;j++)for(let i=0;i<n-1;i++){const a=i*m+j,b=a+m,gap=(x0[i+1]+dx[b])-(x0[i]+dx[a]);if(gap<g0){const c=(g0-gap)*0.25;dx[a]-=c;dx[b]+=c;}}},
-  draw(t,dt){this.f++;this.step();def.paint.call(this,t);}
-},def.extra||{});}
-const mComb=makeStrings({count:()=>isTouch?140:Math.round(clamp(W/5.5,160,360)),jitter:true,
-  paint(t){const n=this.n,m=this.m,dx=this.dx,x0=this.x0,sp=this.sp,y0=this.y0,yh=this.yh;ctx.fillStyle='#0d0f10';ctx.fillRect(0,0,W,H);
-    const pth=new Path2D(),amb=t*0.35;for(let i=0;i<n;i++){const base=i*m,xi=x0[i],sw=0.9*Math.sin(amb+i*0.045);pth.moveTo(xi+dx[base]+sw,y0);for(let j=1;j<m;j++)pth.lineTo(xi+dx[base+j]+sw*Math.cos(j*0.06),y0+j*yh);}
-    ctx.lineCap='butt';ctx.lineJoin='round';ctx.lineWidth=clamp(sp*0.42,1,2.6);ctx.strokeStyle='rgba(232,242,240,0.92)';ctx.stroke(pth);
-    const v=ctx.createRadialGradient(W/2,H*0.5,Math.min(W,H)*0.25,W/2,H*0.5,Math.max(W,H)*0.72);v.addColorStop(0,'rgba(6,8,9,0)');v.addColorStop(1,'rgba(6,8,9,0.55)');ctx.fillStyle=v;ctx.fillRect(0,0,W,H);}});
-Object.assign(mComb,{id:'comb',name:'실발',desc:'벽 가득 드리운 빛의 실발. 멈춰 선 사람이 손을 휘두르면 그 자리의 실이 손을 따라 바로 쓸려 갔다가 출렁이며 돌아온다. 걷는 몸에는 반응하지 않는다'});
-/* 빛벽: a wall of glowing frosted blocks lit from behind; the person's shadow falls on it block by block */
-const mBlocks={id:'blocks',name:'빛벽',desc:'뒤에서 빛이 비치는 반투명 블록 벽. 빛은 가운데에서 부드럽게 퍼지고, 사람의 그림자는 블록 위에 번지듯 드리워진다',
-  init(){this.cols=isTouch?14:Math.round(clamp(W/56,16,30));this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);const n=this.cols*this.rows;this.d=new Float32Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.fine=null;
-    // the light behind the wall: one warm hotspot a little above the middle, falling off smoothly to the corners
-    const lw=Math.max(2,W>>1),lh=Math.max(2,H>>1),L=mkCanvas(lw,lh),lc=L.cx,img=lc.createImageData(lw,lh),d=img.data;
-    for(let y=0;y<lh;y++)for(let x=0;x<lw;x++){const u=(x/lw-0.5)*1.15,v=y/lh-0.42,r=Math.sqrt(u*u+v*v),k=Math.exp(-r*r*3.2)*0.82+0.18*(1-Math.min(1,r));const q=(y*lw+x)*4,nz=(Math.random()-0.5)*3;
-      d[q]=70+185*k+nz;d[q+1]=64+180*k+nz;d[q+2]=54+170*k+nz;d[q+3]=255;}lc.putImageData(img,0,0);this.light=L;
-    // one block's face: a soft cushion, slightly brighter in the middle, a gently darker rim and a thin seam
-    const c=Math.max(4,Math.round(this.cell*DPR)),T=mkCanvas(c,c),x=T.cx,g=x.createRadialGradient(c*0.5,c*0.46,c*0.04,c*0.5,c*0.5,c*0.75);
-    g.addColorStop(0,'rgba(255,252,240,0.16)');g.addColorStop(0.55,'rgba(255,250,236,0.04)');g.addColorStop(0.86,'rgba(40,34,26,0.10)');g.addColorStop(1,'rgba(30,26,20,0.28)');x.fillStyle=g;x.fillRect(0,0,c,c);
-    x.strokeStyle='rgba(28,24,20,0.28)';x.lineWidth=Math.max(1,c*0.025);x.strokeRect(0,0,c,c);this.tile=T;},
-  draw(t){const cols=this.cols,rows=this.rows,c=this.cell,d=this.d,w=A.w,h=A.h,pb=this.pb;
-    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.light,0,0,W,H);
-    // the shadow: a soft penumbra, wider than the person, as from a lamp behind the viewer
-    pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
-    this.fine=upsampleMask(pb,w,h,2,0.12,0.8,[34,30,26],this.fine);ctx.globalAlpha=0.82;ctx.drawImage(this.fine,0,0,W,H);ctx.globalAlpha=1;
-    // each block also diffuses: it takes a little of its own average shade, so the shadow reads block by block without hard steps
-    const pS=(x,y)=>{let cx=(x*w/W)|0,cy=(y*h/H)|0;cx=cx<0?0:cx>=w?w-1:cx;cy=cy<0?0:cy>=h?h-1:cy;return pb[cy*w+cx];};
-    for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const i=r*cols+k,x=k*c,y=r*c;let m=0;for(let a=0;a<3;a++)for(let b=0;b<3;b++)m+=pS(x+c*(a+0.5)/3,y+c*(b+0.5)/3);m/=9;d[i]+=(m-d[i])*0.25;
-      if(d[i]>0.03){ctx.fillStyle='rgba(34,30,26,'+(Math.min(1,d[i]*1.2)*0.22).toFixed(3)+')';ctx.fillRect(x,y,c,c);}ctx.drawImage(this.tile,x,y,c,c);}
-  }};
 
 /* 유리: people behind a frosted glass screen. Whoever is close to the glass is dark and sharp, whoever is far is a pale blur;
    hands raised against the glass come through warm */
@@ -860,7 +796,6 @@ const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 
     for(let l=3;l>=0;l--){this.cv[l]=this.layer(this.Mb,this.Wl[l],sc,this.cv[l]);if(!this.cv[l].any)continue;this.blurDraw(this.cv[l],R[l]*scl,AL[l]);}
   }};
 
-/* 골유리: the scene seen through reeded glass. Each horizontal rib is a small cylindrical lens; the ribs are cut into tiles that shift slightly */
 /* 망점: a halftone print in one sky-blue ink. Dots are largest at the edge of each soft blob and shrink naturally both outward and inward;
    how far the inside opens to white depends on the picture itself: thick parts of a body and lighter clothing or skin open more */
 const mHalftone={id:'halftone',name:'망점',desc:'흰 바탕에 하늘색 망점 한 가지 잉크. 사람은 번진 덩어리로 찍히고, 망점은 가장자리에서 가장 크며 안쪽으로 갈수록 자연스럽게 작아진다. 몸이 두껍고 밝은 곳일수록 안이 더 하얗게 비어 사람마다 다르게 찍힌다',
@@ -1215,7 +1150,6 @@ const mSketch={id:'sketch',name:'스케치',desc:'윤곽을 따라가는 연필�
     ctx.drawImage(this.cv,0,0,W,H);
   }};
 
-/* 물방울: each person is a water drop; drops that come close pull together and merge */
 /* ---------- face memory: a light, in-session re-identification so a returning face keeps its number ----------
    Nothing is stored: descriptors live in memory only and vanish on reload. It is approximate by design. */
 const FM={mem:[],live:[],nextMem:1,tc:null,hc:null,
@@ -1269,25 +1203,6 @@ const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
   takeRenames(){const r=this.renames;this.renames=[];return r;}
 };
 
-/* 활자: a cloth simulation. The text is printed on fabric hanging from a rod; only where a hand moves does it push, fold and swing back */
-const mCurtain=makeStrings({count:()=>isTouch?220:Math.round(clamp(W/3.4,260,560)),jitter:false,
-  setup(){this.renderText();},
-  extra:{renderText(){const P=pal(),tw=Math.max(1,Math.round(W)),th=Math.max(1,Math.round(H)),c=mkCanvas(tw,th).cx;c.fillStyle='#000';c.fillRect(0,0,tw,th);
-      const lines=String(S.text||DEF.text).split('\n').map(s=>s.trim()).filter(Boolean);if(!lines.length)lines.push('·');
-      const rows=clamp(Math.round(H/(isTouch?70:110)),4,10),rh=H/rows,fs=rh*0.74;c.font='900 '+fs+'px '+SANS;c.textBaseline='middle';c.textAlign='left';c.fillStyle='#fff';
-      for(let r=0;r<rows;r++){const t=lines[r%lines.length]+'   ';const wd=Math.max(10,c.measureText(t).width);let x=-((r*173)%Math.round(wd));while(x<W){c.fillText(t,x,(r+0.5)*rh);x+=wd;}}
-      const d=c.getImageData(0,0,tw,th).data;this.ink=new Uint8Array(tw*th);for(let i=0;i<tw*th;i++)this.ink[i]=d[i*4];this.tw=tw;this.th=th;}},
-  // paint: every string is a thin thread; where the text crosses it, the thread carries a printed dash, so the letters bend with the strings
-  paint(t){const P=pal(),n=this.n,m=this.m,dx=this.dx,x0=this.x0,sp=this.sp,y0=this.y0,yh=this.yh,ink=this.ink,tw=this.tw,th=this.th;
-    if(!ink||tw!==Math.round(W)||th!==Math.round(H))this.renderText();paper(P.bg);
-    const thread=new Path2D(),inkP=new Path2D(),step=3;
-    for(let i=0;i<n;i++){const base=i*m,xi=x0[i],col=clamp(Math.round(xi),0,tw-1);thread.moveTo(xi+dx[base],y0);for(let j=1;j<m;j++)thread.lineTo(xi+dx[base+j],y0+j*yh);
-      let on=false;for(let y=0;y<H;y+=step){const fj=(y-y0)/yh,j0=Math.min(m-2,Math.max(0,fj|0)),fr=fj-j0,x=xi+dx[base+j0]*(1-fr)+dx[base+j0+1]*fr;const v=ink[Math.min(th-1,y|0)*tw+col]>110;
-        if(v&&!on){inkP.moveTo(x,y);on=true;}else if(v)inkP.lineTo(x,y);else if(on){inkP.lineTo(x,y);on=false;}}}
-    ctx.lineCap='butt';ctx.lineJoin='round';ctx.lineWidth=0.7;ctx.strokeStyle=rgba(P.fg[0],P.light?0.16:0.22);ctx.stroke(thread);
-    ctx.lineWidth=Math.max(1.2,sp*0.92);ctx.strokeStyle=P.fg[3];ctx.stroke(inkP);}});
-Object.assign(mCurtain,{id:'curtain',name:'활자',desc:'문장이 인쇄된 실발. 멈춰 선 사람이 손을 휘두르면 글자째 실이 쓸려 휘었다가 출렁이며 돌아온다'});
-
 /* 등고선: the people raise hills on a slowly flowing terrain; the whole screen is drawn as map contours (or wood grain) */
 const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언덕처럼 솟고, 화면 전체가 지도의 등고선처럼 그 주위를 감싸 흐른다',
   init(){this.up=isTouch?1:2;this.gw=A.w*this.up;this.gh=A.h*this.up;this.hf=new Float32Array(this.gw*this.gh);this.pb=new Float32Array(A.n);this.mem=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
@@ -1318,49 +1233,6 @@ const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언�
     ctx.strokeStyle=rgba(ink,0.38);ctx.lineWidth=0.8;ctx.stroke(c.thin);ctx.strokeStyle=rgba(ink,0.75);ctx.lineWidth=1.4;ctx.stroke(c.bold);ctx.strokeStyle=rgba(acc,0.85);ctx.lineWidth=1.1;ctx.stroke(c.hill);
   }};
 
-/* 실: pins around the frame; each thread runs from its pin to the outline of the nearest person and trembles when they move */
-const mString={id:'string',name:'실',desc:'화면 둘레의 못에서 뻗은 실들이 사람의 윤곽에 걸려 팽팽해지고, 움직이면 떨린다',
-  init(){const m=16,nx=isTouch?26:44,ny=Math.max(8,Math.round(nx*H/W)),pins=[];
-    for(let i=0;i<nx;i++)pins.push({x:m+(W-2*m)*(i+0.5)/nx,y:m});for(let i=0;i<ny;i++)pins.push({x:W-m,y:m+(H-2*m)*(i+0.5)/ny});
-    for(let i=nx-1;i>=0;i--)pins.push({x:m+(W-2*m)*(i+0.5)/nx,y:H-m});for(let i=ny-1;i>=0;i--)pins.push({x:m,y:m+(H-2*m)*(i+0.5)/ny});
-    const N=pins.length,hop=Math.round(N*0.41);pins.forEach((p,i)=>{const q=pins[(i+hop)%N];p.ex=q.x;p.ey=q.y;p.vx=0;p.vy=0;p.vib=0;p.ph=Math.random()*TAU;p.idle=(i+hop)%N;});this.pins=pins;this.f=0;},
-  edge(cx,cy,tx,ty){ // walk from the person's centre toward the pin and stop where the body ends
-    const dx=tx-cx,dy=ty-cy,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,step=Math.min(A.sx,A.sy)*0.6;let inside=false,ex=cx,ey=cy;
-    for(let s=0;s<len;s+=step){const x=cx+ux*s,y=cy+uy*s;const v=pAt(x,y);if(v>0.45){inside=true;ex=x;ey=y;}else if(inside&&v<0.3)break;}
-    return [ex,ey];},
-  draw(t){this.f++;if((this.f&1)===0)TR.update();const P=pal();paper(P.light?'#f2f0eb':P.bg);const ink=P.light?'#1d1d22':P.fg[0];
-    const people=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=5),pins=this.pins;
-    ctx.lineCap='round';const thread=new Path2D(),tight=new Path2D();
-    for(const p of pins){let tx,ty,hit=false;
-      if(people.length){let best=people[0],bd=1e18;for(const tr of people){const d=(tr.cx-p.x)**2+(tr.cy-p.y)**2;if(d<bd){bd=d;best=tr;}}const e=this.edge(best.cx,best.cy,p.x,p.y);tx=e[0];ty=e[1];hit=true;}
-      else{const q=pins[p.idle];tx=q.x;ty=q.y;}
-      p.vx+=(tx-p.ex)*0.11;p.vy+=(ty-p.ey)*0.11;p.vx*=0.72;p.vy*=0.72;p.ex+=p.vx;p.ey+=p.vy;p.vib=Math.min(1,p.vib*0.95+Math.hypot(p.vx,p.vy)*0.012);
-      const dx=p.ex-p.x,dy=p.ey-p.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,amp=p.vib*Math.min(26,len*0.05)*Math.sin(t*22+p.ph);
-      const cx=(p.x+p.ex)/2+nx*amp,cy=(p.y+p.ey)/2+ny*amp+len*0.006;const pth=hit?tight:thread;pth.moveTo(p.x,p.y);pth.quadraticCurveTo(cx,cy,p.ex,p.ey);}
-    ctx.strokeStyle=rgba(ink,0.22);ctx.lineWidth=0.7;ctx.stroke(thread);
-    ctx.strokeStyle=rgba(ink,0.55);ctx.lineWidth=0.8;ctx.stroke(tight);
-    ctx.fillStyle=ink;for(const p of pins){ctx.beginPath();ctx.arc(p.x,p.y,1.6,0,TAU);ctx.fill();}
-  }};
-
-/* 별자리: points of each body become stars joined into a constellation; people standing near each other are linked */
-
-/* 굴절: fine stripes cover the screen; a person bends them like glass and turns their direction inside the body */
-
-/* 시간: slit-scan. Each column shows the silhouette from a different moment, so motion stretches into time */
-const mSlit={id:'slit',name:'시간',desc:'화면 왼쪽은 지금, 오른쪽으로 갈수록 더 먼 과거. 멈춘 사람은 그대로, 움직이는 사람은 시간 속으로 길게 늘어난다',
-  init(){this.N=isTouch?72:120;this.ring=[];for(let i=0;i<this.N;i++)this.ring.push(new Uint8Array(A.n));this.head=0;this.s=2;this.rw=A.w*2;this.rh=A.h*2;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;},
-  draw(){this.f++;const P=pal(),w=A.w,h=A.h,N=this.N,ring=this.ring,rw=this.rw,rh=this.rh,out=this.img.data;
-    this.head=(this.head+1)%N;const cur=ring[this.head];for(let i=0;i<A.n;i++)cur[i]=A.p[i]*255;
-    const bg=P.light?[242,240,236]:P.bgRGB,inkN=P.light?[16,16,20]:P.fgRGB[0],inkO=P.light?[78,120,196]:P.fgRGB[3],mw=w-1.001,mh=h-1.001;
-    for(let x=0;x<rw;x++){const age=x/(rw-1),fr=ring[(this.head-Math.round(age*(N-1))+N*2)%N];let gx=(x+0.5)/2-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0;
-      const cr=inkN[0]+(inkO[0]-inkN[0])*age,cg=inkN[1]+(inkO[1]-inkN[1])*age,cb=inkN[2]+(inkO[2]-inkN[2])*age,fade=1-age*0.45;
-      for(let y=0;y<rh;y++){let gy=(y+0.5)/2-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,i=y0*w+x0;
-        const v=((fr[i]*(1-fx)+fr[i+1]*fx)*(1-fy)+(fr[i+w]*(1-fx)+fr[i+w+1]*fx)*fy)/255;let a=(v-0.38)/0.2;a=a<0?0:a>1?1:a;a=a*a*(3-2*a)*fade;
-        const q=(y*rw+x)*4;out[q]=bg[0]+(cr-bg[0])*a;out[q+1]=bg[1]+(cg-bg[1])*a;out[q+2]=bg[2]+(cb-bg[2])*a;out[q+3]=255;}}
-    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
-  }};
-/* 공간: every person is an attractor. Their fields amalgamate into one volume, drawn as stacked contour slices:
-   faster people swell their field, and places people keep returning to slowly rise. */
 function pixelText(target,lines,x,y,w,h,opt){ // text drawn small, thresholded and scaled up without smoothing: a bitmap terminal look
   const k=opt.k||2.4,cw=Math.max(1,Math.ceil(w/k)),ch=Math.max(1,Math.ceil(h/k));if(!pixelText.cv||pixelText.cv.width<cw||pixelText.cv.height<ch)pixelText.cv=mkCanvas(Math.max(cw,pixelText.cv?pixelText.cv.width:0),Math.max(ch,pixelText.cv?pixelText.cv.height:0));
   const c=pixelText.cv.cx;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,pixelText.cv.width,pixelText.cv.height);c.fillStyle='#000';c.textBaseline='top';
@@ -1412,6 +1284,7 @@ const POET={sdk:null,loading:null,
     const fit=P.filter(p=>p.w===true),plain=P.filter(p=>p.w===undefined),pool=(fit.length&&Math.random()<0.7?fit:plain.concat(fit)).filter(p=>p.t!==POET.lastTitle);
     const p=pool[(Math.random()*pool.length)|0]||P[0];POET.lastTitle=p.t;return {title:p.t,lines:p.l.slice(),by:'local'};}
 };
+const POEM_IDLE=['가만히 서 있으면','당신을 위한 시가','이곳에 쓰입니다','STAND STILL','AND A POEM','WILL BE WRITTEN'];
 const mPoem={id:'poem',name:'시',fullFrame:true,desc:'앞에 가만히 서 있으면 그 사람의 실루엣을 보고 Claude가 짧은 시를 쓴다. 시는 몸의 윤곽을 따라 흐르고, 다리 사이와 바깥으로 흘러나온다',
   init(){this.state='idle';this.hold=0;this.lastPos=null;this.poem=null;this.shown=0;this.f=0;this.snap=null;this.snapBox=null;this.sil=mkCanvas(2,2);this.tmp=new Float32Array(A.n);this.cool=0;},
   capture(tr){ // freeze the silhouette around this person: a blue-ready mask for the screen and a black-on-white PNG for Claude
@@ -1478,7 +1351,7 @@ const mPoem={id:'poem',name:'시',fullFrame:true,desc:'앞에 가만히 서 있�
     this.cool=Math.max(0,this.cool-dt);
     if(this.state==='idle'){this.hold=still?this.hold+dt:Math.max(0,this.hold-dt*2);if(this.hold>=4&&tr&&this.cool===0){this.hold=0;this.compose(tr,4);}}
     else if(this.state==='show'){const age=(performance.now()-this.shown)/1000;if(age>35||(age>12&&!tr)){this.state='idle';this.poem=null;this.snap=null;this.cool=6;}}
-    const P=this.poem,lines=P?P.lines:String(S.text||DEF.text).split('\n').map(s=>s.trim());
+    const P=this.poem,lines=P?P.lines:POEM_IDLE;
     // ---- left panel ----
     let m,gw,gh,box;if(this.snap&&this.state!=='idle'){m=this.snap.m;gw=this.snap.gw;gh=this.snap.gh;box=this.snapBox;}
     else if(tr){const pad=Math.max(tr.w,tr.h)*0.05;box=[Math.max(0,tr.x-pad),Math.max(0,tr.y-pad),0,0];box[2]=Math.min(W,tr.x+tr.w+pad)-box[0];box[3]=Math.min(H,tr.y+tr.h+pad)-box[1];
@@ -1543,11 +1416,10 @@ const mColorDots={id:'colordots',name:'색점',desc:'노란 단색 배경 위에
       const mix=clamp((cv-0.2)/0.6,0,1)*0.92;let rr=cr[i*3]*0.92,gg=cr[i*3+1]*0.92,bb=cr[i*3+2]*0.85;rr=bg[0]+(rr-bg[0])*mix;gg=bg[1]+(gg-bg[1])*mix;bb=bg[2]+(bb-bg[2])*mix;
       ctx.fillStyle='rgb('+(rr|0)+','+(gg|0)+','+(bb|0)+')';ctx.beginPath();ctx.arc(x,y,R,0,TAU);ctx.fill();}
   }};
-/* 채움: the camera scene stays as it is; only the people are filled with one flat colour */
 function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analysis, at a tiny size (one pixel per dot)
   const c=cv.cx;c.setTransform(1,0,0,1,0,0);const el=source.el;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!el||A.remote||!sw||!sh){c.fillStyle='#777';c.fillRect(0,0,w,h);return;}
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;c.save();if(S.mirror){c.translate(w,0);c.scale(-1,1);}c.imageSmoothingEnabled=true;try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(e){}c.restore();}
-const MODES=[mComb,mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mCurtain,mWord,mSketch,mTrail,mContour,mString,mSlit,mBlocks,mFrost,mThermal,mDetect,mPoem,mAura,mStack];
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1557,13 +1429,15 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`~qw';
+const KEYS='1234567890-=[]\\;\',.';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
 function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();fillBg();lastSwitch=performance.now();save();syncChips();
   const b=modesEl.children[S.mode];if(b&&b.scrollIntoView)try{b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}catch(e){}}
-function nextMode(d){setMode(S.mode+d);}
+function isOn(i){const m=MODES[i];return !!m&&!(S.off||[]).includes(m.id);}
+function nextMode(d){const N=MODES.length;let i=S.mode;for(let k=0;k<N;k++){i=((i+d)%N+N)%N;if(isOn(i)){setMode(i);return;}}}
+function syncModes(){Array.from(modesEl.children).forEach((b,i)=>{b.hidden=!isOn(i);});}
 function setPal(i){S.pal=((i%PALETTES.length)+PALETTES.length)%PALETTES.length;save();if(mode){mode.init();fillBg();}syncChips();}
 function syncChips(){Array.from(modesEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.mode?'true':'false'));Array.from(palsEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.pal?'true':'false'));modeName.textContent=mode.name+' · '+pal().name;clearBtn.hidden=!mode.clear;}
 function clearArt(){if(mode&&mode.clear){mode.clear();toast('지웠어요');}}
@@ -1583,14 +1457,13 @@ seg('#segReact',i=>{S.react=i;});seg('#sReact',i=>{S.react=i;});
 seg('#segTrail',i=>{S.trailp=i;});
 seg('#segDetect',i=>{S.detect=i===0?'motion':'presence';resetBackground();toast(S.detect==='motion'?'움직이는 것만 형태로 봐요':'가만히 있는 사람도 잡아요. 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
 seg('#segAuto',i=>{S.auto=AUTOS[i];lastSwitch=performance.now();});
-const swMirror=$('#swMirror'),textEl=$('#text');
+const swMirror=$('#swMirror');
 function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));
-  swMirror.checked=!!S.mirror;if(document.activeElement!==textEl)textEl.value=S.text;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
+  swMirror.checked=!!S.mirror;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
 $('#btnKeySave').addEventListener('click',()=>{const v=$('#claudeKey').value.trim();POET.setKey(v);$('#claudeKey').value='';$('#claudeKey').placeholder=v?'저장됨 · 바꾸려면 새 키 입력':'Claude API 키 (sk-ant-…)';toast(v?'Claude 키를 저장했어요':'키가 비어 있어요');});
 $('#btnKeyClear').addEventListener('click',()=>{POET.setKey('');$('#claudeKey').placeholder='Claude API 키 (sk-ant-…)';toast('키를 지웠어요');});
 if(POET.key())$('#claudeKey').placeholder='저장됨 · 바꾸려면 새 키 입력';
-textEl.addEventListener('change',()=>{S.text=textEl.value;save();if(mode&&mode.renderText)mode.renderText();});
 const exIn=$('#exIn'),versesEl=$('#verses');
 function syncTitle(){const t=String(S.title==null?DEF.title:S.title).trim();exEl.hidden=!t;exTitleEl.textContent='';if(!t)return;const i=t.indexOf(' '),b=document.createElement('b');b.textContent=i>0?t.slice(0,i):t;exTitleEl.appendChild(b);
   if(i>0){exTitleEl.appendChild(document.createTextNode(' '));const r=document.createElement('i');r.textContent=t.slice(i+1);exTitleEl.appendChild(r);}}
@@ -1626,7 +1499,7 @@ canvas.addEventListener('pointerup',e=>{if(!p0)return;const dx=e.clientX-p0.x,dy
   if(dt<700&&Math.abs(dx)>60&&Math.abs(dy)<80){nextMode(dx<0?1:-1);showUI();}else if(dt<700&&Math.abs(dy)>60&&Math.abs(dx)<80){setPal(S.pal+(dy<0?1:-1));showUI();}});
 window.addEventListener('mousemove',()=>{const n=performance.now();if(n-moveT>300){moveT=n;showUI();}});
 window.addEventListener('keydown',e=>{if(e.target&&/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;const k=e.key,ki=KEYS.indexOf(k);
-  if(ki>=0&&ki<MODES.length){setMode(ki);showUI();}
+  if(ki>=0&&ki<MODES.length&&isOn(ki)){setMode(ki);showUI();}
   else if(k==='ArrowRight'||k===' '){nextMode(1);showUI();e.preventDefault();}
   else if(k==='ArrowLeft'){nextMode(-1);showUI();}
   else if(k==='p'||k==='P')setPal(S.pal+1);
@@ -1729,7 +1602,16 @@ function loop(now){requestAnimationFrame(loop);if(now-last<14)return;const dt=Ma
 
 /* ---------- boot ---------- */
 S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=clamp(S.trailp|0,0,2);applyPresets();S.pal=clamp(S.pal|0,0,PALETTES.length-1);S.sens=clamp(S.sens|0,1,10);S.trail=clamp(S.trail|0,1,10);S.gain=clamp(S.gain|0,1,10);
-resize();useDemo();setMode(S.mode);syncCtl();document.body.classList.add('ui-on');
+const modeList=$('#modeList'),modeSw=[];
+MODES.forEach((m,i)=>{const row=document.createElement('div');row.className='row';const l=document.createElement('div');l.className='l';l.textContent=m.name+(KEYS[i]?'  ·  '+KEYS[i]:'');const sm=document.createElement('small');sm.textContent=m.desc;l.appendChild(sm);
+  const sw=document.createElement('label');sw.className='switch';const inp=document.createElement('input');inp.type='checkbox';inp.setAttribute('aria-label',m.name+' 켜기');sw.appendChild(inp);sw.appendChild(document.createElement('span'));row.appendChild(l);row.appendChild(sw);modeList.appendChild(row);modeSw.push(inp);
+  inp.addEventListener('change',()=>{const off=new Set(S.off||[]);if(inp.checked)off.delete(m.id);else{if(MODES.filter((q,j)=>isOn(j)).length<=1){inp.checked=true;toast('필터는 하나 이상 켜 두어야 해요');return;}off.add(m.id);}
+    S.off=Array.from(off);save();syncModes();if(!isOn(S.mode))nextMode(1);toast(m.name+(inp.checked?' 켬':' 끔'));});});
+function syncModeList(){modeSw.forEach((inp,i)=>{inp.checked=isOn(i);});}
+$('#btnAllOn').addEventListener('click',()=>{S.off=[];save();syncModes();syncModeList();toast('모든 필터를 켰어요');});
+S.off=(S.off||[]).filter(id=>MODES.some(m=>m.id===id));if(MODES.every((m,i)=>!isOn(i)))S.off=[];
+syncModes();syncModeList();
+resize();useDemo();setMode(isOn(S.mode)?S.mode:0);if(!isOn(S.mode))nextMode(1);syncCtl();document.body.classList.add('ui-on');
 const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
