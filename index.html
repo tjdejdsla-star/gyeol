@@ -855,7 +855,7 @@ const mDrops={id:'drops',name:'물방울',desc:'사람 한 명 한 명이 물방
   init(){this.s=2;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.f=0;this.blobs={};},
   draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const P=pal(),rw=this.rw,rh=this.rh;
     // one drop per tracked person: glides after the person, stretches along its motion, wobbles like jelly, trails a tail
-    const alive={};TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;alive[tr.id]=1;let b=this.blobs[tr.id];const r=Math.max(Math.min(tr.w,tr.h)*0.6,Math.max(tr.w,tr.h)*0.28,Math.min(W,H)*0.08);
+    const alive={};TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;alive[tr.id]=1;let b=this.blobs[tr.id];const r=Math.min(Math.min(W,H)*0.16,Math.max(Math.min(tr.w,tr.h)*0.55,Math.min(W,H)*0.07));
       if(!b){b=this.blobs[tr.id]={x:tr.sx,y:tr.sy,r:0,vx:0,vy:0,id:tr.id,wob:0,wv:0,hist:[]};}b.tx=tr.sx;b.ty=tr.sy;b.tr=r;});
     for(const k in this.blobs){const b=this.blobs[k];if(!alive[k]){b.tr=0;if(b.r<2){delete this.blobs[k];continue;}}
       const ax=(b.tx-b.x)*0.09,ay=(b.ty-b.y)*0.09;b.vx=b.vx*0.78+ax;b.vy=b.vy*0.78+ay;b.x+=b.vx;b.y+=b.vy;b.r+=(b.tr-b.r)*0.08;
