@@ -483,20 +483,20 @@ const mShapes={id:'shapes',name:'도형',key:'1',desc:'기본 도형이 움직�
   init(){const cols=isTouch?24:40;this.cols=cols;this.cell=W/cols;this.rows=Math.ceil(H/this.cell);const m=cols*this.rows;['ox','oy','vx','vy','sz','rot','st','en','pp'].forEach(k=>{this[k]=new Float32Array(m);});},
   draw(){
     fade(lerp(0.9,0.3,(S.trail-1)/9)); const P=pal(),g=gainF(),cols=this.cols,rows=this.rows,cell=this.cell,lim=cell*3;
-    const rest=new Path2D(),pres=new Path2D(),ma=new Path2D(),mb=new Path2D();
+    const rest=new Path2D(),pres=new Path2D(),edge=new Path2D(),ma=new Path2D(),mb=new Path2D();
     const ox=this.ox,oy=this.oy,vx=this.vx,vy=this.vy,sz=this.sz,rot=this.rot,st=this.st,en=this.en,pp=this.pp;
     for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c;const hx=(c+0.5)*cell,hy=(r+0.5)*cell;const f=at(hx+ox[i],hy+oy[i]);
       en[i]+=(f.e-en[i])*0.3; pp[i]+=(f.p-pp[i])*0.25;
       vx[i]=vx[i]*0.86+f.u*g*0.35-ox[i]*0.06; vy[i]=vy[i]*0.86+f.v*g*0.35-oy[i]*0.06; ox[i]=clamp(ox[i]+vx[i],-lim,lim); oy[i]=clamp(oy[i]+vy[i],-lim,lim);
       const m=Math.hypot(f.u,f.v); st[i]+=(Math.min(2.2,m*0.25*g)-st[i])*0.25;
       if(m>0.8&&f.e>0.1){const tr=Math.atan2(f.v,f.u);let d=tr-rot[i];d=Math.atan2(Math.sin(d),Math.cos(d));rot[i]+=d*0.3;}
-      const base=cell*0.5, target=base*(0.22+0.55*pp[i])+en[i]*base*0.8; sz[i]+=(target-sz[i])*0.3; const s=sz[i];
+      const base=cell*0.5, inP=pp[i]>0.5?1:pp[i]>0.2?0.6:0, target=base*(0.22+0.6*inP)+en[i]*base*0.8; sz[i]+=(target-sz[i])*0.3; const s=sz[i];
       const x=hx+ox[i],y=hy+oy[i],rx=s*(1+st[i]),ry=s/(1+st[i]*0.6),ro=rot[i];
-      const path=en[i]>0.15?(f.u>=0?ma:mb):(pp[i]>0.3?pres:rest);
+      const path=en[i]>0.15?(f.u>=0?ma:mb):(pp[i]>0.5?pres:pp[i]>0.2?edge:rest);
       if(((r+c)&1)===0){path.moveTo(x+rx*Math.cos(ro),y+rx*Math.sin(ro));path.ellipse(x,y,rx,ry,ro,0,TAU);}
       else{const cs=Math.cos(ro),sn=Math.sin(ro);const ax=rx*cs,ay=rx*sn,bx=-ry*sn,by=ry*cs;path.moveTo(x+ax+bx,y+ay+by);path.lineTo(x-ax+bx,y-ay+by);path.lineTo(x-ax-bx,y-ay-by);path.lineTo(x+ax-bx,y+ay-by);path.closePath();}
     }
-    ctx.lineWidth=1;ctx.strokeStyle=rgba(P.fg[0],0.5);ctx.stroke(rest);ctx.fillStyle=P.fg[2];ctx.fill(pres);ctx.fillStyle=P.fg[1];ctx.fill(ma);ctx.fillStyle=P.fg[3];ctx.fill(mb);
+    ctx.lineWidth=1;ctx.strokeStyle=rgba(P.fg[0],0.5);ctx.stroke(rest);ctx.lineWidth=1.5;ctx.strokeStyle=P.fg[2];ctx.stroke(edge);ctx.fillStyle=P.fg[2];ctx.fill(pres);ctx.fillStyle=P.fg[1];ctx.fill(ma);ctx.fillStyle=P.fg[3];ctx.fill(mb);
   }};
 const mDots={id:'dots',name:'점',key:'2',desc:'흩어진 점들이 사람에게 모여들어 움직임을 따라간다',
   init(){const n=clamp(Math.round(W*H/(isTouch?230:130)),1500,9000);this.n=n;['x','y','vx','vy','sz','tx','ty'].forEach(k=>{this[k]=new Float32Array(n);});this.col=new Uint8Array(n);this.att=new Uint8Array(n);this.ti=new Int32Array(n).fill(-1);
@@ -514,7 +514,7 @@ const mDots={id:'dots',name:'점',key:'2',desc:'흩어진 점들이 사람에게
       else if(t>=0){t=-1;ti[i]=-1;nvx+=(Math.random()-0.5)*5;nvy+=(Math.random()-0.5)*5;}
       if(t>=0){const dx=tx[i]-x[i],dy=ty[i]-y[i],d=Math.sqrt(dx*dx+dy*dy)+0.001;const sp=Math.min(maxSp,d*0.14);
         nvx+=(dx/d*sp-nvx)*0.12;nvy+=(dy/d*sp-nvy)*0.12;
-        if(d<4){nvx*=0.6;nvy*=0.6;nvx+=(Math.random()-0.5)*0.8;nvy+=(Math.random()-0.5)*0.8;}}
+        if(d<4){nvx*=0.6;nvy*=0.6;nvx+=(Math.random()-0.5)*0.45;nvy+=(Math.random()-0.5)*0.45;}}
       else{nvx=nvx*0.92+(Math.random()-0.5)*0.5;nvy=nvy*0.92+(Math.random()-0.5)*0.5;}
       if(f.e>0.08){nvx+=f.u*g*0.45;nvy+=f.v*g*0.45;}
       const px=x[i],py=y[i];let nx=px+nvx,ny=py+nvy;
@@ -565,15 +565,15 @@ function drawSilhouette(cv,img,rgb,alpha){
 }
 const mFlow={id:'flow',name:'흐름',key:'5',desc:'움직임을 따라 흐르는 입자',
   init(){const n=clamp(Math.round(W*H/(isTouch?320:220)),800,6000);this.n=n;['x','y','vx','vy','life'].forEach(k=>{this[k]=new Float32Array(n);});for(let i=0;i<n;i++)this.spawn(i,true);},
-  spawn(i,any){if(!any&&A.hotN>0&&Math.random()<0.7){const c=A.hot[(Math.random()*A.hotN)|0];this.x[i]=((c%A.w)+Math.random())*A.sx;this.y[i]=(((c/A.w)|0)+Math.random())*A.sy;}else{this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;}this.vx[i]=0;this.vy[i]=0;this.life[i]=60+Math.random()*300;},
+  spawn(i,any){if(!any&&A.presN>0&&Math.random()<0.5){const c=A.pres[(Math.random()*A.presN)|0];this.x[i]=((c%A.w)+Math.random())*A.sx;this.y[i]=(((c/A.w)|0)+Math.random())*A.sy;this.vx[i]=0;this.vy[i]=0;this.life[i]=60+Math.random()*300;return;}if(!any&&A.hotN>0&&Math.random()<0.7){const c=A.hot[(Math.random()*A.hotN)|0];this.x[i]=((c%A.w)+Math.random())*A.sx;this.y[i]=(((c/A.w)|0)+Math.random())*A.sy;}else{this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;}this.vx[i]=0;this.vy[i]=0;this.life[i]=60+Math.random()*300;},
   draw(t){
     fade(trailAlpha()); const P=pal(),g=gainF()*0.16,n=this.n,x=this.x,y=this.y,vx=this.vx,vy=this.vy,life=this.life;
-    const paths=[new Path2D(),new Path2D(),new Path2D(),new Path2D()];
-    for(let i=0;i<n;i++){const f=at(x[i],y[i]);const ax=Math.sin(y[i]*0.012+t*0.4)*0.03,ay=Math.cos(x[i]*0.011-t*0.3)*0.03;let nvx=vx[i]*0.9+f.u*g+ax,nvy=vy[i]*0.9+f.v*g+ay;const sp=Math.hypot(nvx,nvy);if(sp>28){nvx*=28/sp;nvy*=28/sp;}
+    const paths=[new Path2D(),new Path2D(),new Path2D(),new Path2D(),new Path2D()];
+    for(let i=0;i<n;i++){const f=at(x[i],y[i]);const inside=f.p>0.5;const ax=Math.sin(y[i]*0.012+t*0.4)*0.03,ay=Math.cos(x[i]*0.011-t*0.3)*0.03;let nvx=vx[i]*(inside?0.84:0.9)+f.u*g+ax,nvy=vy[i]*(inside?0.84:0.9)+f.v*g+ay;const sp=Math.hypot(nvx,nvy);if(sp>28){nvx*=28/sp;nvy*=28/sp;}
       const px=x[i],py=y[i];x[i]=px+nvx;y[i]=py+nvy;vx[i]=nvx;vy[i]=nvy;life[i]-=1;
       if(life[i]<0||x[i]<0||x[i]>W||y[i]<0||y[i]>H){this.spawn(i,false);continue;}
-      const b=sp<1.4?0:sp<5?1:sp<12?2:3;paths[b].moveTo(px,py);paths[b].lineTo(x[i],y[i]);}
-    ctx.lineCap='round';const lw=[1,1.3,1.8,2.4],cm=[0,2,1,3];for(let b=0;b<4;b++){ctx.strokeStyle=b===0?rgba(P.fg[0],0.14):P.fg[cm[b]];ctx.lineWidth=lw[b];ctx.stroke(paths[b]);}
+      const b=inside?(sp<4?4:sp<12?2:3):(sp<1.4?0:sp<5?1:sp<12?2:3);paths[b].moveTo(px,py);paths[b].lineTo(x[i],y[i]);}
+    ctx.lineCap='round';const lw=[1,1.3,1.8,2.4,1.6],cm=[0,2,1,3,2];for(let b=0;b<5;b++){ctx.strokeStyle=b===0?rgba(P.fg[0],0.14):b===4?rgba(P.fg[2],0.85):P.fg[cm[b]];ctx.lineWidth=lw[b];ctx.stroke(paths[b]);}
   }};
 const mInk={id:'ink',name:'번짐',key:'6',desc:'움직임이 화면을 먹처럼 번지게 한다',
   init(){const s=(isTouch||A.n>10000)?3:4;this.s=s;this.fw=A.w*s;this.fh=A.h*s;const m=this.fw*this.fh;this.a=new Float32Array(m*3);this.b=new Float32Array(m*3);this.img=new ImageData(this.fw,this.fh);this.cv=mkCanvas(this.fw,this.fh);
@@ -864,42 +864,40 @@ function largestFace(){if(!(FACE.state==='ready'&&FACE.res&&FACE.res.detections&
   return best;}
 
 /* 시선의 온도: a cold still scene; a held gaze warms it and flowers grow where the viewer looks */
-const mGaze={id:'gaze',name:'시선',desc:'가만히 바라보는 시간만큼 흑백 풍경에 온기가 번지고 꽃이 핀다',
-  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.scene=mkCanvas(tw,th);this.gray=mkCanvas(tw,th);this.warm=mkCanvas(tw,th);this.comp=mkCanvas(tw,th);this.flowerCv=mkCanvas(tw,th);
-    this.captured=false;this.dwell=0;this.gx=W/2;this.gy=H/2;this.flowers=[];this.lastFlower=0;this.idle=0;this.f=0;if(ASSET.scene)this.setScene(ASSET.scene);},
-  setScene(img){const c=this.scene.cx;c.setTransform(DPR,0,0,DPR,0,0);const r=Math.max(W/img.width,H/img.height),dw=img.width*r,dh=img.height*r;c.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);this.makeGray();this.captured=true;},
-  captureScene(){drawFrameTo(this.scene);this.makeGray();this.captured=true;},
-  makeGray(){const tw=this.scene.width,th=this.scene.height;const g=this.gray.cx;g.setTransform(1,0,0,1,0,0);g.drawImage(this.scene,0,0);
-    const img=g.getImageData(0,0,tw,th),d=img.data;for(let i=0;i<d.length;i+=4){const l=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;const v=l*0.72+28;d[i]=v*0.9;d[i+1]=v*0.95;d[i+2]=Math.min(255,v*1.08+6);}g.putImageData(img,0,0);
-    const wc=this.warm.cx;wc.setTransform(1,0,0,1,0,0);wc.clearRect(0,0,tw,th);},
-  flower(x,y){const hues=[345,20,40,330,10,50];this.flowers.push({x,y,r:lerp(10,26,Math.random())*Math.min(1.4,W/900),born:this.f,hue:hues[(Math.random()*hues.length)|0],petals:5+((Math.random()*3)|0),rot:Math.random()*TAU,sway:Math.random()*TAU});if(this.flowers.length>240)this.flowers.shift();},
-  drawFlowers(t){const c=this.flowerCv.cx,tw=this.flowerCv.width,th=this.flowerCv.height;c.setTransform(DPR,0,0,DPR,0,0);c.clearRect(0,0,W,H);
-    this.flowers.forEach(fl=>{const age=(this.f-fl.born)/60;const k=Math.min(1,age/1.6);const e=1-Math.pow(1-k,3);const r=fl.r*e;if(r<0.5)return;
-      c.save();c.translate(fl.x,fl.y+ (1-e)*20);c.rotate(fl.rot+Math.sin(t*0.8+fl.sway)*0.05);
-      c.strokeStyle='rgba(70,120,60,0.85)';c.lineWidth=Math.max(1.2,r*0.12);c.beginPath();c.moveTo(0,r*0.3);c.quadraticCurveTo(r*0.4,r*1.6,r*0.1,r*3.2*e);c.stroke();
-      for(let p=0;p<fl.petals;p++){const a=p/fl.petals*TAU;c.fillStyle='hsla('+fl.hue+',85%,'+(62+p%2*8)+'%,0.92)';c.beginPath();c.ellipse(Math.cos(a)*r*0.55,Math.sin(a)*r*0.55,r*0.52,r*0.3,a,0,TAU);c.fill();}
-      c.fillStyle='hsla('+(fl.hue+30)+',90%,55%,1)';c.beginPath();c.arc(0,0,r*0.26,0,TAU);c.fill();c.restore();});},
-  draw(t,dt){this.f++;const P=pal();
+const mGaze={id:'gaze',name:'시선',desc:'가만히 바라보는 시간만큼 차가운 장면에 온기가 번진다',
+  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.scene=mkCanvas(tw,th);this.cold=mkCanvas(tw,th);this.warmImg=mkCanvas(tw,th);this.warm=mkCanvas(tw,th);this.comp=mkCanvas(tw,th);
+    this.captured=false;this.dwell=0;this.gx=W/2;this.gy=H/2;this.idle=0;this.f=0;this.glow=0;if(ASSET.scene)this.setScene(ASSET.scene);},
+  setScene(img){const c=this.scene.cx;c.setTransform(DPR,0,0,DPR,0,0);const r=Math.max(W/img.width,H/img.height),dw=img.width*r,dh=img.height*r;c.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);this.grade();this.captured=true;},
+  captureScene(){drawFrameTo(this.scene);this.grade();this.captured=true;},
+  grade(){ // two graded copies of the same scene: a cold, desaturated one and a warm, amber one
+    const tw=this.scene.width,th=this.scene.height;const src=this.scene.cx.getImageData(0,0,tw,th).data;
+    const cold=this.cold.cx.createImageData(tw,th),cd=cold.data,warm=this.warmImg.cx.createImageData(tw,th),wd=warm.data;
+    for(let i=0;i<src.length;i+=4){const r=src[i],g=src[i+1],b=src[i+2];const l=r*0.299+g*0.587+b*0.114;
+      // cold: near-monochrome, lifted shadows, slight steel-blue cast, gentle contrast
+      const c=l*0.78+22;cd[i]=c*0.9;cd[i+1]=c*0.96;cd[i+2]=Math.min(255,c*1.07+10);cd[i+3]=255;
+      // warm: keep colour, add amber in the highlights and a little red in the shadows
+      const t=l/255;wd[i]=Math.min(255,r*0.86+l*0.22+30*t+6);wd[i+1]=Math.min(255,g*0.86+l*0.14+10*t);wd[i+2]=Math.min(255,b*0.72+l*0.02-6*t);wd[i+3]=255;}
+    this.cold.cx.putImageData(cold,0,0);this.warmImg.cx.putImageData(warm,0,0);const wc=this.warm.cx;wc.setTransform(1,0,0,1,0,0);wc.clearRect(0,0,tw,th);},
+  draw(t,dt){this.f++;
     if(!this.captured){const d2=srcDims();if(d2[0]&&(source.kind!=='demo'||this.f>5)){this.captureScene();}else{fillBg();return;}}
     if((this.f&1)===0)TR.update();
-    // who is looking: a frontal face when the model runs, otherwise the largest person standing still
     let gazing=false,gx=this.gx,gy=this.gy;const face=largestFace();
     if(face){gazing=face.frontal;gx=face.cx;gy=face.cy;}
     else{const tr=mainTrack();if(tr){const sp=tr.hist.length>3?Math.hypot(tr.hist[tr.hist.length-1][0]-tr.hist[tr.hist.length-4][0],tr.hist[tr.hist.length-1][1]-tr.hist[tr.hist.length-4][1]):0;gazing=sp<W*0.02&&A.level<0.35;gx=tr.cx;gy=tr.y+tr.h*0.15;}}
-    if(gazing){this.gx+=(gx-this.gx)*0.1;this.gy+=(gy-this.gy)*0.1;this.dwell=Math.min(20,this.dwell+dt);this.idle=0;}else{this.dwell=Math.max(0,this.dwell-dt*0.5);this.idle+=dt;}
+    if(gazing){this.gx+=(gx-this.gx)*0.06;this.gy+=(gy-this.gy)*0.06;this.dwell=Math.min(30,this.dwell+dt);this.idle=0;}else{this.dwell=Math.max(0,this.dwell-dt*0.35);this.idle+=dt;}
     const tw=this.warm.width,th=this.warm.height,wc=this.warm.cx;wc.setTransform(DPR,0,0,DPR,0,0);
-    if(gazing){const R=Math.max(W,H)*(0.12+1.0*Math.pow(Math.min(1,this.dwell/9),0.7));const g=wc.createRadialGradient(this.gx,this.gy,0,this.gx,this.gy,R);g.addColorStop(0,'rgba(255,255,255,0.1)');g.addColorStop(0.6,'rgba(255,255,255,0.05)');g.addColorStop(1,'rgba(255,255,255,0)');wc.globalCompositeOperation='source-over';wc.fillStyle=g;wc.fillRect(0,0,W,H);
-      if(this.dwell>1.2&&t-this.lastFlower>Math.max(0.12,0.6-this.dwell*0.04)){this.lastFlower=t;const a=Math.random()*TAU,rr=Math.sqrt(Math.random())*R*0.8;const fx=this.gx+Math.cos(a)*rr,fy=this.gy+Math.sin(a)*rr;if(fx>0&&fx<W&&fy>0&&fy<H)this.flower(fx,fy);}}
-    else{wc.globalCompositeOperation='destination-out';wc.fillStyle='rgba(0,0,0,'+(this.idle>4?0.012:0.003)+')';wc.fillRect(0,0,W,H);wc.globalCompositeOperation='source-over';
-      if(this.idle>6&&this.flowers.length&&(this.f%6)===0)this.flowers.shift();}
-    // composite: cold scene, then the colour scene through the warmth mask with a warm tint, then flowers
-    ctx.drawImage(this.gray,0,0,W,H);
-    const cc=this.comp.cx;cc.setTransform(1,0,0,1,0,0);cc.globalCompositeOperation='source-over';cc.clearRect(0,0,tw,th);cc.drawImage(this.scene,0,0);cc.globalCompositeOperation='multiply';cc.fillStyle='rgb(255,228,196)';cc.fillRect(0,0,tw,th);cc.globalCompositeOperation='destination-in';cc.drawImage(this.warm,0,0);cc.globalCompositeOperation='source-over';
+    const k=Math.pow(Math.min(1,this.dwell/12),0.6);
+    if(gazing){const R=Math.max(W,H)*(0.18+1.1*k)*(1+0.03*Math.sin(t*0.9));const g=wc.createRadialGradient(this.gx,this.gy,0,this.gx,this.gy,R);g.addColorStop(0,'rgba(255,255,255,0.045)');g.addColorStop(0.55,'rgba(255,255,255,0.022)');g.addColorStop(1,'rgba(255,255,255,0)');wc.globalCompositeOperation='source-over';wc.fillStyle=g;wc.fillRect(0,0,W,H);}
+    else{wc.globalCompositeOperation='destination-out';wc.fillStyle='rgba(0,0,0,'+(this.idle>5?0.008:0.002)+')';wc.fillRect(0,0,W,H);wc.globalCompositeOperation='source-over';}
+    this.glow+=((gazing?k:0)-this.glow)*0.03;
+    // composite: cold scene, the warm scene through the warmth mask, a faint amber bloom, a soft vignette
+    ctx.drawImage(this.cold,0,0,W,H);
+    const cc=this.comp.cx;cc.setTransform(1,0,0,1,0,0);cc.globalCompositeOperation='source-over';cc.clearRect(0,0,tw,th);cc.drawImage(this.warmImg,0,0);cc.globalCompositeOperation='destination-in';cc.drawImage(this.warm,0,0);cc.globalCompositeOperation='source-over';
     ctx.drawImage(this.comp,0,0,W,H);
-    this.drawFlowers(t);ctx.drawImage(this.flowerCv,0,0,W,H);
-    // caption
-    ctx.font='500 '+(isTouch?14:18)+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle='rgba(255,255,255,0.85)';ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=8;
-    ctx.fillText(gazing?('바라본 시간 '+this.dwell.toFixed(1)+'초'):'카메라를 가만히 바라보면 온기가 번집니다',W/2,H-18-(isTouch?70:40));ctx.shadowBlur=0;ctx.textAlign='left';
+    if(this.glow>0.01){const R=Math.max(W,H)*(0.3+0.9*this.glow);const g=ctx.createRadialGradient(this.gx,this.gy,0,this.gx,this.gy,R);g.addColorStop(0,'rgba(255,196,120,'+(0.16*this.glow)+')');g.addColorStop(1,'rgba(255,196,120,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
+    const v=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.35,W/2,H/2,Math.max(W,H)*0.8);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,0.35)');ctx.fillStyle=v;ctx.fillRect(0,0,W,H);
+    ctx.font='400 '+(isTouch?13:16)+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle='rgba(255,255,255,'+(gazing?0.5:0.75)+')';ctx.shadowColor='rgba(0,0,0,0.5)';ctx.shadowBlur=8;
+    ctx.fillText(gazing?(this.dwell.toFixed(0)+'초'):'카메라를 가만히 바라봐 주세요',W/2,H-18-(isTouch?70:40));ctx.shadowBlur=0;ctx.textAlign='left';
   }};
 
 /* 찰나의 기록: hold a pose, a 3-second loop is recorded and becomes one tile of the school emblem */
