@@ -838,10 +838,12 @@ const mAscii={id:'ascii',name:'문자',desc:'글자마다 잰 잉크 양으로 �
     for(let r=1;r<rows-1;r++)for(let c=1;c<cols-1;c++){const i=r*cols+c,p=cp[i];const x=(c+0.5)*cw,y=(r+0.5)*ch;
       // outline: the mask gradient picks / \ | _ - for cells on the outer rim of the figure
       const gx=(cp[i+1]-cp[i-1])*2+cp[i-cols+1]-cp[i-cols-1]+cp[i+cols+1]-cp[i+cols-1],gy=(cp[i+cols]-cp[i-cols])*2+cp[i+cols-1]-cp[i-cols-1]+cp[i+cols+1]-cp[i-cols+1];
-      if(p<=0.5){if(p>0.06&&Math.hypot(gx,gy)>0.9)ctx.fillText(this.edgeGlyph(gx,gy),x,y);continue;}
+      // outline only in broken places: some cells get a direction glyph, some a faint mark, most stay empty
+      if(p<=0.5){if(p>0.06&&Math.hypot(gx,gy)>0.9){const gl=this.edgeGlyph(gx,gy),k=hash2(c*11+5,r*17+9);const pr=gl==='|'?0.14:(gl==='/'||gl==='\\')?0.34:0.22;
+          if(k<pr)ctx.fillText(gl,x,y);else if(k<pr+0.22){const lb=ramp[(hash2(c,r*3)*3)|0];ctx.fillText(lb[(hash2(r,c)*lb.length)|0],x,y);}}continue;}
       // inside: strong brightness edges become line glyphs as well
       const lx=(cl[i+1]-cl[i-1])*2+cl[i-cols+1]-cl[i-cols-1]+cl[i+cols+1]-cl[i+cols-1],ly=(cl[i+cols]-cl[i-cols])*2+cl[i+cols-1]-cl[i-cols-1]+cl[i+cols+1]-cl[i-cols+1];
-      if(dist[i]>1.5&&Math.hypot(lx,ly)>sd*7+90){ctx.fillText(this.edgeGlyph(-lx,-ly),x,y);continue;}
+      if(dist[i]>1.5&&Math.hypot(lx,ly)>sd*7+90&&hash2(c*5+2,r*7+1)<0.3){ctx.fillText(this.edgeGlyph(-lx,-ly),x,y);continue;}
       // tone: light at the rim, denser toward the middle, shaped by the real brightness, ordered-dithered so gradients read
       const depth=Math.min(1,dist[i]/dSpan),dk=clamp(0.5-(cl[i]-mean)/(2.6*sd),0,1);
       let tone=0.1+0.5*depth*depth*(3-2*depth)+0.4*dk;tone+=(hash2(c*7+1,r*13+3)-0.5)*0.12;
