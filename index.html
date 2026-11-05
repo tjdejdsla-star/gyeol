@@ -13,169 +13,211 @@
 <body>
 <!-- @@content-start -->
 <style>
-/* Layout: one full-bleed canvas is the artwork; UI floats over it as dark glass and hides when idle.
-   The UI chrome is single-theme (dark) by design; the artwork palette lives in JS. */
+/* Layout: one full-bleed canvas is the artwork. Controls follow Apple's HIG: a glass toolbar at the bottom,
+   a status pill at the top, settings in a bottom sheet of inset grouped lists, segmented controls and switches.
+   Colors are iOS system tokens; the UI follows the viewer's light/dark setting, the artwork has its own palette. */
 :root{
-  --bg:#07080d; --fg:#ece9e1; --mute:#8d8f99; --line:rgba(255,255,255,.12);
-  --glass:rgba(10,11,16,.74); --accent:#ffd166; --danger:#ff6b6b;
-  --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
-  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans Mono CJK KR",monospace;
-  color-scheme:dark;
+  --bg:#F2F2F7; --card:#FFFFFF; --label:#000000; --label2:rgba(60,60,67,.6); --label3:rgba(60,60,67,.3); --sep:rgba(60,60,67,.29);
+  --fill:rgba(120,120,128,.16); --fill2:rgba(120,120,128,.1); --blue:#007AFF; --tint:rgba(0,122,255,.14); --green:#34C759; --red:#FF3B30;
+  --material:rgba(248,248,250,.8); --segsel:#FFFFFF; --knob:#FFFFFF; --dim:rgba(0,0,0,.35); --shadow:0 12px 40px rgba(0,0,0,.2);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Apple SD Gothic Neo","Pretendard","Noto Sans KR",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
 }
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#000000; --card:#1C1C1E; --label:#FFFFFF; --label2:rgba(235,235,245,.6); --label3:rgba(235,235,245,.3); --sep:rgba(84,84,88,.65);
+  --fill:rgba(120,120,128,.32); --fill2:rgba(120,120,128,.2); --blue:#0A84FF; --tint:rgba(10,132,255,.2); --green:#30D158; --red:#FF453A;
+  --material:rgba(28,28,30,.8); --segsel:#636366; --knob:#FFFFFF; --dim:rgba(0,0,0,.5); --shadow:0 12px 40px rgba(0,0,0,.6);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#000000; --card:#1C1C1E; --label:#FFFFFF; --label2:rgba(235,235,245,.6); --label3:rgba(235,235,245,.3); --sep:rgba(84,84,88,.65);
+  --fill:rgba(120,120,128,.32); --fill2:rgba(120,120,128,.2); --blue:#0A84FF; --tint:rgba(10,132,255,.2); --green:#30D158; --red:#FF453A;
+  --material:rgba(28,28,30,.8); --segsel:#636366; --knob:#FFFFFF; --dim:rgba(0,0,0,.5); --shadow:0 12px 40px rgba(0,0,0,.6);
+  color-scheme:dark}
 *{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidden;-webkit-text-size-adjust:100%}
-body{position:fixed;inset:0;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;font-size:14px;line-height:1.5}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--label);font-family:var(--font);overflow:hidden;-webkit-text-size-adjust:100%}
+body{position:fixed;inset:0;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;font-size:17px;line-height:1.3;letter-spacing:-.01em}
 [hidden]{display:none!important}
-#stage{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg);touch-action:none}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #cam{position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;left:-10px;top:-10px}
-button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;border:0;background:none;padding:0;margin:0}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.material{background:var(--material);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%)}
 
-/* floating UI */
-.ui{position:fixed;z-index:5;opacity:0;transition:opacity .35s ease;pointer-events:none}
+/* floating controls */
+.ui{position:fixed;z-index:5;opacity:0;transition:opacity .3s ease;pointer-events:none}
 body.ui-on .ui{opacity:1;pointer-events:auto}
 body.role-sensor .ui{display:none}
-#hud{top:calc(10px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:999px;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);font-size:12px;letter-spacing:.02em;max-width:calc(100vw - 24px)}
-#hud .name{font-weight:600;white-space:nowrap}
-#hud .fps{font-family:var(--mono);color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
-#meter{width:54px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);overflow:hidden;flex:none}
-#meter i{display:block;height:100%;width:0;background:var(--accent);transition:width .12s linear}
-#bar{left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:8px;padding:12px max(12px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));background:linear-gradient(to top,rgba(5,6,10,.78),rgba(5,6,10,0))}
-#modes{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:4px 2px;touch-action:pan-x}
+#hud{top:calc(10px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));display:flex;align-items:center;gap:10px;height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;max-width:calc(100vw - 24px);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+#hud .fps{font-family:var(--mono);font-weight:400;color:var(--label2);font-variant-numeric:tabular-nums}
+#meter{width:46px;height:4px;border-radius:2px;background:var(--fill);overflow:hidden;flex:none}
+#meter i{display:block;height:100%;width:0;background:var(--blue);transition:width .12s linear}
+#bar{left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:10px;padding:10px max(12px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));border-top:.5px solid var(--sep)}
+#modes{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 2px;touch-action:pan-x}
 #modes::-webkit-scrollbar{display:none}
-.chip{flex:none;border:1px solid var(--line);background:var(--glass);border-radius:999px;padding:8px 13px;font-size:13px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:flex;align-items:center;gap:6px}
-.chip .k{font-family:var(--mono);font-size:10px;color:var(--mute)}
-.chip[aria-pressed="true"]{background:var(--accent);color:#161300;border-color:var(--accent);font-weight:600}
-.chip[aria-pressed="true"] .k{color:#5a4a00}
-.row2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-#pals{display:flex;gap:7px;align-items:center}
-.dot{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.25);padding:0;flex:none;position:relative}
-.dot[aria-pressed="true"]{border-color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.45)}
+.chip{flex:none;height:36px;padding:0 15px;border-radius:18px;font-size:15px;font-weight:600;background:var(--fill);color:var(--label);transition:background .15s,color .15s}
+.chip[aria-pressed="true"]{background:var(--blue);color:#fff}
+.tb{display:flex;align-items:center;gap:14px}
+#pals{display:flex;gap:8px;align-items:center}
+.dot{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.9);box-shadow:0 0 0 1px rgba(0,0,0,.18);flex:none}
+.dot[aria-pressed="true"]{box-shadow:0 0 0 2px var(--blue)}
 .spacer{flex:1}
-.gbtn{border:1px solid var(--line);background:var(--glass);border-radius:999px;padding:8px 13px;font-size:13px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-#status{font-size:12px;color:var(--mute);white-space:nowrap}
+#status{font-size:13px;color:var(--label2);white-space:nowrap}
+.tbtn{color:var(--blue);font-size:17px;padding:6px 2px;white-space:nowrap}
+.tbtn.red{color:var(--red)}
 
-/* settings panel */
-#panel{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(118px + env(safe-area-inset-bottom,0px));width:min(360px,calc(100vw - 24px));max-height:calc(100vh - 160px);overflow:auto;touch-action:pan-y;background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:12px;z-index:6}
-#panel header{display:flex;align-items:center;justify-content:space-between}
-#panel header strong{font-size:14px}
-#panel label{display:flex;flex-direction:column;gap:4px;font-size:13px}
-#panel label.row{flex-direction:row;align-items:center;justify-content:space-between}
-#panel input[type=range]{width:100%;accent-color:var(--accent)}
-#panel select,#panel textarea,#panel input[type=text]{font:inherit;background:rgba(255,255,255,.06);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
-#panel textarea{width:100%;min-height:84px;resize:vertical;font-size:13px;line-height:1.4}
-.btns{display:flex;flex-wrap:wrap;gap:6px}
-.btns button{border:1px solid var(--line);background:rgba(255,255,255,.06);border-radius:10px;padding:8px 11px;font-size:13px}
-.hint{margin:0;color:var(--mute);font-size:12px;line-height:1.5}
-.hint b{color:var(--fg)}
-.x{border:0;background:transparent;color:var(--mute);font-size:13px;padding:4px 6px}
+/* iOS sheet & grouped lists */
+.sheet{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(440px,100%);max-height:min(88vh,88dvh);overflow:auto;touch-action:pan-y;background:var(--bg);border-radius:16px 16px 0 0;box-shadow:var(--shadow);z-index:40;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch}
+@media (min-width:700px){.sheet{bottom:12px;border-radius:16px}}
+.grabber{width:36px;height:5px;border-radius:3px;background:var(--label3);margin:8px auto 2px}
+.navbar{position:sticky;top:0;display:flex;align-items:center;justify-content:center;height:48px;background:var(--bg);z-index:2}
+.navbar h2{margin:0;font-size:17px;font-weight:600}
+.navbar .done{position:absolute;right:16px;top:0;height:48px;color:var(--blue);font-size:17px;font-weight:600}
+.group{margin:8px 16px 18px}
+.group h4{margin:0 0 6px;padding:0 16px;font-size:13px;font-weight:400;color:var(--label2);text-transform:uppercase;letter-spacing:.03em}
+.rows{background:var(--card);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:8px 16px;font-size:17px}
+.row+.row{border-top:.5px solid var(--sep)}
+.row .l{flex:1;min-width:0}
+.row .l small{display:block;font-size:12px;color:var(--label2);margin-top:1px}
+.row.btnrow{justify-content:center;color:var(--blue);font-weight:400;width:100%;text-align:center}
+.row.btnrow.red{color:var(--red)}
+.foot{margin:6px 16px 0;font-size:13px;color:var(--label2);line-height:1.4}
+.foot b{font-weight:600;color:var(--label)}
+.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px;flex:none}
+.seg button{padding:5px 11px;border-radius:7px;font-size:13px;font-weight:600;color:var(--label);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--segsel);box-shadow:0 3px 8px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+.seg.wide{display:flex;width:100%}
+.seg.wide button{flex:1}
+.switch{position:relative;width:51px;height:31px;flex:none}
+.switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch span{position:absolute;inset:0;border-radius:16px;background:var(--fill);transition:background .2s}
+.switch span::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:var(--knob);box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.1);transition:transform .2s}
+.switch input:checked+span{background:var(--green)}
+.switch input:checked+span::after{transform:translateX(20px)}
+textarea.ta{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15px;line-height:1.4;color:var(--label);background:transparent;border:0;padding:4px 0}
+.btn{display:flex;align-items:center;justify-content:center;height:50px;border-radius:12px;font-size:17px;font-weight:600;width:100%}
+.btn.filled{background:var(--blue);color:#fff}
+.btn.tinted{background:var(--tint);color:var(--blue)}
+.btn.plain{color:var(--blue);height:44px;font-weight:400}
+.stack{display:flex;flex-direction:column;gap:10px}
+.inline{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center}
+.inline button{color:var(--blue);font-size:15px;padding:8px 2px}
 
-/* overlays (intro / link / sensor) */
-.overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px max(16px,env(safe-area-inset-right,0px)) max(20px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:rgba(6,7,12,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);overflow:auto;touch-action:pan-y}
-.card{width:min(460px,100%);background:rgba(10,11,16,.86);border:1px solid var(--line);border-radius:22px;padding:26px 24px;display:flex;flex-direction:column;gap:14px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
-.eyebrow{margin:0;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute)}
-h1{margin:0;font-size:78px;line-height:1;font-weight:200;letter-spacing:-.02em;display:flex;align-items:baseline;gap:14px;text-wrap:balance}
-h1 small{font-size:13px;font-weight:500;color:var(--mute);letter-spacing:.3em}
-.lead{margin:0;color:#d5d2ca;line-height:1.6;font-size:15px}
-.roles{display:flex;flex-direction:column;gap:8px}
-.role{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);background:rgba(255,255,255,.05);border-radius:14px;padding:12px 14px}
-.role b{font-size:15px}
-.role span{font-size:12px;color:var(--mute)}
-.role.primary{background:var(--accent);border-color:var(--accent);color:#161300}
-.role.primary span{color:#5a4a00}
-.minor{display:flex;flex-wrap:wrap;gap:6px}
-.minor button{border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 12px;font-size:13px;color:#d5d2ca}
-.msg{margin:0;color:#ffc9c9;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.25);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5}
-.msg.ok{color:#c9f5dc;background:rgba(80,200,120,.12);border-color:rgba(80,200,120,.3)}
-.fine{color:var(--mute);font-size:12px;line-height:1.5;margin:0}
-.code{margin:0;font-family:var(--mono);font-size:44px;letter-spacing:.22em;text-align:center;font-weight:600}
-.qr{display:grid;place-items:center;background:#fff;border-radius:14px;padding:10px;min-height:120px}
+/* modal overlays (intro, link, sensor) */
+.overlay{position:fixed;inset:0;z-index:30;display:grid;place-items:center;padding:16px max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:var(--dim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);overflow:auto;touch-action:pan-y}
+.modal{width:min(400px,100%);max-height:100%;overflow:auto;background:var(--bg);border-radius:16px;box-shadow:var(--shadow);padding:22px 20px 20px;display:flex;flex-direction:column;gap:14px}
+.ltitle{margin:0;font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;display:flex;align-items:baseline;gap:10px}
+.ltitle small{font-size:12px;font-weight:600;color:var(--label2);letter-spacing:.2em}
+.sub{margin:0;font-size:15px;color:var(--label2);line-height:1.45}
+.eyebrow{margin:0;font-size:13px;color:var(--label2);text-transform:uppercase;letter-spacing:.05em}
+.msg{margin:0;font-size:14px;line-height:1.45;color:var(--red);background:rgba(255,59,48,.1);border-radius:10px;padding:10px 12px}
+.msg.ok{color:var(--green);background:rgba(52,199,89,.12)}
+.fine{margin:0;font-size:12px;color:var(--label2);line-height:1.45}
+.code{margin:0;font-family:var(--mono);font-size:40px;letter-spacing:.2em;text-align:center;font-weight:600}
+.qr{display:grid;place-items:center;background:#fff;border-radius:12px;padding:10px;min-height:120px}
 .qr svg{width:min(220px,60vw);height:auto;display:block}
 .qr p{margin:0;color:#444;font-size:12px}
-.join{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-.join label{display:flex;flex-direction:column;gap:4px;font-size:13px;flex:1;min-width:0}
-.join input{font:inherit;font-family:var(--mono);font-size:24px;letter-spacing:.2em;text-transform:uppercase;background:rgba(255,255,255,.06);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%;min-width:0}
-.pbtn{border:0;background:var(--accent);color:#161300;font-weight:700;border-radius:12px;padding:12px 16px;font-size:15px}
+.join{display:flex;flex-direction:column;gap:10px}
+.join input{font:inherit;font-family:var(--mono);font-size:28px;letter-spacing:.25em;text-transform:uppercase;text-align:center;background:var(--card);color:var(--label);border:0;border-radius:12px;padding:10px 12px;width:100%}
 #sensorView{width:100%;height:auto;border-radius:12px;background:#000;display:block;aspect-ratio:4/3}
-.status{margin:0;font-size:13px;color:#d5d2ca;font-variant-numeric:tabular-nums}
-.srow{display:flex;align-items:center;gap:10px;font-size:13px}
-.srow input[type=range]{flex:1;accent-color:var(--accent)}
-#toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:30;background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:calc(100vw - 32px);text-align:center}
+.status{margin:0;font-size:14px;color:var(--label2);font-variant-numeric:tabular-nums}
+#toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:50;border-radius:18px;padding:9px 16px;font-size:14px;font-weight:500;opacity:0;transition:opacity .25s;pointer-events:none;max-width:calc(100vw - 32px);text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.18)}
 #toast.on{opacity:1}
-@media (prefers-reduced-motion:reduce){.ui,#toast{transition:none}}
-@media (max-width:480px){h1{font-size:64px}.card{padding:22px 18px}}
+#panelDim{position:fixed;inset:0;z-index:39;background:transparent}
+@media (prefers-reduced-motion:reduce){.ui,#toast,.switch span,.switch span::after{transition:none}}
 </style>
 
 <canvas id="stage"></canvas>
 <video id="cam" playsinline muted autoplay></video>
 <input type="file" id="file" accept="video/*" hidden>
 
-<div id="hud" class="ui" aria-live="off">
-  <span class="name" id="modeName">도형</span>
+<div id="hud" class="ui material" aria-live="off">
+  <span id="modeName">도형</span>
   <span class="fps" id="fps">-- fps</span>
   <span id="meter"><i></i></span>
 </div>
 
-<div id="bar" class="ui">
+<div id="bar" class="ui material">
   <div id="modes" role="tablist" aria-label="모드"></div>
-  <div class="row2">
+  <div class="tb">
     <div id="pals" aria-label="팔레트"></div>
     <span class="spacer"></span>
     <span id="status"></span>
-    <button class="gbtn" id="btnFullBar">전체화면</button>
-    <button class="gbtn" id="gear" aria-expanded="false">설정</button>
+    <button class="tbtn" id="btnClear" hidden>지우기</button>
+    <button class="tbtn" id="btnFullBar">전체화면</button>
+    <button class="tbtn" id="gear" aria-expanded="false">설정</button>
   </div>
 </div>
 
-<aside id="panel" hidden aria-label="설정">
-  <header><strong>설정</strong><button class="x" id="closePanel">닫기</button></header>
-  <label>민감도 <span class="hint">작은 움직임도 잡으려면 올리세요</span><input type="range" id="sens" min="1" max="10" step="1"></label>
-  <label>잔상 길이<input type="range" id="trail" min="1" max="10" step="1"></label>
-  <label>반응 세기<input type="range" id="gain" min="1" max="10" step="1"></label>
-  <label class="row"><span>거울 모드 (좌우 반전)</span><input type="checkbox" id="mirror"></label>
-  <label class="row"><span>움직임 데이터 보기</span><input type="checkbox" id="debug"></label>
-  <label class="row"><span>감지 방식</span><select id="detect"><option value="motion">움직이는 것만</option><option value="presence">사람 실루엣 (배경 분리)</option></select></label>
-  <label class="row"><span>자동 모드 전환</span><select id="auto"><option value="0">끄기</option><option value="20">20초</option><option value="45">45초</option><option value="90">90초</option></select></label>
-  <label>활자 커튼 문장 (줄바꿈으로 구분)<textarea id="text" rows="4"></textarea></label>
-  <div class="btns">
-    <button id="btnFlip">카메라 전환</button>
-    <button id="btnBg">배경 다시 잡기</button>
-    <button id="btnFull">전체화면</button>
-    <button id="btnSource">소스·역할 바꾸기</button>
+<div id="panelDim" hidden></div>
+<aside id="panel" class="sheet" hidden aria-label="설정">
+  <div class="grabber"></div>
+  <div class="navbar"><h2>설정</h2><button class="done" id="closePanel">완료</button></div>
+
+  <div class="group"><h4>반응</h4>
+    <div class="rows">
+      <div class="row"><div class="l">반응<small>움직임에 얼마나 크게 반응할지</small></div><div class="seg" id="segReact"><button>차분</button><button>보통</button><button>활발</button></div></div>
+      <div class="row"><div class="l">흔적<small>움직임이 화면에 남는 시간</small></div><div class="seg" id="segTrail"><button>짧게</button><button>보통</button><button>길게</button></div></div>
+      <div class="row"><div class="l">감지<small>무엇을 형태로 볼지</small></div><div class="seg" id="segDetect"><button>움직임만</button><button>사람 전체</button></div></div>
+    </div>
+    <p class="foot"><b>움직임만</b>은 배경이 드러나지 않아요. <b>사람 전체</b>는 가만히 서 있는 사람도 잡지만, 카메라를 고정하고 앞을 비운 뒤 <b>배경 다시 잡기</b>를 눌러야 깨끗해요.</p>
   </div>
-  <p class="hint">배경 다시 잡기: 카메라 앞을 비운 상태에서 누르면 사람 실루엣이 더 깨끗하게 잡혀요.</p>
-  <p class="hint">iPhone·iPad에서는 Safari 공유 → <b>홈 화면에 추가</b>로 열면 주소창 없이 전체화면이 됩니다.</p>
-  <p class="hint">단축키: 1–8 모드 · ← → 모드 · P 팔레트 · F 전체화면 · H 메뉴 숨기기 · D 데이터 보기 · B 배경 다시 잡기</p>
+
+  <div class="group"><h4>화면</h4>
+    <div class="rows">
+      <div class="row"><div class="l">거울 모드<small>좌우를 뒤집어 거울처럼</small></div><label class="switch"><input type="checkbox" id="swMirror"><span></span></label></div>
+      <div class="row"><div class="l">자동 전환<small>일정 시간마다 다음 모드로</small></div><div class="seg" id="segAuto"><button>끄기</button><button>20초</button><button>45초</button><button>90초</button></div></div>
+      <div class="row"><div class="l">분석 보기<small>움직임·형태 데이터를 겹쳐 표시</small></div><label class="switch"><input type="checkbox" id="swDebug"><span></span></label></div>
+    </div>
+  </div>
+
+  <div class="group"><h4>문장 (활자 커튼·글자 모드)</h4>
+    <div class="rows"><div class="row"><textarea class="ta" id="text" rows="4" aria-label="문장"></textarea></div></div>
+    <p class="foot">줄바꿈으로 문장을 나눠요. 바꾸면 바로 반영됩니다.</p>
+  </div>
+
+  <div class="group"><h4>동작</h4>
+    <div class="rows">
+      <button class="row btnrow" id="btnFull">전체화면</button>
+      <button class="row btnrow" id="btnFlip">카메라 전환 (전면 ↔ 후면)</button>
+      <button class="row btnrow" id="btnBg">배경 다시 잡기</button>
+      <button class="row btnrow" id="btnClear2">그림 지우기</button>
+      <button class="row btnrow" id="btnSource">소스·역할 바꾸기</button>
+    </div>
+    <p class="foot">iPhone·iPad는 Safari 공유 → <b>홈 화면에 추가</b>로 열면 주소창 없이 전체화면이 됩니다. 화면을 좌우로 밀면 모드, 위아래로 밀면 팔레트가 바뀝니다.</p>
+    <p class="foot">키보드: 1~9·0·-·= 모드 · ← → 모드 · P 팔레트 · F 전체화면 · H 메뉴 · C 지우기 · B 배경 다시 잡기</p>
+  </div>
 </aside>
 
 <div id="intro" class="overlay">
-  <div class="card">
+  <div class="modal">
     <p class="eyebrow">Interactive media art</p>
-    <h1>결 <small>GYEOL</small></h1>
-    <p class="lead">카메라 앞의 움직임이 데이터가 되어<br>도형·점·기호·활자가 변형되는 전시용 웹앱</p>
-    <div class="roles">
-      <button class="role primary" id="btnSolo"><b>이 기기로 바로 시작</b><span>카메라와 화면을 같은 기기에서 (노트북 웹캠, 아이패드 등)</span></button>
-      <button class="role" id="btnDisplay"><b>화면으로 쓰기</b><span>모니터·프로젝터에 띄우고, 폰·태블릿 카메라를 센서로 연결</span></button>
-      <button class="role" id="btnSensor"><b>센서로 쓰기</b><span>책상 위 폰·태블릿. 화면의 QR을 찍거나 코드를 입력</span></button>
+    <h1 class="ltitle">결 <small>GYEOL</small></h1>
+    <p class="sub">카메라 앞의 움직임이 데이터가 되어<br>도형·점·기호·활자·그림으로 바뀌는 전시용 웹앱</p>
+    <div class="stack">
+      <button class="btn filled" id="btnSolo">이 기기로 바로 시작</button>
+      <button class="btn tinted" id="btnDisplay">화면으로 쓰기 (모니터·프로젝터)</button>
+      <button class="btn tinted" id="btnSensor">센서로 쓰기 (책상 위 폰·태블릿)</button>
     </div>
-    <div class="minor">
+    <div class="inline">
       <button id="btnCamBack">후면 카메라로 시작</button>
       <button id="btnFile">영상 파일로 보기</button>
       <button id="btnDemo">데모로 보기</button>
     </div>
     <p id="introMsg" class="msg" hidden></p>
-    <p class="fine">카메라 영상은 기기 안에서만 처리되고 저장·전송되지 않습니다. 센서 연결 시에도 영상이 아닌 움직임 데이터(격자 수치)만 보냅니다.</p>
+    <p class="fine">카메라 영상은 기기 안에서만 처리되고 저장·전송되지 않습니다. 센서 연결 시에도 영상이 아닌 움직임 데이터만 보냅니다.</p>
   </div>
 </div>
 
 <div id="link" class="overlay" hidden>
-  <div class="card">
+  <div class="modal">
     <p class="eyebrow">센서 연결 대기</p>
     <div class="qr" id="qr"><p>QR 준비 중…</p></div>
     <p class="code" id="codeText">····</p>
-    <p class="lead" id="linkMsg">폰으로 QR을 찍으면 센서 모드로 열립니다. 또는 폰에서 이 페이지를 열고 <b>센서로 쓰기</b> → 위 코드 입력.</p>
-    <p class="fine">두 기기 모두 인터넷이 되어야 하고, 같은 와이파이에 있으면 가장 안정적입니다. 이 페이지가 https:// 주소로 열려 있어야 폰에서도 열 수 있어요.</p>
-    <div class="minor">
+    <p class="sub" id="linkMsg">폰으로 QR을 찍으면 센서 모드로 열립니다. 또는 폰에서 이 페이지를 열고 <b>센서로 쓰기</b> → 위 코드 입력.</p>
+    <p class="fine">두 기기 모두 인터넷이 되어야 하고, 같은 와이파이에 있으면 가장 안정적입니다.</p>
+    <div class="inline">
       <button id="btnLocalCam">대신 이 컴퓨터 카메라 쓰기</button>
       <button id="btnLinkDemo">일단 데모로 두기</button>
     </div>
@@ -184,38 +226,38 @@ h1 small{font-size:13px;font-weight:500;color:var(--mute);letter-spacing:.3em}
 </div>
 
 <div id="sensor" class="overlay" hidden>
-  <div class="card">
+  <div class="modal">
     <p class="eyebrow">센서 모드</p>
-    <div id="sensorJoin">
-      <p class="lead">화면(모니터)에 표시된 4자리 코드를 입력하세요.</p>
+    <div id="sensorJoin" class="stack">
+      <p class="sub">화면(모니터)에 표시된 4자리 코드를 입력하세요.</p>
       <div class="join">
-        <label>화면 코드<input id="codeInput" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD" inputmode="latin"></label>
-        <button class="pbtn" id="btnJoin">연결하고 카메라 켜기</button>
+        <input id="codeInput" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD" inputmode="latin" aria-label="화면 코드">
+        <button class="btn filled" id="btnJoin">연결하고 카메라 켜기</button>
       </div>
-      <div class="minor" style="margin-top:10px">
+      <div class="inline">
         <button id="btnJoinBack">후면 카메라로 연결</button>
-        <button id="btnJoinDemo">카메라 대신 데모 데이터 보내기</button>
+        <button id="btnJoinDemo">데모 데이터 보내기</button>
         <button id="btnSensorHome">처음으로</button>
       </div>
     </div>
-    <div id="sensorLive" hidden>
+    <div id="sensorLive" class="stack" hidden>
       <canvas id="sensorView"></canvas>
       <p class="status" id="sensorStatus">연결 중…</p>
-      <div class="srow"><span>민감도</span><input type="range" id="sSens" min="1" max="10" step="1"></div>
-      <div class="minor">
+      <div class="row" style="padding:0"><div class="l">반응</div><div class="seg" id="sReact"><button>차분</button><button>보통</button><button>활발</button></div></div>
+      <div class="inline">
         <button id="sFlip">카메라 전환</button>
         <button id="sMirror">좌우 반전</button>
         <button id="sDetect">감지: 움직임만</button>
         <button id="sBg">배경 다시 잡기</button>
         <button id="sLeave">연결 끊기</button>
       </div>
-      <p class="fine">폰을 책상에 세워 두고 화면이 꺼지지 않게 해 주세요. 파랑은 사람(실루엣), 빨강은 움직임입니다.</p>
+      <p class="fine">폰을 책상에 세워 두고 화면이 꺼지지 않게 해 주세요. 파랑은 사람(형태), 빨강은 움직임입니다.</p>
     </div>
     <p id="sensorMsg" class="msg" hidden></p>
   </div>
 </div>
 
-<div id="toast" role="status"></div>
+<div id="toast" class="material" role="status"></div>
 
 <script>
 (function(){
@@ -247,7 +289,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={mode:0,pal:0,sens:6,trail:6,gain:5,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',
+const DEF={mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',
   text:'움직임은 결이 되고\nMOVEMENT BECOMES TEXTURE\n빛은 기억이 된다\nLIGHT TURNS INTO MEMORY\n여기 있는 당신의 흔적\nTRACES OF YOU HERE'};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
@@ -550,40 +592,129 @@ const mEcho={id:'echo',name:'잔상',key:'8',desc:'지나간 움직임이 색층
       const q=i*4;out[q]=r;out[q+1]=g;out[q+2]=b;out[q+3]=255;}
     this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
   }};
-const MODES=[mShapes,mDots,mGlyphs,mCurtain,mFlow,mInk,mRipple,mEcho];
+function buildMask(cv,_img,arr,lo,k){
+  if(cv.width!==A.w||cv.height!==A.h||!cv.img||cv.img.width!==A.w||cv.img.height!==A.h){cv.width=A.w;cv.height=A.h;cv.img=new ImageData(A.w,A.h);}
+  const d=cv.img.data,n=A.n;for(let i=0;i<n;i++){let a=(arr[i]-lo)*k;a=a<0?0:a>1?1:a;const o=i*4;d[o]=255;d[o+1]=255;d[o+2]=255;d[o+3]=a*255;}
+  cv.cx.putImageData(cv.img,0,0);
+}
+function seeded(s){let a=s>>>0;return()=>{a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
+const mPaint={id:'paint',name:'그리기',desc:'움직임이 붓질이 되어 화면에 남는다',
+  init(){this.cv=mkCanvas(Math.max(1,Math.round(W*DPR)),Math.max(1,Math.round(H*DPR)));this.clear();this.f=0;},
+  clear(){const c=this.cv.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle=pal().bg;c.fillRect(0,0,W,H);},
+  draw(){
+    const P=pal(),c=this.cv.cx,g=gainF(),w=A.w,cols=[P.fg[1],P.fg[3],P.fg[2]];this.f++;
+    if((this.f%8)===0){c.fillStyle=rgba(P.bg,lerp(0.06,0.006,(S.trail-1)/9));c.fillRect(0,0,W,H);}
+    c.lineCap='round';
+    for(let k=0;k<A.hotN;k++){const i=A.hot[k],e=A.er[i];if(e<0.45)continue;
+      const cx=((i%w)+0.5)*A.sx,cy=(((i/w)|0)+0.5)*A.sy,u=A.u[i]*A.sx,v=A.v[i]*A.sy;
+      const col=cols[u>0.4?0:u<-0.4?1:2];
+      c.strokeStyle=rgba(col,0.35);c.lineWidth=A.sx*(0.9+e*1.4)*g*0.7;
+      c.beginPath();c.moveTo(cx-u*2.5,cy-v*2.5);c.lineTo(cx+u*1.2,cy+v*1.2);c.stroke();
+      c.fillStyle=rgba(col,0.22);c.beginPath();c.arc(cx+(Math.random()-0.5)*A.sx,cy+(Math.random()-0.5)*A.sy,A.sx*(0.7+e*0.9)*0.9,0,TAU);c.fill();}
+    ctx.drawImage(this.cv,0,0,W,H);
+  }};
+const mWords={id:'words',name:'글자',desc:'사람의 형태가 글로 채워진다',
+  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.T=mkCanvas(tw,th);this.Sc=mkCanvas(tw,th);this.tmp=mkCanvas(tw,th);this.mask=mkCanvas(A.w,A.h);this.mask.img=new ImageData(A.w,A.h);this.mask2=mkCanvas(A.w,A.h);this.mask2.img=new ImageData(A.w,A.h);this.renderText();},
+  renderText(){const P=pal(),c=this.T.cx,s=this.Sc.cx,rnd=seeded(11);
+    const words=String(S.text||DEF.text).replace(/\n/g,' ').split(/\s+/).filter(Boolean);if(!words.length)words.push('결');
+    c.setTransform(DPR,0,0,DPR,0,0);c.clearRect(0,0,W,H);c.fillStyle=P.fg[0];c.textBaseline='alphabetic';
+    const base=isTouch?11:14;let y=0,wi=0;
+    while(y<H+30){const fs=Math.round(base*(0.7+rnd()*1.5)),lh=fs*1.1;y+=lh;c.font='700 '+fs+'px '+SANS;let x=-rnd()*60;
+      while(x<W){const wd=words[wi++%words.length];const m=c.measureText(wd).width;c.fillText(wd,x,y-fs*0.15);x+=m+fs*0.45;}}
+    s.setTransform(DPR,0,0,DPR,0,0);s.clearRect(0,0,W,H);s.fillStyle=P.fg[0];
+    for(let k=0;k<Math.round(W*H/30000);k++){const fs=base*(0.8+rnd()*0.9);s.font='700 '+fs+'px '+SANS;s.fillText(words[(rnd()*words.length)|0],rnd()*W,rnd()*H);}},
+  draw(){const P=pal();fillBg();const tw=this.T.width,th=this.T.height,t=this.tmp.cx;
+    ctx.globalAlpha=0.3;ctx.drawImage(this.Sc,0,0,W,H);ctx.globalAlpha=1;
+    buildMask(this.mask,this.mask.img,A.p,0.22,3);
+    t.setTransform(1,0,0,1,0,0);t.globalCompositeOperation='source-over';t.clearRect(0,0,tw,th);t.imageSmoothingEnabled=true;t.drawImage(this.mask,0,0,tw,th);t.globalCompositeOperation='source-in';t.drawImage(this.T,0,0);t.globalCompositeOperation='source-over';
+    ctx.drawImage(this.tmp,0,0,W,H);
+    buildMask(this.mask2,this.mask2.img,A.e,0.15,2.5);
+    t.clearRect(0,0,tw,th);t.drawImage(this.mask2,0,0,tw,th);t.globalCompositeOperation='source-in';t.drawImage(this.T,0,0);t.fillStyle=P.fg[1];t.fillRect(0,0,tw,th);t.globalCompositeOperation='source-over';
+    ctx.drawImage(this.tmp,0,0,W,H);
+  }};
+const mPattern={id:'pattern',name:'패턴',desc:'사람의 형태가 무늬 조각으로 채워진다',
+  init(){this.cols=isTouch?28:48;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.tiles=this.makeTiles();const m=this.cols*this.rows;this.pick=new Uint8Array(m);for(let i=0;i<m;i++)this.pick[i]=(Math.random()*this.tiles.length)|0;},
+  makeTiles(){const P=pal(),s=Math.max(4,Math.round(this.cell*DPR)),col=P.fg[3];
+    const mk=f=>{const c=mkCanvas(s,s),x=c.cx;x.fillStyle=col;x.strokeStyle=col;x.lineWidth=Math.max(1,s*0.12);x.lineCap='square';f(x,s);return c;};
+    return [
+      mk((x,s)=>x.fillRect(0,0,s,s)),
+      mk((x,s)=>{x.fillRect(0,0,s/2,s/2);x.fillRect(s/2,s/2,s/2,s/2);}),
+      mk((x,s)=>{for(let i=0;i<4;i++)for(let j=0;j<4;j++)if((i+j)&1)x.fillRect(i*s/4,j*s/4,s/4,s/4);}),
+      mk((x,s)=>{x.beginPath();x.moveTo(0,s);x.lineTo(s,0);x.moveTo(0,s/2);x.lineTo(s/2,0);x.moveTo(s/2,s);x.lineTo(s,s/2);x.stroke();}),
+      mk((x,s)=>{for(let i=0;i<3;i++)for(let j=0;j<3;j++){x.beginPath();x.arc((i+0.5)*s/3,(j+0.5)*s/3,s*0.09,0,TAU);x.fill();}}),
+      mk((x,s)=>{x.beginPath();x.moveTo(0,0);x.lineTo(s,0);x.lineTo(0,s);x.closePath();x.fill();}),
+      mk((x,s)=>{x.beginPath();x.moveTo(0,0);x.arc(0,0,s,0,Math.PI/2);x.closePath();x.fill();}),
+      mk((x,s)=>{x.beginPath();x.moveTo(0,s/2);x.lineTo(s,s/2);x.moveTo(s/2,0);x.lineTo(s/2,s);x.stroke();}),
+      mk((x,s)=>{x.beginPath();x.arc(s/2,s/2,s*0.34,0,TAU);x.stroke();}),
+      mk((x,s)=>{x.beginPath();x.arc(s/2,s/2,s*0.3,0,TAU);x.fill();}),
+      mk((x,s)=>{x.strokeRect(s*0.18,s*0.18,s*0.64,s*0.64);}),
+      mk((x,s)=>{for(let i=0;i<3;i++){x.fillRect(0,i*s/3,s,s/6);}}),
+    ];},
+  draw(){fillBg();const P=pal(),cols=this.cols,rows=this.rows,cell=this.cell,tiles=this.tiles,pick=this.pick,grid=new Path2D();
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c,x=c*cell,y=r*cell;const f=at(x+cell/2,y+cell/2);
+      if(f.p>0.45){if(f.e>0.25&&Math.random()<0.35)pick[i]=(Math.random()*tiles.length)|0;ctx.drawImage(tiles[pick[i]],x,y,cell,cell);}
+      else if(f.p>0.12)grid.rect(x,y,cell,cell);}
+    ctx.lineWidth=1;ctx.strokeStyle=rgba(P.fg[3],0.5);ctx.stroke(grid);
+  }};
+const mScribble={id:'scribble',name:'낙서',desc:'볼펜 낙서가 사람의 형태를 그린다',
+  init(){this.cv=mkCanvas(Math.max(1,Math.round(W*DPR)),Math.max(1,Math.round(H*DPR)));this.clear();},
+  clear(){const c=this.cv.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle=pal().bg;c.fillRect(0,0,W,H);},
+  draw(){const P=pal(),c=this.cv.cx,w=A.w;
+    c.fillStyle=rgba(P.bg,lerp(0.08,0.015,(S.trail-1)/9));c.fillRect(0,0,W,H);
+    if(A.presN>0){const n=isTouch?45:90;c.strokeStyle=rgba(P.fg[3],0.6);c.lineWidth=isTouch?0.9:1.1;c.lineJoin='round';c.lineCap='round';
+      for(let k=0;k<n;k++){const ci=A.pres[(Math.random()*A.presN)|0];const x=((ci%w)+Math.random())*A.sx,y=(((ci/w)|0)+Math.random())*A.sy,e=A.e[ci];
+        let ang=Math.random()*TAU;if(e>0.15)ang=Math.atan2(A.v[ci],A.u[ci])+(Math.random()-0.5)*0.7;
+        const cs=Math.cos(ang),sn=Math.sin(ang),amp=A.sx*(1.2+e*2.5),step=A.sx*0.8,steps=5+((Math.random()*9)|0);
+        c.beginPath();c.moveTo(x,y);
+        for(let s=1;s<=steps;s++){const side=(s&1)?1:-1,a=amp*side*(0.5+Math.random()*0.7);const px=x+cs*step*s-sn*a,py=y+sn*step*s+cs*a;const f=at(px,py);if(f.p<0.25)break;c.lineTo(px,py);}
+        c.stroke();}}
+    ctx.drawImage(this.cv,0,0,W,H);
+  }};
+const MODES=[mShapes,mDots,mGlyphs,mCurtain,mPaint,mWords,mPattern,mScribble,mFlow,mInk,mRipple,mEcho];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
   ctx.fillStyle='rgba(60,140,255,0.85)';ctx.fill(dots);ctx.lineWidth=1.2;ctx.strokeStyle='rgba(255,70,70,0.95)';ctx.stroke(pth);}
 
 /* ---------- UI ---------- */
-const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast');
+const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.innerHTML='<span class="k">'+m.key+'</span>'+m.name;b.title=m.desc;b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
+const KEYS='1234567890-=';
+MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
-function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];mode.init();fillBg();lastSwitch=performance.now();save();syncChips();}
+function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];mode.init();fillBg();lastSwitch=performance.now();save();syncChips();
+  const b=modesEl.children[S.mode];if(b&&b.scrollIntoView)try{b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}catch(e){}}
 function nextMode(d){setMode(S.mode+d);}
 function setPal(i){S.pal=((i%PALETTES.length)+PALETTES.length)%PALETTES.length;save();if(mode){mode.init();fillBg();}syncChips();}
-function syncChips(){Array.from(modesEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.mode?'true':'false'));Array.from(palsEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.pal?'true':'false'));modeName.textContent=mode.name+' · '+pal().name;}
+function syncChips(){Array.from(modesEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.mode?'true':'false'));Array.from(palsEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.pal?'true':'false'));modeName.textContent=mode.name+' · '+pal().name;clearBtn.hidden=!mode.clear;}
+function clearArt(){if(mode&&mode.clear){mode.clear();toast('지웠어요');}}
 let uiTimer=0,panelOpen=false;
 function showUI(){document.body.classList.add('ui-on');clearTimeout(uiTimer);uiTimer=setTimeout(hideUI,4000);}
 function hideUI(){if(panelOpen||!intro.hidden)return;document.body.classList.remove('ui-on');}
-function openPanel(o){panelOpen=o;panel.hidden=!o;$('#gear').setAttribute('aria-expanded',o?'true':'false');if(o)showUI();}
+function openPanel(o){panelOpen=o;panel.hidden=!o;panelDim.hidden=!o;$('#gear').setAttribute('aria-expanded',o?'true':'false');if(o){syncCtl();showUI();}}
 $('#gear').addEventListener('click',()=>openPanel(!panelOpen));
 $('#closePanel').addEventListener('click',()=>openPanel(false));
-const ctl={sens:$('#sens'),trail:$('#trail'),gain:$('#gain'),mirror:$('#mirror'),debug:$('#debug'),auto:$('#auto'),text:$('#text'),sSens:$('#sSens'),detect:$('#detect')};
-function syncCtl(){ctl.sens.value=S.sens;ctl.sSens.value=S.sens;ctl.trail.value=S.trail;ctl.gain.value=S.gain;ctl.mirror.checked=!!S.mirror;ctl.debug.checked=!!S.debug;ctl.auto.value=String(S.auto);ctl.text.value=S.text;ctl.detect.value=S.detect;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 실루엣';}
-ctl.detect.addEventListener('change',()=>{S.detect=ctl.detect.value;resetBackground();save();toast(S.detect==='motion'?'움직이는 것만 감지해요':'정지한 사람도 실루엣으로 잡아요. 카메라 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
-['sens','trail','gain'].forEach(k=>ctl[k].addEventListener('input',()=>{S[k]=+ctl[k].value;if(k==='sens')ctl.sSens.value=S.sens;save();}));
-ctl.sSens.addEventListener('input',()=>{S.sens=+ctl.sSens.value;ctl.sens.value=S.sens;save();});
-ctl.mirror.addEventListener('change',()=>{S.mirror=ctl.mirror.checked;resetAnalysis();save();});
-ctl.debug.addEventListener('change',()=>{S.debug=ctl.debug.checked;save();});
-ctl.auto.addEventListener('change',()=>{S.auto=+ctl.auto.value;lastSwitch=performance.now();save();});
-ctl.text.addEventListener('change',()=>{S.text=ctl.text.value;save();if(mode===mCurtain)mode.renderText();});
+panelDim.addEventListener('click',()=>openPanel(false));
+/* presets: the sliders are gone, three plain choices drive the internal numbers */
+const REACT=[[4,3],[6,5],[8,7]],TRAILP=[3,6,9],AUTOS=[0,20,45,90];
+function applyPresets(){const r=REACT[S.react]||REACT[1];S.sens=r[0];S.gain=r[1];S.trail=TRAILP[S.trailp]!==undefined?TRAILP[S.trailp]:6;}
+function seg(id,fn){Array.from($(id).children).forEach((b,i)=>b.addEventListener('click',()=>{fn(i);applyPresets();save();syncCtl();}));}
+function segSync(id,v){Array.from($(id).children).forEach((b,i)=>b.setAttribute('aria-pressed',i===v?'true':'false'));}
+seg('#segReact',i=>{S.react=i;});seg('#sReact',i=>{S.react=i;});
+seg('#segTrail',i=>{S.trailp=i;});
+seg('#segDetect',i=>{S.detect=i===0?'motion':'presence';resetBackground();toast(S.detect==='motion'?'움직이는 것만 형태로 봐요':'가만히 있는 사람도 잡아요. 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
+seg('#segAuto',i=>{S.auto=AUTOS[i];lastSwitch=performance.now();});
+const swMirror=$('#swMirror'),swDebug=$('#swDebug'),textEl=$('#text');
+function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));
+  swMirror.checked=!!S.mirror;swDebug.checked=!!S.debug;if(document.activeElement!==textEl)textEl.value=S.text;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
+swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
+swDebug.addEventListener('change',()=>{S.debug=swDebug.checked;save();});
+textEl.addEventListener('change',()=>{S.text=textEl.value;save();if(mode&&mode.renderText)mode.renderText();});
 $('#btnBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
 $('#btnFull').addEventListener('click',toggleFull);$('#btnFullBar').addEventListener('click',toggleFull);
+$('#btnClear').addEventListener('click',clearArt);$('#btnClear2').addEventListener('click',()=>{clearArt();openPanel(false);});
 $('#btnFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'environment':'user';try{await startCamera(f);toast(f==='user'?'전면 카메라':'후면 카메라');}catch(e){toast(camError(e));}syncCtl();});
 $('#btnSource').addEventListener('click',()=>{openPanel(false);showIntro('');});
 function toggleFull(){const d=document.documentElement;if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return;}
@@ -594,7 +725,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 /* intro */
 function showIntro(msg){intro.hidden=false;introMsg.hidden=!msg;introMsg.textContent=msg||'';document.body.classList.add('ui-on');}
 function hideIntro(){intro.hidden=true;showUI();}
-$('#btnSolo').addEventListener('click',async()=>{try{await startCamera('user');hideIntro();syncCtl();toast('카메라 앞을 잠시 비우면 실루엣이 더 깨끗해져요 (설정 → 배경 다시 잡기)');}catch(e){showIntro(camError(e));}});
+$('#btnSolo').addEventListener('click',async()=>{try{await startCamera('user');hideIntro();syncCtl();}catch(e){showIntro(camError(e));}});
 $('#btnCamBack').addEventListener('click',async()=>{try{await startCamera('environment');hideIntro();syncCtl();}catch(e){showIntro(camError(e));}});
 $('#btnFile').addEventListener('click',()=>$('#file').click());
 $('#file').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f){useFile(f);hideIntro();syncCtl();}});
@@ -607,12 +738,13 @@ canvas.addEventListener('pointerdown',e=>{p0={x:e.clientX,y:e.clientY,t:performa
 canvas.addEventListener('pointerup',e=>{if(!p0)return;const dx=e.clientX-p0.x,dy=e.clientY-p0.y,dt=performance.now()-p0.t;p0=null;
   if(dt<700&&Math.abs(dx)>60&&Math.abs(dy)<80){nextMode(dx<0?1:-1);showUI();}else if(dt<700&&Math.abs(dy)>60&&Math.abs(dx)<80){setPal(S.pal+(dy<0?1:-1));showUI();}});
 window.addEventListener('mousemove',()=>{const n=performance.now();if(n-moveT>300){moveT=n;showUI();}});
-window.addEventListener('keydown',e=>{if(e.target&&/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;const k=e.key;
-  if(k>='1'&&k<='8'){setMode(+k-1);showUI();}
+window.addEventListener('keydown',e=>{if(e.target&&/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;const k=e.key,ki=KEYS.indexOf(k);
+  if(ki>=0&&ki<MODES.length){setMode(ki);showUI();}
   else if(k==='ArrowRight'||k===' '){nextMode(1);showUI();e.preventDefault();}
   else if(k==='ArrowLeft'){nextMode(-1);showUI();}
   else if(k==='p'||k==='P')setPal(S.pal+1);
   else if(k==='f'||k==='F')toggleFull();
+  else if(k==='c'||k==='C')clearArt();
   else if(k==='h'||k==='H'){if(document.body.classList.contains('ui-on')){openPanel(false);document.body.classList.remove('ui-on');}else showUI();}
   else if(k==='d'||k==='D'){S.debug=!S.debug;syncCtl();save();}
   else if(k==='m'||k==='M'){S.mirror=!S.mirror;resetAnalysis();syncCtl();save();}
@@ -708,7 +840,7 @@ function loop(now){requestAnimationFrame(loop);if(now-last<14)return;const dt=Ma
   if(S.auto&&now-lastSwitch>S.auto*1000)nextMode(1);}
 
 /* ---------- boot ---------- */
-S.mode=clamp(S.mode|0,0,MODES.length-1);S.pal=clamp(S.pal|0,0,PALETTES.length-1);S.sens=clamp(S.sens|0,1,10);S.trail=clamp(S.trail|0,1,10);S.gain=clamp(S.gain|0,1,10);
+S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=clamp(S.trailp|0,0,2);applyPresets();S.pal=clamp(S.pal|0,0,PALETTES.length-1);S.sens=clamp(S.sens|0,1,10);S.trail=clamp(S.trail|0,1,10);S.gain=clamp(S.gain|0,1,10);
 resize();useDemo();setMode(S.mode);syncCtl();document.body.classList.add('ui-on');
 const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
