@@ -440,6 +440,14 @@ function flowLK(g,p,w,h){
     if(xx[i]+yy[i]>150&&er[i]>0.03){const a=xx[i]+L,c=yy[i]+L,b=xy[i];const det=a*c-b*b;un=-(c*xt[i]-b*yt[i])/det;vn=-(a*yt[i]-b*xt[i])/det;const m=Math.sqrt(un*un+vn*vn);if(m>4){un*=4/m;vn*=4/m;}}
     u[i]+=(un-u[i])*0.45;v[i]+=(vn-v[i])*0.45;}
 }
+// arms and legs from the pose model, drawn as capsules on the analysis grid; only cells the mask already sees faintly are lifted
+function limbBoost(cur,w,h,sx,sy,cw,ch,sw,sh){if(!(FACE.pres&&FACE.pres.landmarks&&FACE.pres.landmarks.length&&performance.now()-FACE.ptime<220))return;
+  const segs=[[11,13],[13,15],[12,14],[14,16],[15,19],[16,20],[15,17],[16,18],[23,25],[25,27],[24,26],[26,28]];
+  FACE.pres.landmarks.forEach(lm=>{const P=lm.map(q=>{let gx=(q.x*sw-sx)/cw*w;if(S.mirror)gx=w-gx;return {x:gx,y:(q.y*sh-sy)/ch*h,v:q.visibility==null?1:q.visibility};});
+    const s0=P[11],s1=P[12];if(!s0||!s1)return;const r=Math.max(1.2,Math.hypot(s0.x-s1.x,s0.y-s1.y)*0.1);
+    for(const sg of segs){const a=P[sg[0]],b=P[sg[1]];if(!a||!b||a.v<0.5||b.v<0.5)continue;const dx=b.x-a.x,dy=b.y-a.y,L2=dx*dx+dy*dy||1;
+      const x0=Math.max(0,Math.floor(Math.min(a.x,b.x)-r)),x1=Math.min(w-1,Math.ceil(Math.max(a.x,b.x)+r)),y0=Math.max(0,Math.floor(Math.min(a.y,b.y)-r)),y1=Math.min(h-1,Math.ceil(Math.max(a.y,b.y)+r));
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const px=x+0.5-a.x,py=y+0.5-a.y;let t=(px*dx+py*dy)/L2;t=t<0?0:t>1?1:t;const ex=px-t*dx,ey=py-t*dy;if(ex*ex+ey*ey>r*r)continue;const i=y*w+x,v=cur[i];if(v>0.08&&v<0.8)cur[i]=0.8;}}});}
 function analyze(){
   if(A.remote||!A.n) return A.remote;
   const el=source.el; if(!el) return false;
@@ -460,9 +468,19 @@ function analyze(){
   // presence: either "moving things only" (motion energy, spread and held briefly) or background subtraction
   const bg=A.bg,pr=A.p,pres=A.pres; let presN=0;
   if(SEG.mask&&performance.now()-SEG.fresh<400){
-    // model mask sampled onto the analysis grid through the same crop (and mirror) as the frame
-    const mw=SEG.mw,mh=SEG.mh,mk=SEG.mask,kx=mw/sw,ky=mh/sh;
-    for(let y=0;y<h;y++){const vy=sy+(y+0.5)/h*ch;const my=Math.min(mh-1,(vy*ky)|0)*mw;for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x;const vx=sx+(xx+0.5)/w*cw;let v=mk[my+Math.min(mw-1,(vx*kx)|0)];v=v<0?0:v>1?1:v;const i=y*w+x;const sm=pr[i]*0.35+v*0.65;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}}
+    // model mask sampled onto the analysis grid through the same crop (and mirror) as the frame. Each cell reads four points and keeps the
+    // stronger of their average and most of their maximum, so a limb thinner than a cell is not lost between samples
+    const mw=SEG.mw,mh=SEG.mh,mk=SEG.mask,kx=mw/sw,ky=mh/sh,cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));
+    for(let y=0;y<h;y++){const ya=Math.min(mh-1,((sy+(y+0.25)/h*ch)*ky)|0)*mw,yb=Math.min(mh-1,((sy+(y+0.75)/h*ch)*ky)|0)*mw;
+      for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x,xa=Math.min(mw-1,((sx+(xx+0.25)/w*cw)*kx)|0),xb=Math.min(mw-1,((sx+(xx+0.75)/w*cw)*kx)|0);
+        const a=mk[ya+xa],b=mk[ya+xb],c=mk[yb+xa],e2=mk[yb+xb],mx=Math.max(a,b,c,e2),mean=(a+b+c+e2)*0.25;let v=mean>mx*0.8?mean:mx*0.8;cur[y*w+x]=v<0?0:v>1?1:v;}}
+    // the pose model knows where arms and legs are: along each visible limb, faint mask becomes solid (no mask at all stays empty, so a
+    // late pose never paints a ghost arm)
+    limbBoost(cur,w,h,sx,sy,cw,ch,sw,sh);
+    // anything faint that is joined to a confident body counts as body (a thin raised arm); faint specks on their own do not
+    const hs=A.hs=hyst(cur,w,h,0.55,0.3,A.hs);
+    // over time: shape appears at once and fades over a few frames, so an arm the model drops for a frame does not flicker away
+    for(let i=0;i<n;i++){let v=cur[i];if(hs[i]&&v<0.72)v=0.72;const o=pr[i],sm=v>o?o*0.25+v*0.75:o*0.5+v*0.5;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
   }else if(S.detect==='motion'){
     // motion energy -> close the gaps between moving edges (dilate then erode) -> brief hold, so a moving
     // person reads as one filled shape and nothing is compared against a stored background
@@ -556,10 +574,10 @@ const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,fti
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',wantPose=wantFace||id==='frost'||id==='thermal'||id==='stack',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
-  if(wantPose&&FACE.pose&&now-FACE.plast>70){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
+  if(wantPose&&FACE.pose&&now-FACE.plast>(usePose?70:100)){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
   if(wantObj&&FACE.obj&&now-FACE.olast>140){FACE.olast=now;try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;}catch(e){FACE.ores=null;}}}
 async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='loading';
   try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
@@ -1151,18 +1169,18 @@ const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 �
   }};
 
 /* 파동: a clean silhouette that tears into waveforms and block noise while moving, and settles back when still */
-const mWave={id:'wave',name:'파동',desc:'움직이는 속도만큼 실루엣이 물결처럼 일렁이고, 멈추면 다시 또렷한 사람이 된다',
+const mWave={id:'wave',name:'파동',desc:'움직이는 속도만큼 실루엣이 좌우로 크게 물결치며 일렁이고, 멈추면 다시 또렷한 사람이 된다',
   init(){this.s=isTouch?2:3;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.ph=0;this.dxr=new Float32Array(this.rh);this.dyc=new Float32Array(this.rw);},
   draw(t,dt){const P=pal(),rw=this.rw,rh=this.rh,s=this.s,w=A.w,h=A.h,out=this.img.data,p=A.p;
     // speed = motion inside the people; amplitude eases toward it so the surface swells and settles smoothly
     // speed is read from how much the person's shape itself changes between frames, so a still person stays still
     if(!this.prev||this.prev.length!==A.n){this.prev=new Float32Array(A.n);this.prev.set(p);}
     const pv=this.prev;let ch=0,cn=0;for(let i=0;i<A.n;i++){const a=p[i],b=pv[i];if(a>0.3||b>0.3){ch+=a>b?a-b:b-a;cn++;}pv[i]=a;}
-    const target=cn>20?Math.min(1,Math.max(0,(ch/cn-0.02)*9)):0;
-    this.amp+=(target-this.amp)*(target>this.amp?0.07:0.035);const amp=this.amp;this.ph+=dt*(1.1+amp*4.5);const ph=this.ph;
-    // one smooth travelling wave across rows plus a slower one across columns; no noise, no blocks
-    const A1=amp*rw*0.04,A2=amp*rh*0.03,k1=TAU/(rh*0.22),k2=TAU/(rh*0.075),k3=TAU/(rw*0.16),dxr=this.dxr,dyc=this.dyc;
-    for(let y=0;y<rh;y++)dxr[y]=A1*(Math.sin(y*k1+ph*2.0)+0.35*Math.sin(y*k2-ph*3.1));
+    const target=cn>20?Math.min(1,Math.max(0,(ch/cn-0.018)*12)):0;
+    this.amp+=(target-this.amp)*(target>this.amp?0.09:0.03);const amp=this.amp;this.ph+=dt*(1.0+amp*3.2);const ph=this.ph;
+    // a long, wide side-to-side swell travelling down the body, a finer ripple riding on it, and a slight vertical sway; no noise, no blocks
+    const A1=amp*rw*0.11,A2=amp*rh*0.02,k1=TAU/(rh*0.38),k2=TAU/(rh*0.11),k3=TAU/(rw*0.2),dxr=this.dxr,dyc=this.dyc;
+    for(let y=0;y<rh;y++)dxr[y]=A1*(Math.sin(y*k1+ph*1.7)+0.28*Math.sin(y*k2-ph*2.6));
     for(let x=0;x<rw;x++)dyc[x]=A2*Math.sin(x*k3+ph*1.6);
     const ink=P.light?[20,20,22]:P.fgRGB[0],bg=P.light?[232,231,228]:P.bgRGB,iw=1/s,mw=w-1.001,mh=h-1.001;
     for(let y=0;y<rh;y++){const dx=dxr[y];for(let x=0;x<rw;x++){
