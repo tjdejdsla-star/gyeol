@@ -161,7 +161,7 @@ textarea.ta{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15
       <div class="row"><div class="l">흔적<small>움직임이 화면에 남는 시간</small></div><div class="seg" id="segTrail"><button>짧게</button><button>보통</button><button>길게</button></div></div>
       <div class="row"><div class="l">감지<small>무엇을 형태로 볼지</small></div><div class="seg" id="segDetect"><button>움직임만</button><button>사람 전체</button></div></div>
     </div>
-    <p class="foot"><b>움직임만</b>은 배경이 드러나지 않아요. <b>사람 전체</b>는 가만히 서 있는 사람도 잡지만, 카메라를 고정하고 앞을 비운 뒤 <b>배경 다시 잡기</b>를 눌러야 깨끗해요.</p>
+    <p class="foot"><b>움직임만</b>은 움직인 사람의 형태를 잠시(흔적 길이만큼) 유지하고 배경은 드러내지 않아요. <b>사람 전체</b>는 가만히 서 있는 사람도 계속 잡지만, 카메라를 고정하고 앞을 비운 뒤 <b>배경 다시 잡기</b>를 눌러야 깨끗해요.</p>
   </div>
 
   <div class="group"><h4>화면</h4>
@@ -359,13 +359,13 @@ const A={w:0,h:0,n:0,remote:false,frames:0,level:0,hotN:0,presN:0,sx:1,sy:1,cv:d
 A.cx=A.cv.getContext('2d',{willReadFrequently:true});
 function allocAnalyzer(w,h){
   A.w=w;A.h=h;A.n=w*h;A.cv.width=w;A.cv.height=h;
-  ['gray','prev','bg','diff','tmp','e','er','p','u','v','xx','yy','xy','xt','yt'].forEach(k=>{A[k]=new Float32Array(A.n);});
+  ['gray','prev','bg','diff','tmp','e','er','p','rm','u','v','xx','yy','xy','xt','yt'].forEach(k=>{A[k]=new Float32Array(A.n);});
   A.hot=new Int32Array(A.n);A.pres=new Int32Array(A.n);A.hotN=0;A.presN=0;A.frames=0;A.level=0;A.sx=W/w;A.sy=H/h;
 }
 function gridFor(aspect,cells){const w=clamp(Math.round(Math.sqrt(cells*aspect)),24,240);return[w,clamp(Math.round(w/aspect),24,240)];}
 function setupAnalyzer(){ const g=gridFor(W/H,isTouch?7000:13000); if(g[0]!==A.w||g[1]!==A.h) allocAnalyzer(g[0],g[1]); else {A.sx=W/A.w;A.sy=H/A.h;} }
-function resetAnalysis(){ if(!A.n)return; A.frames=0;A.e.fill(0);A.er.fill(0);A.p.fill(0);A.u.fill(0);A.v.fill(0);A.hotN=0;A.presN=0;A.level=0; }
-function resetBackground(){ if(A.n&&A.frames>0){A.bg.set(A.gray);A.p.fill(0);A.presN=0;} }
+function resetAnalysis(){ if(!A.n)return; A.frames=0;A.e.fill(0);A.er.fill(0);A.p.fill(0);A.rm.fill(0);A.u.fill(0);A.v.fill(0);A.hotN=0;A.presN=0;A.level=0; }
+function resetBackground(){ if(A.n&&A.frames>0){A.bg.set(A.gray);A.p.fill(0);A.rm.fill(0);A.presN=0;} }
 function blur3(src,tmp,w,h){
   for(let y=0;y<h;y++){const o=y*w;tmp[o]=(src[o]*3+src[o+1])*0.25;for(let x=1;x<w-1;x++)tmp[o+x]=(src[o+x-1]+src[o+x]*2+src[o+x+1])*0.25;tmp[o+w-1]=(src[o+w-1]*3+src[o+w-2])*0.25;}
   for(let x=0;x<w;x++){src[x]=(tmp[x]*3+tmp[x+w])*0.25;for(let y=1;y<h-1;y++){const i=y*w+x;src[i]=(tmp[i-w]+tmp[i]*2+tmp[i+w])*0.25;}const i=(h-1)*w+x;src[i]=(tmp[i]*3+tmp[i-w])*0.25;}
@@ -405,9 +405,16 @@ function analyze(){
   // presence: either "moving things only" (motion energy, spread and held briefly) or background subtraction
   const bg=A.bg,pr=A.p,pres=A.pres; let presN=0;
   if(S.detect==='motion'){
-    for(let i=0;i<n;i++)d[i]=er[i]; blur3(d,A.tmp,w,h); blur3(d,A.tmp,w,h);
-    const hold=lerp(0.82,0.95,(S.trail-1)/9);
-    for(let i=0;i<n;i++){let v=d[i]*2.4;v=v>1?1:v;const s=v>pr[i]?v:pr[i]*hold;pr[i]=s;if(s>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
+    // 1) recent-motion map: motion energy spread outward and held for a few seconds
+    const rm=A.rm,hold=lerp(0.975,0.995,(S.trail-1)/9);
+    for(let i=0;i<n;i++)d[i]=er[i]; blur3(d,A.tmp,w,h); box5(d,A.tmp,w,h); box5(d,A.tmp,w,h); box5(d,A.tmp,w,h);
+    for(let i=0;i<n;i++){let v=d[i]*7;v=v>1?1:v;rm[i]=v>rm[i]?v:rm[i]*hold;}
+    // 2) background learns quickly where nothing has moved lately and is frozen where something did,
+    //    so a person who moved and then stands still keeps their whole shape until the hold runs out
+    for(let i=0;i<n;i++){const r=rm[i];bg[i]+=(g[i]-bg[i])*(r>0.12?0.0005:(pr[i]>0.3&&r>0.02?0.002:0.012));let x=g[i]-bg[i];d[i]=x<0?-x:x;}
+    blur3(d,A.tmp,w,h);
+    const tP=26-S.sens*1.2,invP=1/35;
+    for(let i=0;i<n;i++){let v=(d[i]-tP)*invP;v=v<0?0:(v>1?1:v);let gte=(rm[i]-0.04)*7;gte=gte<0?0:gte>1?1:gte;v*=gte;const s=pr[i]*0.5+v*0.5;pr[i]=s;if(s>0.5)pres[presN++]=i;}
   }else{
     const tP=30-S.sens*1.3,invP=1/35;
     for(let i=0;i<n;i++){let x=g[i]-bg[i];d[i]=x<0?-x:x;} blur3(d,A.tmp,w,h);
@@ -468,7 +475,7 @@ const mDots={id:'dots',name:'점',key:'2',desc:'흩어진 점들이 사람에게
   draw(){
     fade(lerp(0.75,0.22,(S.trail-1)/9)); const P=pal(),g=gainF(),n=this.n,x=this.x,y=this.y,vx=this.vx,vy=this.vy,sz=this.sz,col=this.col,att=this.att,ti=this.ti,tx=this.tx,ty=this.ty;
     const dots=[null,new Path2D(),new Path2D(),new Path2D()],lines=[null,new Path2D(),new Path2D(),new Path2D()];
-    const hasPres=A.presN>0,maxSp=3+5*Math.min(1.6,W/1280),pr=A.p;
+    const hasPres=A.presN>Math.max(12,A.n*0.004),maxSp=3+5*Math.min(1.6,W/1280),pr=A.p;
     for(let i=0;i<n;i++){const f=at(x[i],y[i]);let nvx=vx[i],nvy=vy[i];let t=ti[i];
       // gatherers pick a target cell on the silhouette (staggered), and re-pick when that cell empties as the person moves
       if(hasPres&&att[i]){if(t<0){if(Math.random()<0.04){this.pick(i);t=ti[i];}}else if(pr[t]<0.3||Math.random()<0.01){this.pick(i);t=ti[i];}}
