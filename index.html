@@ -749,7 +749,19 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
       if(best){Object.assign(best,b);best.used=true;best.seen=now;best.sx+=(b.cx-best.sx)*0.35;best.sy+=(b.cy-best.sy)*0.35;best.hist.push([best.sx,best.sy]);if(best.hist.length>60)best.hist.shift();}
       else{const t=Object.assign({id:this.nextId++,seen:now,born:now,sx:b.cx,sy:b.cy,hist:[[b.cx,b.cy]],used:true},b);T.push(t);this.log.unshift('motion '+t.id+' at '+(t.x|0)+','+(t.y|0));if(this.log.length>6)this.log.pop();}});
     for(let i=T.length-1;i>=0;i--){T[i].used=false;if(now-T[i].seen>120){this.log.unshift('motion '+T[i].id+' ended');if(this.log.length>6)this.log.pop();T.splice(i,1);}}},
-  update(){this.track(this.blobs(A.p,0.45,Math.max(10,A.n*0.003)));}
+  merge(bl){ // pieces of one person (a hand, a head) that sit close together become one blob
+    const mx=W*0.09,my=H*0.16;let changed=true;
+    while(changed){changed=false;for(let i=0;i<bl.length&&!changed;i++)for(let j=i+1;j<bl.length;j++){const a=bl[i],b=bl[j];
+      if(a.x-mx<b.x+b.w&&b.x-mx<a.x+a.w&&a.y-my<b.y+b.h&&b.y-my<a.y+a.h){const x0=Math.min(a.x,b.x),y0=Math.min(a.y,b.y),x1=Math.max(a.x+a.w,b.x+b.w),y1=Math.max(a.y+a.h,b.y+b.h),n=a.area+b.area;
+        bl[i]={x:x0,y:y0,w:x1-x0,h:y1-y0,cx:(a.cx*a.area+b.cx*b.area)/n,cy:(a.cy*a.area+b.cy*b.area)/n,conf:Math.max(a.conf,b.conf),area:n};bl.splice(j,1);changed=true;break;}}}
+    return bl;},
+  update(){
+    // prefer real person detections when the on-device model is running
+    if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.some(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person')){
+      const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;const bl=[];
+      FACE.ores.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;bl.push({x,y,w,h,cx:x+w/2,cy:y+h/2,conf:c.score,area:w*h});});
+      this.track(bl);return;}
+    this.track(this.merge(this.blobs(A.p,0.45,Math.max(10,A.n*0.003))));}
 };
 const mTrail={id:'trail',name:'궤도',desc:'사람 한 명 한 명의 동선을 색선으로 남기고, 서로 겹친 사람 수를 센다',
   init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.cv=mkCanvas(tw,th);this.clear();this.f=0;this.paths={};},
