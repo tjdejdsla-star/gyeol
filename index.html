@@ -341,9 +341,9 @@ async function startCamera(facing){
   try{await video.play();}catch(e){}
   source={el:video,kind:'camera'}; A.remote=false; S.facing=facing; S.mirror=(facing==='user'); save();
   const tr=st.getVideoTracks()[0]; if(tr) tr.addEventListener('ended',()=>{ if(source.kind==='camera'){useDemo();toast('카메라가 중단되어 데모로 전환했어요');} });
-  resetAnalysis(); keepAwake(); setStatus(facing==='user'?'전면 카메라':'후면 카메라');
+  resetAnalysis(); keepAwake(); setStatus(facing==='user'?'전면 카메라':'후면 카메라'); loadSeg();
 }
-function useFile(file){ stopStream(); video.srcObject=null; video.src=URL.createObjectURL(file); video.loop=true; video.muted=true; video.play().catch(()=>{}); source={el:video,kind:'file'}; A.remote=false; S.mirror=false; resetAnalysis(); setStatus('영상 파일'); }
+function useFile(file){ stopStream(); video.srcObject=null; video.src=URL.createObjectURL(file); video.loop=true; video.muted=true; video.play().catch(()=>{}); source={el:video,kind:'file'}; A.remote=false; S.mirror=false; resetAnalysis(); setStatus('영상 파일'); loadSeg(); }
 function camError(err){
   const name=(err&&err.name)||'';
   if(name==='InsecureContext') return '카메라는 https:// 주소(또는 localhost)에서만 켤 수 있어요. 파일을 HTTPS로 호스팅한 뒤 열어 주세요.';
@@ -354,6 +354,18 @@ function camError(err){
   return '카메라를 켤 수 없어요 ('+(name||'알 수 없는 오류')+'). 데모나 영상 파일로 볼 수 있어요.';
 }
 
+/* ---------- person segmentation (on-device model, optional): pixel-accurate person mask when available ---------- */
+const SEG={state:'idle',seg:null,idx:0,mask:null,mw:0,mh:0,last:0,ts:0,fresh:0};
+async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loading';
+  try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
+    SEG.seg=await vision.ImageSegmenter.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',delegate:'GPU'},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
+    let labels=[];try{labels=SEG.seg.getLabels()||[];}catch(e){}let idx=labels.findIndex(l=>/person|selfie|foreground/i.test(String(l)));if(idx<0)idx=labels.length>1?1:0;SEG.idx=idx;
+    SEG.state='ready';toast('사람 분할 모델 준비됨 · 형태가 더 정확해져요');setStatus(statusEl.textContent+' · 분할');}
+  catch(e){SEG.state='offline';}}
+function runSeg(now){if(SEG.state!=='ready'||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(now-SEG.last<40)return;SEG.last=now;
+  const ts=Math.max(SEG.ts+1,Math.round(performance.now()));SEG.ts=ts;
+  try{const res=SEG.seg.segmentForVideo(video,ts);const ms=res.confidenceMasks;const m=ms&&ms[Math.min(SEG.idx,ms.length-1)];
+    if(m){SEG.mw=m.width;SEG.mh=m.height;SEG.mask=m.getAsFloat32Array();SEG.fresh=now;}if(res.close)res.close();}catch(e){}}
 /* ---------- analysis: motion energy, optical flow (Lucas-Kanade), presence (background model) ---------- */
 const A={w:0,h:0,n:0,remote:false,frames:0,level:0,hotN:0,presN:0,sx:1,sy:1,cv:document.createElement('canvas')};
 A.cx=A.cv.getContext('2d',{willReadFrequently:true});
@@ -415,7 +427,11 @@ function analyze(){
   A.hotN=hotN; A.level+=(clamp(total/(n*0.05),0,1)-A.level)*0.2;
   // presence: either "moving things only" (motion energy, spread and held briefly) or background subtraction
   const bg=A.bg,pr=A.p,pres=A.pres; let presN=0;
-  if(S.detect==='motion'){
+  if(SEG.mask&&performance.now()-SEG.fresh<400){
+    // model mask sampled onto the analysis grid through the same crop (and mirror) as the frame
+    const mw=SEG.mw,mh=SEG.mh,mk=SEG.mask,kx=mw/sw,ky=mh/sh;
+    for(let y=0;y<h;y++){const vy=sy+(y+0.5)/h*ch;const my=Math.min(mh-1,(vy*ky)|0)*mw;for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x;const vx=sx+(xx+0.5)/w*cw;let v=mk[my+Math.min(mw-1,(vx*kx)|0)];v=v<0?0:v>1?1:v;const i=y*w+x;const sm=pr[i]*0.35+v*0.65;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}}
+  }else if(S.detect==='motion'){
     // motion energy -> close the gaps between moving edges (dilate then erode) -> brief hold, so a moving
     // person reads as one filled shape and nothing is compared against a stored background
     const hold=lerp(0.86,0.965,(S.trail-1)/9),R=Math.max(3,Math.round(w/26)),R2=2;
@@ -823,7 +839,7 @@ const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 움직임
     const lines=String(S.text||DEF.text).split('\n').filter(Boolean);const note=lines[(this.f/240|0)%lines.length];
     ctx.font='italic 700 '+(isTouch?20:28)+'px '+SANS;ctx.fillStyle=red;ctx.fillText(note,16,16+(S.debug?0:0));
     ctx.font=mono;ctx.fillStyle=blue;const y0=H-16-(TR.log.length+2)*16;
-    ctx.fillText('tracks:'+TR.tracks.length+'  motion:'+(A.level*100|0)+'%  grid:'+A.w+'x'+A.h+'  model:'+FACE.state+(FACE.obj?'+objects':'')+'  t:'+t.toFixed(1),16,y0);
+    ctx.fillText('tracks:'+TR.tracks.length+'  motion:'+(A.level*100|0)+'%  grid:'+A.w+'x'+A.h+'  model:'+FACE.state+(FACE.obj?'+objects':'')+'  seg:'+SEG.state+'  t:'+t.toFixed(1),16,y0);
     TR.log.forEach((l,i)=>ctx.fillText(l,16,y0+16*(i+1)));
     ctx.strokeStyle=rgba(blue,0.6);ctx.lineWidth=1;ctx.strokeRect(10,y0-6,Math.min(W-20,320),(TR.log.length+1)*16+12);
   }};
@@ -975,7 +991,7 @@ function drawSensorPreview(now){const w=A.w,h=A.h;if(!w)return;const cv=sensorVi
   sOv.cx.putImageData(sImg,0,0);c.drawImage(sOv,0,0,cv.width,cv.height);
   sFpsN++;if(now-sFpsT>1000){sFps=Math.round(sFpsN*1000/(now-sFpsT));sFpsN=0;sFpsT=now;bytesRate=bytesAcc/((now-bytesT)/1000);bytesAcc=0;bytesT=now;
     sensorStatus.textContent=(conn&&conn.open?'연결됨':'연결 대기')+' · '+sFps+' fps · '+(bytesRate/1024).toFixed(0)+' KB/s · '+w+'×'+h+' 격자';}}
-function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);const ok=analyze();drawSensorPreview(now);
+function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);runSeg(now);const ok=analyze();drawSensorPreview(now);
   if(ok&&conn&&conn.open&&now-lastSend>=45){const dc=conn.dataChannel;if(!dc||dc.bufferedAmount<65536){try{const b=encodePacket(seq++);conn.send(b);bytesAcc+=b.byteLength;lastSend=now;}catch(e){}}}}
 
 /* ---------- main loop ---------- */
@@ -989,6 +1005,7 @@ window.addEventListener('orientationchange',()=>{clearTimeout(rsT);rsT=setTimeou
 function loop(now){requestAnimationFrame(loop);if(now-last<14)return;const dt=Math.min(0.1,(now-last)/1000)||0.016;last=now;tAcc+=dt;frame++;
   if(role==='sensor'){sensorTick(now);return;}
   if(source.kind==='demo')drawDemo(tAcc,false);
+  runSeg(now);
   analyze();
   if(mode)mode.draw(tAcc,dt);
   if(S.debug)drawDebug();
@@ -1001,7 +1018,7 @@ S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=cl
 resize();useDemo();setMode(S.mode);syncCtl();document.body.classList.add('ui-on');
 const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
-window.__gyeol={S,A,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
