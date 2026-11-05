@@ -171,6 +171,11 @@ textarea.ta{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15
     </div>
   </div>
 
+  <div class="group"><h4>시 (Claude 연결)</h4>
+    <div class="rows"><div class="row"><input id="claudeKey" type="password" autocomplete="off" spellcheck="false" placeholder="Claude API 키 (sk-ant-…)" aria-label="Claude API 키" style="flex:1;min-width:0;font:inherit;font-size:15px;background:transparent;border:0;color:var(--label)"><button class="tbtn" id="btnKeySave">저장</button></div>
+      <button class="row btnrow red" id="btnKeyClear">키 지우기</button></div>
+    <p class="foot"><b>시</b> 모드에서 앞에 4초 가만히 서 있으면 Claude가 시를 씁니다. 키는 이 기기 브라우저에만 저장되고, 보내는 것은 <b>실루엣 모양과 측정값뿐</b>입니다 (사진·얼굴은 보내지 않음). 키가 없으면 결이 직접 짧은 시를 씁니다.</p>
+  </div>
   <div class="group"><h4>문장 (활자 모드)</h4>
     <div class="rows"><div class="row"><textarea class="ta" id="text" rows="4" aria-label="문장"></textarea></div></div>
     <p class="foot">줄바꿈으로 문장을 나눠요. 바꾸면 바로 반영됩니다.</p>
@@ -523,7 +528,7 @@ const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,fti
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='drops'||id==='space',wantPose=wantFace||id==='string'||id==='stars',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='drops'||id==='space'||id==='poem'||id==='aura',wantPose=wantFace||id==='string'||id==='stars',wantObj=!FACE.pose&&(wantPose);if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&now-FACE.plast>70){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;}catch(e){FACE.pres=null;}}
@@ -645,7 +650,7 @@ const mDetect={id:'detect',name:'인식',desc:'실제 화면 없이, 여러 겹�
   draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();const mono=(isTouch?9:10)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace',monoB='600 '+(isTouch?9:11)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';
     ctx.fillStyle='#0a0b0d';ctx.fillRect(0,0,W,H);
     // the body traced again and again: concentric contours of the blurred silhouette, drifting outward slowly
-    const pb=this.pb,w=A.w,h=A.h;pb.set(A.p);blur3(pb,this.tmp,w,h);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
+    const pb=this.pb,w=A.w,h=A.h;pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
     const LV=7,drift=(t*0.35)%1;for(let k=0;k<LV;k++){const lv=0.06+((k+drift)/LV)*0.7;const pth=new Path2D();isoPath(pb,w,h,lv,A.sx,A.sy,pth);const al=0.12+0.5*(lv/0.76);
       ctx.strokeStyle='rgba(205,228,226,'+al.toFixed(3)+')';ctx.lineWidth=k===LV-1?1.2:0.8;ctx.lineJoin='round';ctx.stroke(pth);}
     ctx.font=mono;ctx.textBaseline='alphabetic';ctx.textAlign='left';
@@ -1130,7 +1135,151 @@ const mSpace={id:'space',name:'공간',desc:'사람마다 끌개가 되어 공�
     ctx.font=(isTouch?9:10)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';ctx.fillStyle=light?'rgba(40,40,50,0.55)':'rgba(230,230,240,0.6)';ctx.textAlign='left';ctx.textBaseline='alphabetic';
     ctx.fillText('ATTRACTOR POINTS '+String(list.length).padStart(2,'0')+'   FIELD · AMALGAMATION · SPACE DEFINITION',18,H-18-(isTouch?70:0));
   }};
-const MODES=[mGaze,mShapes,mDots,mDotm,mPixel,mWave,mAscii,mCurtain,mSketch,mDrops,mTrail,mSpace,mContour,mString,mStars,mRefract,mSlit,mDetect];
+function pixelText(target,lines,x,y,w,h,opt){ // text drawn small, thresholded and scaled up without smoothing: a bitmap terminal look
+  const k=opt.k||2.4,cw=Math.max(1,Math.ceil(w/k)),ch=Math.max(1,Math.ceil(h/k));if(!pixelText.cv||pixelText.cv.width<cw||pixelText.cv.height<ch)pixelText.cv=mkCanvas(Math.max(cw,pixelText.cv?pixelText.cv.width:0),Math.max(ch,pixelText.cv?pixelText.cv.height:0));
+  const c=pixelText.cv.cx;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,pixelText.cv.width,pixelText.cv.height);c.fillStyle='#000';c.textBaseline='top';
+  lines.forEach(l=>{c.font=(l.weight||600)+' '+(l.size/k)+'px '+(opt.font||'ui-monospace,"SF Mono",Menlo,Consolas,"Apple SD Gothic Neo",monospace');
+    if(l.justify&&l.words&&l.words.length>1){const tw=l.words.reduce((a,wd)=>a+c.measureText(wd).width,0),gap=(w/k-tw)/(l.words.length-1);let xx=0;l.words.forEach(wd=>{c.fillText(wd,xx,l.y/k);xx+=c.measureText(wd).width+gap;});}
+    else c.fillText(l.text,0,l.y/k);});
+  const img=c.getImageData(0,0,cw,ch),d=img.data,rgb=hex(opt.color||'#ffffff');for(let i=0;i<d.length;i+=4){const a=d[i+3]>110?255:0;d[i]=rgb[0];d[i+1]=rgb[1];d[i+2]=rgb[2];d[i+3]=a;}c.putImageData(img,0,0);
+  target.imageSmoothingEnabled=false;target.drawImage(pixelText.cv,0,0,cw,ch,x,y,cw*k,ch*k);target.imageSmoothingEnabled=true;}
+function justifyWrap(c,text,maxW,font){c.font=font;const words=text.split(/\s+/).filter(Boolean),out=[];let cur=[];
+  for(const wd of words){const t=cur.concat([wd]).join(' ');if(c.measureText(t).width>maxW&&cur.length){out.push({words:cur,justify:true});cur=[wd];}else cur.push(wd);}
+  if(cur.length)out.push({words:cur,justify:false});return out;}
+/* ---------- Claude: writes a short poem for the person standing in front ----------
+   Only the silhouette (a black shape on white) and a few measurements leave the device; never the camera image.
+   The API key is typed into the settings on the exhibition device and stays in that browser. */
+const POET={sdk:null,loading:null,
+  key(){try{return localStorage.getItem('gyeol.claudeKey')||'';}catch(e){return '';}},
+  setKey(k){try{if(k)localStorage.setItem('gyeol.claudeKey',k);else localStorage.removeItem('gyeol.claudeKey');}catch(e){}},
+  async client(){const k=this.key();if(!k)return null;
+    if(!this.sdk){if(!this.loading)this.loading=import('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.136.0/+esm').then(m=>m.default||m.Anthropic).catch(()=>null);this.sdk=await this.loading;}
+    if(!this.sdk)return null;return new this.sdk({apiKey:k,dangerouslyAllowBrowser:true});},
+  async write(png,facts){const client=await this.client();if(!client)return null;
+    const system='당신은 학교 전시의 미디어아트 작품 「결」 속 시인입니다. 카메라 앞에 한동안 가만히 서 있던 한 사람에게, 그 사람만을 위한 짧은 한국어 시를 씁니다. '+
+      '받는 것은 그 사람의 실루엣(흰 바탕의 검은 형태)과 몇 가지 측정값뿐입니다. 자세·몸의 기울기·팔의 위치·서 있던 시간·거리·함께 있던 사람 수에서 출발하세요. '+
+      '외모나 체형을 평가하거나 짐작하지 말고, 성별·나이를 단정하지 마세요. 다정하고 담백하게, 상투적인 표현은 피합니다. '+
+      '형식: 첫 줄은 제목, 빈 줄 하나, 그다음 6~9행의 시. 제목과 시 외에는 아무것도 쓰지 마세요.';
+    const msg=await client.beta.messages.create({model:'claude-opus-5-5',max_tokens:4000,output_config:{effort:'low'},betas:['server-side-fallback-2026-07-01'],fallbacks:'default',system,
+      messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/png',data:png}},{type:'text',text:facts}]}]});
+    if(msg.stop_reason==='refusal')return null;
+    let text='';for(const b of msg.content||[])if(b.type==='text')text+=b.text;text=text.trim();if(!text)return null;
+    const parts=text.split(/\n\s*\n/);const title=parts.length>1?parts[0].trim():'';const body=(parts.length>1?parts.slice(1).join('\n'):text).split('\n').map(s=>s.trim()).filter(Boolean);
+    return {title,lines:body,by:'Claude'};},
+  local(m){ // offline: a few lines built from what was measured
+    const pick=a=>a[(Math.random()*a.length)|0];
+    const open=m.secs>12?pick(['오래 머문 자리에는','당신이 멈춘 동안','한참을 서 있던 그 자리에서']):pick(['잠시 멈춘 사이','숨을 고르는 동안','당신이 서 있던 몇 초']);
+    const arm=m.armUp?pick(['한쪽 팔이 하늘을 가리키고','손끝이 위를 향해 있었다']):pick(['두 팔은 조용히 내려와','손은 제 몸 곁에 머물고']);
+    const far=m.near>0.6?pick(['가까이 와 준 만큼','한 걸음 다가선 만큼']):pick(['조금 먼 곳에서도','멀리 선 채로도']);
+    const comp=m.people>1?pick(['곁에 선 누군가와 같은 빛을 나누었다','혼자가 아니어서 그림자가 겹쳤다']):pick(['혼자인 그림자도 결을 남긴다','당신 하나만으로 화면이 채워졌다']);
+    return {title:pick(['서 있던 결','머무름','당신의 윤곽','멈춘 시간']),lines:[open,'화면은 당신의 윤곽을 배웠다',arm,far,'빛은 당신을 또렷하게 기억했고',comp,'지나가도 괜찮다','결은 남는다'],by:'결'};}
+};
+const mPoem={id:'poem',name:'시',desc:'앞에 가만히 서 있으면 그 사람의 실루엣을 보고 Claude가 짧은 시를 쓴다. 실루엣 안과 옆에 시가 놓인다',
+  init(){this.state='idle';this.hold=0;this.lastPos=null;this.poem=null;this.shown=0;this.f=0;this.snap=null;this.snapBox=null;this.sil=mkCanvas(2,2);this.tmp=new Float32Array(A.n);this.cool=0;},
+  capture(tr){ // freeze the silhouette around this person: a blue-ready mask for the screen and a black-on-white PNG for Claude
+    const pad=Math.max(tr.w,tr.h)*0.05,x0=Math.max(0,tr.x-pad),y0=Math.max(0,tr.y-pad),x1=Math.min(W,tr.x+tr.w+pad),y1=Math.min(H,tr.y+tr.h+pad);
+    const gx0=(x0/A.sx)|0,gy0=(y0/A.sy)|0,gx1=Math.min(A.w-1,(x1/A.sx)|0),gy1=Math.min(A.h-1,(y1/A.sy)|0),gw=gx1-gx0+1,gh=gy1-gy0+1;
+    const m=new Float32Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++)m[y*gw+x]=A.p[(gy0+y)*A.w+gx0+x];this.snap={m,gw,gh};this.snapBox=[x0,y0,x1-x0,y1-y0];
+    const sz=256,c=mkCanvas(sz,Math.round(sz*gh/gw*A.sy/A.sx)),cx=c.cx,img=cx.createImageData(gw,gh);for(let i=0;i<gw*gh;i++){const v=m[i]>0.5?0:255;img.data[i*4]=img.data[i*4+1]=img.data[i*4+2]=v;img.data[i*4+3]=255;}
+    const s=mkCanvas(gw,gh);s.cx.putImageData(img,0,0);cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);cx.imageSmoothingEnabled=true;cx.drawImage(s,0,0,c.width,c.height);
+    return c.toDataURL('image/png').split(',')[1];},
+  facts(tr,secs){const L=tr.pose;let armUp=false;if(L&&L[15]&&L[11]&&L[16]&&L[12])armUp=(L[15].v>0.4&&L[15].y<L[11].y)||(L[16].v>0.4&&L[16].y<L[12].y);
+    const near=clamp((tr.h/H-0.2)/0.75,0,1),people=TR.tracks.filter(t=>TR.f-t.seen<=2&&(t.hits||0)>=4).length,hr=new Date().getHours();
+    const tod=hr<11?'오전':hr<14?'한낮':hr<18?'오후':'저녁';
+    return {secs,near,armUp,people,text:'측정값 — 가만히 서 있던 시간: '+secs.toFixed(0)+'초 / 카메라와의 거리: '+(near>0.66?'가까움':near>0.33?'중간':'멂')+' / 팔: '+(armUp?'한쪽 팔을 들어 올림':'내려져 있음')+' / 화면 속 사람 수: '+people+'명 / 시간대: '+tod+'. 이 사람에게 시를 써 주세요.'};},
+  async compose(tr,secs){this.state='writing';const png=this.capture(tr),fx=this.facts(tr,secs);let p=null;try{p=await POET.write(png,fx.text);}catch(e){p=null;}
+    this.poem=p||POET.local(fx);this.state='show';this.shown=performance.now();this.when=Date.now();},
+  draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const blue='#1420f0',white='#ffffff',portrait=false;
+    const split=portrait?H*0.5:W*0.5,lx=0,ly=0,lw=portrait?W:split,lh=portrait?split:H,rx=portrait?0:split,ry=portrait?split:0,rw=portrait?W:W-split,rh=portrait?H-split:H;
+    ctx.fillStyle=white;ctx.fillRect(lx,ly,lw,lh);ctx.fillStyle=blue;ctx.fillRect(rx,ry,rw,rh);
+    const tr=mainTrack();let still=false;if(tr){const pos=[tr.cx,tr.cy];if(this.lastPos){const d=Math.hypot(pos[0]-this.lastPos[0],pos[1]-this.lastPos[1]);still=d<W*0.01&&boxMotion(tr)<0.14;}this.lastPos=pos;}else this.lastPos=null;
+    this.cool=Math.max(0,this.cool-dt);
+    if(this.state==='idle'){this.hold=still?this.hold+dt:Math.max(0,this.hold-dt*2);if(this.hold>=4&&tr&&this.cool===0){this.hold=0;this.compose(tr,4);}}
+    else if(this.state==='show'){const age=(performance.now()-this.shown)/1000;if(age>35||(age>12&&!tr)){this.state='idle';this.poem=null;this.snap=null;this.cool=6;}}
+    const P=this.poem,body=P?P.lines:String(S.text||DEF.text).split('\n').filter(Boolean);
+    // left: the silhouette in solid blue; the poem printed across it, white where it lies on the body, blue where the lower lines spill onto the paper
+    let m,gw,gh,box;if(this.snap&&this.state!=='idle'){m=this.snap.m;gw=this.snap.gw;gh=this.snap.gh;box=this.snapBox;}else if(tr){const pad=Math.max(tr.w,tr.h)*0.05;box=[Math.max(0,tr.x-pad),Math.max(0,tr.y-pad),0,0];box[2]=Math.min(W,tr.x+tr.w+pad)-box[0];box[3]=Math.min(H,tr.y+tr.h+pad)-box[1];
+      const gx0=(box[0]/A.sx)|0,gy0=(box[1]/A.sy)|0,gx1=Math.min(A.w-1,((box[0]+box[2])/A.sx)|0),gy1=Math.min(A.h-1,((box[1]+box[3])/A.sy)|0);gw=gx1-gx0+1;gh=gy1-gy0+1;m=new Float32Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++)m[y*gw+x]=A.p[(gy0+y)*A.w+gx0+x];}
+    if(m&&gw>2&&gh>2){const sc=Math.min(lw*0.98/box[2],lh*0.86/box[3]),dw=Math.round(box[2]*sc),dh=Math.round(box[3]*sc),dx=Math.round(lx+(lw-dw)/2),dy=Math.round(ly+lh*0.93-dh);
+      if(this.sil.width!==gw||this.sil.height!==gh)this.sil=mkCanvas(gw,gh);const img=this.sil.cx.createImageData(gw,gh);for(let i=0;i<gw*gh;i++){let a=(m[i]-0.4)*6;a=a<0?0:a>1?1:a;img.data[i*4]=20;img.data[i*4+1]=32;img.data[i*4+2]=240;img.data[i*4+3]=a*255;}this.sil.cx.putImageData(img,0,0);
+      if(!this.L||this.L.width!==dw||this.L.height!==dh){this.L=mkCanvas(dw,dh);this.Tw=mkCanvas(dw,dh);this.Tb=mkCanvas(dw,dh);}
+      const Lc=this.L.cx;Lc.setTransform(1,0,0,1,0,0);Lc.globalCompositeOperation='source-over';Lc.clearRect(0,0,dw,dh);Lc.imageSmoothingEnabled=true;Lc.drawImage(this.sil,0,0,dw,dh);
+      // the text block: the poem wrapped to the body's width, stanza gaps kept
+      const fs=Math.max(10,Math.round(dw/13)),lhh=fs*1.12,rows=[];let y=fs*0.6;const probe=this.Tw.cx;
+      for(let rep=0;y<dh&&rep<6;rep++)body.forEach((ln,i)=>{if(y>=dh)return;justifyWrap(probe,ln,dw*0.92,'600 '+fs+'px ui-monospace,monospace').forEach(r=>{rows.push({words:r.words,justify:r.justify,text:r.words.join(' '),size:fs,y});y+=lhh;});if(i%2===1)y+=lhh*0.9;});
+      const Tw=this.Tw.cx;Tw.setTransform(1,0,0,1,0,0);Tw.clearRect(0,0,dw,dh);pixelText(Tw,rows,dw*0.04,0,dw*0.92,dh,{color:'#ffffff',k:2});
+      const Tb=this.Tb.cx;Tb.setTransform(1,0,0,1,0,0);Tb.clearRect(0,0,dw,dh);pixelText(Tb,rows.filter(r=>r.y>dh*0.52),dw*0.04,0,dw*0.92,dh,{color:blue,k:2});
+      // white text only on the body; blue text only off it
+      Tw.globalCompositeOperation='destination-in';Tw.drawImage(this.L,0,0);Tw.globalCompositeOperation='source-over';
+      Tb.globalCompositeOperation='destination-out';Tb.drawImage(this.L,0,0);Tb.globalCompositeOperation='source-over';
+      ctx.drawImage(this.L,dx,dy);ctx.drawImage(this.Tw,dx,dy);ctx.drawImage(this.Tb,dx,dy);}
+    else{pixelText(ctx,[{text:'앞에 서 주세요',size:Math.max(14,lw/24),y:0}],lx+lw*0.32,ly+lh*0.47,lw*0.5,lh*0.1,{color:blue,k:2});}
+    // right: the poem in large bitmap type, fully justified, double spaced, with a credit line
+    const pad=Math.round(Math.max(18,rw*0.07)),fs=Math.round(Math.max(14,Math.min(rw/14,rh/18))),maxW=rw-pad*2,lineH=fs*2.05;const rows=[];let y=0;const probe=ctx;
+    if(this.state==='show'&&P){let chars=Math.floor(((performance.now()-this.shown)/1000)*24);const all=[];if(P.title){all.push({kind:'t',text:P.title});all.push({kind:'g'});}P.lines.forEach(l=>all.push({kind:'l',text:l}));all.push({kind:'g'});
+      const d=new Date(this.when||Date.now());all.push({kind:'s',text:(P.by==='Claude'?'Claude가 당신에게':'결이 당신에게')+', '+d.toLocaleDateString('ko-KR')+' '+d.toTimeString().slice(0,5)});
+      // a stanza flows as one paragraph so justification spreads across it, like the reference
+      const para=[];let cur=[];all.forEach(it=>{if(it.kind==='l')cur.push(it.text);else{if(cur.length){para.push({kind:'p',text:cur.join(' ')});cur=[];}para.push(it);}});if(cur.length)para.push({kind:'p',text:cur.join(' ')});
+      for(const it of para){if(it.kind==='g'){y+=fs*0.9;continue;}const size=it.kind==='s'?Math.round(fs*0.8):fs;const wr=justifyWrap(probe,it.text,maxW,'600 '+size+'px ui-monospace,monospace');
+        for(const r of wr){const txt=r.words.join(' ');if(chars<=0)break;const vis=txt.slice(0,chars);chars-=txt.length;const full=vis.length===txt.length;rows.push({words:full?r.words:vis.split(' '),justify:full&&r.justify,text:vis,size,y,weight:it.kind==='t'?800:600});y+=it.kind==='s'?size*1.45:lineH;}
+        if(chars<=0)break;}
+      pixelText(ctx,rows,rx+pad,ry+pad,maxW,rh-pad,{color:'#ffffff',k:2.2});}
+    else{const msg=this.state==='writing'?['당신의 윤곽을 읽고 있어요.','','시를 쓰는 중'+'.'.repeat(1+(((t*2)|0)%3))]:['카메라 앞에 가만히 서 있으면','당신에게 시를 한 편 써 드릴게요.'];
+      msg.forEach(l=>{if(!l){y+=fs*0.9;return;}justifyWrap(probe,l,maxW,'600 '+fs+'px ui-monospace,monospace').forEach(r=>{rows.push({words:r.words,justify:r.justify,text:r.words.join(' '),size:fs,y});y+=lineH;});});
+      pixelText(ctx,rows,rx+pad,ry+pad,maxW,rh-pad,{color:'#ffffff',k:2.2});
+      if(this.state==='idle'&&this.hold>0){const r=fs*0.9,cx=rx+pad+r,cy=ry+pad+y+fs+r;ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,r,0,TAU);ctx.stroke();ctx.strokeStyle=white;ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+TAU*Math.min(1,this.hold/4));ctx.stroke();}
+      pixelText(ctx,[{text:POET.key()?'실루엣 모양만 Claude에게 보냅니다. 사진은 보내지 않습니다.':'API 키가 없어 결이 직접 씁니다. 설정에서 Claude를 연결하세요.',size:Math.max(10,fs*0.5),y:0}],rx+pad,ry+rh-pad-fs,maxW,fs*1.2,{color:'#c8cdfb',k:1.6});}
+  }};
+
+/* 아우라: a grainy thermal aura for souvenir photos. It only blooms when someone comes close enough */
+const mAura={id:'aura',name:'아우라',desc:'가까이 다가오면 사람이 열화상처럼 주황빛 아우라로 피어난다. 인증샷용',
+  init(){this.s=isTouch?1.6:2;const w=Math.max(1,Math.round(W/this.s)),h=Math.max(1,Math.round(H/this.s));this.cv=mkCanvas(w,h);this.img=new ImageData(w,h);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.k=0;this.f=0;
+    // colour ramp: pink ground, white haze, cyan rim, orange body, yellow core
+    const stops=[[0,[234,146,204]],[0.1,[240,184,216]],[0.2,[246,228,234]],[0.3,[198,226,232]],[0.4,[124,198,218]],[0.5,[150,190,200]],[0.58,[232,152,78]],[0.75,[238,160,64]],[0.9,[242,180,74]],[1,[244,198,96]]];const lut=new Uint8ClampedArray(256*3);
+    for(let i=0;i<256;i++){const v=i/255;let a=stops[0],b=stops[stops.length-1];for(let j=0;j<stops.length-1;j++)if(v>=stops[j][0]&&v<=stops[j+1][0]){a=stops[j];b=stops[j+1];break;}const f=(v-a[0])/((b[0]-a[0])||1);for(let c=0;c<3;c++)lut[i*3+c]=a[1][c]+(b[1][c]-a[1][c])*f;}this.lut=lut;},
+  draw(t,dt){this.f++;if((this.f&1)===0)PEOPLE.update();const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
+    // how close is the nearest person: the aura opens up only past a threshold, and eases in and out
+    let near=0;PEOPLE.list.forEach(p=>{if(p.near>near)near=p.near;});if(!PEOPLE.list.length){let top=h,bot=0;for(let i=0;i<A.n;i++)if(A.p[i]>0.5){const y=(i/w)|0;if(y<top)top=y;if(y>bot)bot=y;}near=bot>top?clamp(((bot-top)/h-0.2)/0.75,0,1):0;}
+    const target=clamp((near-0.35)/0.3,0,1);this.k+=(target-this.k)*0.04;const k=this.k,lut=this.lut,cw=this.cv.width,ch=this.cv.height,out=this.img.data,mw=w-1.001,mh=h-1.001,seed=(this.f*7919)>>>0;
+    let r=seed||1;const rnd=()=>{r^=r<<13;r^=r>>>17;r^=r<<5;return ((r>>>0)%1000)/1000;};
+    for(let y=0;y<ch;y++){let gy=(y+0.5)*h/ch-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,yy=y/ch,base=0.12-0.12*yy+0.02*Math.sin(t*0.3+yy*3);
+      for(let x=0;x<cw;x++){let gx=(x+0.5)*w/cw-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0,i0=y0*w+x0;
+        const v=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy;
+        let q=(base+0.08+v*(0.2+0.8*k)*1.25+(rnd()-0.5)*0.2)*255;q=q<0?0:q>255?255:q;const li=(q|0)*3,n=(rnd()-0.5)*34,o=(y*cw+x)*4;
+        out[o]=lut[li]+n;out[o+1]=lut[li+1]+n;out[o+2]=lut[li+2]+n;out[o+3]=255;}}
+    this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);
+    // a small sun mark at the bottom, and a nudge when nobody is close yet
+    const cx=W/2,cy=H-Math.max(54,H*0.09)-(isTouch?60:0),R=Math.max(16,Math.min(W,H)*0.035);ctx.strokeStyle='rgba(255,255,255,0.95)';ctx.lineWidth=2;ctx.beginPath();for(let i=0;i<14;i++){const a=i/14*TAU;ctx.moveTo(cx+Math.cos(a)*R*1.15,cy+Math.sin(a)*R*1.15);ctx.lineTo(cx+Math.cos(a)*R*1.55,cy+Math.sin(a)*R*1.55);}ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.95)';ctx.beginPath();ctx.arc(cx,cy,R,0,TAU);ctx.fill();ctx.fillStyle='#e48bbf';ctx.font='800 '+R*0.9+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('결',cx,cy+R*0.04);
+    if(k<0.2){ctx.font='500 '+Math.max(13,W/70)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fillText('조금 더 가까이 와 보세요',cx,cy-R*2.6);}ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  }};
+/* 색점: one flat yellow ground; each person becomes a grid of round dots, every dot carrying the real colour of that spot */
+const mColorDots={id:'colordots',name:'색점',desc:'노란 단색 배경 위에 사람만 동그라미 격자로 찍힌다. 동그라미마다 그 자리의 실제 색을 담는다',
+  init(){this.cols=isTouch?48:80;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.cv=mkCanvas(this.cols,this.rows);const n=this.cols*this.rows;this.cr=new Float32Array(n*3);this.cov=new Float32Array(n);},
+  draw(t){const bg=[255,247,106];ctx.fillStyle='rgb(255,247,106)';ctx.fillRect(0,0,W,H);
+    // the camera frame sampled down to one pixel per dot gives each dot its colour; nothing of the frame itself is shown
+    drawFrameToSmall(this.cv,this.cols,this.rows);let px=null;try{px=this.cv.cx.getImageData(0,0,this.cols,this.rows).data;}catch(e){}
+    const cols=this.cols,rows=this.rows,c=this.cell,R=c*0.43,cr=this.cr,cov=this.cov;
+    for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const i=r*cols+k,x=(k+0.5)*c,y=(r+0.5)*c;let m=0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)m+=pAt(x+a*c*0.3,y+b*c*0.3);m/=9;
+      cov[i]+=(m-cov[i])*0.35;const cv=cov[i];if(cv<0.2)continue;
+      const sr=px?px[i*4]:120,sg=px?px[i*4+1]:120,sb=px?px[i*4+2]:120;cr[i*3]+=(sr-cr[i*3])*0.3;cr[i*3+1]+=(sg-cr[i*3+1])*0.3;cr[i*3+2]+=(sb-cr[i*3+2])*0.3;
+      // slightly muted, and paler toward the edge of the body where the dot only half covers it
+      const mix=clamp((cv-0.2)/0.6,0,1)*0.92;let rr=cr[i*3]*0.92,gg=cr[i*3+1]*0.92,bb=cr[i*3+2]*0.85;rr=bg[0]+(rr-bg[0])*mix;gg=bg[1]+(gg-bg[1])*mix;bb=bg[2]+(bb-bg[2])*mix;
+      ctx.fillStyle='rgb('+(rr|0)+','+(gg|0)+','+(bb|0)+')';ctx.beginPath();ctx.arc(x,y,R,0,TAU);ctx.fill();}
+  }};
+/* 채움: the camera scene stays as it is; only the people are filled with one flat colour */
+const mFill={id:'fill',name:'채움',desc:'카메라 속 공간은 그대로 두고, 사람만 형광 노랑 한 가지 색으로 채운다',
+  init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.src=mkCanvas(tw,th);this.mk=mkCanvas(A.w,A.h);this.big=mkCanvas(Math.max(1,Math.round(W/2)),Math.max(1,Math.round(H/2)));},
+  draw(t){drawFrameTo(this.src);ctx.drawImage(this.src,0,0,W,H);
+    // a clean, slightly soft-edged mask scaled up smoothly, then flooded with yellow
+    buildMask(this.mk,null,A.p,0.4,5);const b=this.big.cx,bw=this.big.width,bh=this.big.height;b.setTransform(1,0,0,1,0,0);b.globalCompositeOperation='source-over';b.clearRect(0,0,bw,bh);b.imageSmoothingEnabled=true;b.filter='blur(1px)';b.drawImage(this.mk,0,0,bw,bh);b.filter='none';
+    b.globalCompositeOperation='source-in';const g=b.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#fcf86e');g.addColorStop(1,'#f8f262');b.fillStyle=g;b.fillRect(0,0,bw,bh);b.globalCompositeOperation='source-over';
+    ctx.drawImage(this.big,0,0,W,H);
+  }};
+function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analysis, at a tiny size (one pixel per dot)
+  const c=cv.cx;c.setTransform(1,0,0,1,0,0);const el=source.el;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!el||A.remote||!sw||!sh){c.fillStyle='#777';c.fillRect(0,0,w,h);return;}
+  const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;c.save();if(S.mirror){c.translate(w,0);c.scale(-1,1);}c.imageSmoothingEnabled=true;try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(e){}c.restore();}
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mPixel,mWave,mAscii,mCurtain,mSketch,mDrops,mTrail,mSpace,mContour,mString,mStars,mRefract,mSlit,mDetect,mPoem,mAura,mFill];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1140,7 +1289,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',';
+const KEYS='1234567890-=[]\\;\',./`~';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
@@ -1170,6 +1319,9 @@ const swMirror=$('#swMirror'),textEl=$('#text');
 function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));
   swMirror.checked=!!S.mirror;if(document.activeElement!==textEl)textEl.value=S.text;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
+$('#btnKeySave').addEventListener('click',()=>{const v=$('#claudeKey').value.trim();POET.setKey(v);$('#claudeKey').value='';$('#claudeKey').placeholder=v?'저장됨 · 바꾸려면 새 키 입력':'Claude API 키 (sk-ant-…)';toast(v?'Claude 키를 저장했어요':'키가 비어 있어요');});
+$('#btnKeyClear').addEventListener('click',()=>{POET.setKey('');$('#claudeKey').placeholder='Claude API 키 (sk-ant-…)';toast('키를 지웠어요');});
+if(POET.key())$('#claudeKey').placeholder='저장됨 · 바꾸려면 새 키 입력';
 textEl.addEventListener('change',()=>{S.text=textEl.value;save();if(mode&&mode.renderText)mode.renderText();});
 $('#btnBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
 $('#btnFull').addEventListener('click',toggleFull);$('#btnFullBar').addEventListener('click',toggleFull);
