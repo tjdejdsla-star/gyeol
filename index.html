@@ -804,17 +804,26 @@ const mWave={id:'wave',name:'파동',desc:'움직이면 실루엣이 파형과 �
   }};
 
 /* 문자: people typed out in dense symbols, their edges in light marks, the rest of the frame a faint field */
-const mAscii={id:'ascii',name:'문자',desc:'밝기에 따라 다른 기호로 명암을 찍는 문자 그림. 사람은 진한 기호로',
+const mAscii={id:'ascii',name:'문자',desc:'밝기에 따라 다른 기호로 명암을, 윤곽은 방향에 맞는 선 기호(/ \\ | - _)로 찍는 문자 그림',
   init(){const cols=isTouch?56:96;this.cols=cols;this.cw=W/cols;this.ch=this.cw*1.55;this.rows=Math.ceil(H/this.ch);
-    this.dense='@#W8%&MB$0XZS?*+=~:;-,.'.split('');this.light='#XV%+=:-.  '.split('');this.seed=(Math.random()*999)|0;},
+    this.dense='@#W8%&MB$0XZS?*+=~:;-,.'.split('');this.light='#XV%+=:-.  '.split('');},
+  // the glyph that follows an edge: its tangent is perpendicular to the gradient (y grows downward)
+  edgeGlyph(gx,gy){const tx=-gy,ty=gx;let a=Math.atan2(ty,tx);if(a<0)a+=Math.PI;const d=a*180/Math.PI;
+    if(d<22.5||d>=157.5)return gy<0?'_':'-';if(d<67.5)return '\\';if(d<112.5)return '|';return '/';},
   draw(t){const P=pal();paper(P.light?'#f4f4f1':P.bg);const ink=P.light?'#141414':P.fg[0];ctx.font='500 '+(this.cw*1.3)+'px '+'ui-monospace,Menlo,Consolas,monospace';ctx.textBaseline='middle';ctx.textAlign='center';
     const cols=this.cols,rows=this.rows,cw=this.cw,ch=this.ch,dense=this.dense,light=this.light,nd=dense.length,nl=light.length,inv=!P.light;
-    // luminance -> symbol: darker pixels get heavier glyphs (reversed on dark palettes so people stay the heavy ones)
-    const groups=[[],[],[]];
-    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const x=(c+0.5)*cw,y=(r+0.5)*ch;const f=at(x,y);let l=f.lum/255;if(inv)l=1-l;const p=f.p;let g,sym;
-      if(p>0.5){const k=Math.max(0,Math.min(1,l*0.75));sym=dense[Math.min(nd-1,(k*(nd-6))|0)];g=0;}
+    const groups=[[],[],[]];const sx=cw*1.1,sy=ch*1.1;
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const x=(c+0.5)*cw,y=(r+0.5)*ch;const f=at(x,y);let l=f.lum/255;if(inv)l=1-l;const p=f.p;const lum0=f.lum;let g,sym=null;
+      // 1) silhouette outline: mask gradient across neighbouring cells
+      const gpx=pAt(x+sx,y)-pAt(x-sx,y),gpy=pAt(x,y+sy)-pAt(x,y-sy);const gm=Math.hypot(gpx,gpy);
+      if(gm>0.4&&p<0.6){sym=this.edgeGlyph(gpx,gpy);g=0;}
+      else if(p>0.5){
+        // 2) inside: strong brightness edges become line glyphs too, the rest shade by tone
+        const lx=at(x+sx,y).lum-at(x-sx,y).lum,ly=at(x,y+sy).lum-at(x,y-sy).lum;const lm=Math.hypot(lx,ly);
+        if(lm>70){sym=this.edgeGlyph(inv?-lx:lx,inv?-ly:ly);g=0;}
+        else{const k=Math.max(0,Math.min(1,l*0.75));sym=dense[Math.min(nd-1,(k*(nd-6))|0)];g=0;}}
       else if(p>0.25){sym=dense[Math.min(nd-1,8+((l*8)|0))];g=1;}
-      else{const k=Math.min(1,l*1.15+0.1);const idx=(k*(nl-1))|0;sym=light[idx];if(sym===' ')continue;g=2;}
+      else{const k=Math.min(1,l*1.15+0.1);sym=light[(k*(nl-1))|0];if(sym===' ')continue;g=2;}
       groups[g].push(sym,x,y);}
     ctx.fillStyle=ink;for(let i=0;i<groups[0].length;i+=3)ctx.fillText(groups[0][i],groups[0][i+1],groups[0][i+2]);
     ctx.fillStyle=rgba(ink,0.7);for(let i=0;i<groups[1].length;i+=3)ctx.fillText(groups[1][i],groups[1][i+1],groups[1][i+2]);
