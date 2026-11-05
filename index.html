@@ -633,7 +633,14 @@ const mScribble={id:'scribble',name:'낙서',desc:'볼펜 낙서가 사람의 �
         c.stroke();}}
     ctx.drawImage(this.cv,0,0,W,H);
   }};
-const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0};
+const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,ftime:-1e9,otime:-1e9};
+const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500);
+// run the on-device face / person detectors for the modes that use them, every frame they are due
+function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze',wantObj=id==='detect'||id==='trail'||id==='drops'||id==='gaze';if(!wantFace&&!wantObj)return;
+  if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
+  if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
+  if(wantObj&&FACE.obj&&now-FACE.olast>140){FACE.olast=now;try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;}catch(e){FACE.ores=null;}}}
 async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='loading';
   try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
     FACE.det=await vision.FaceDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});
@@ -661,7 +668,7 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
     return bl;},
   update(){
     // prefer real person detections when the on-device model is running
-    if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.some(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person')){
+    if(objFresh()&&FACE.ores.detections&&FACE.ores.detections.some(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person')){
       const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;const bl=[];
       FACE.ores.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;bl.push({x,y,w,h,cx:x+w/2,cy:y+h/2,conf:c.score,area:w*h});});
       this.track(bl);return;}
@@ -679,7 +686,7 @@ const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 하나의 동선�
         pa.pts.push([tr.sx,tr.sy,t]);}});
     // each path is a small bundle of hairlines: thickest and darkest at the head, thinning and fading with age.
     // Multiply (or add, on dark palettes) makes every crossing read darker without extra marks.
-    const BANDS=10,base=Math.max(0.8,Math.min(2,W/1000)),gap=base*3;
+    const BANDS=10,base=Math.max(1.1,Math.min(2,W/1000)),gap=base*3;
     ctx.save();ctx.globalCompositeOperation=P.light?'multiply':'lighter';ctx.lineCap='round';ctx.lineJoin='round';
     for(const k in paths){const pa=paths[k],pts=pa.pts;while(pts.length&&t-pts[0][2]>fadeT)pts.shift();
       if(pts.length<3){if(!pts.length&&t-pa.seen>fadeT)delete paths[k];continue;}
@@ -710,9 +717,6 @@ const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 움직임
   draw(t){this.f++;this.drawSource();const P=pal(),red='#FF2A2A',blue='#2F6BFF';
     if((this.f&1)===0){TR.update();}
     // real face detection (on-device model) when a video source is available
-    if(!EMBEDDED&&(source.kind==='camera'||source.kind==='file')){if(FACE.state==='idle')loadFace();
-      if(FACE.state==='ready'&&t*1000-FACE.last>66){FACE.last=t*1000;try{FACE.res=FACE.det.detectForVideo(video,performance.now());}catch(e){FACE.res=null;}}
-      if(FACE.obj&&t*1000-FACE.olast>120){FACE.olast=t*1000;try{FACE.ores=FACE.obj.detectForVideo(video,performance.now()+0.5);}catch(e){FACE.ores=null;}}}
     const mono=(isTouch?11:13)+'px '+'ui-monospace,Menlo,monospace';
     // flow vectors in blue, sampled sparsely
     ctx.strokeStyle=rgba(blue,0.9);ctx.lineWidth=1;const vec=new Path2D(),st=Math.max(3,Math.round(A.w/40));
@@ -727,11 +731,11 @@ const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 움직임
       if(tr.hist.length>2){ctx.strokeStyle=rgba(blue,0.8);ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();tr.hist.forEach((pt,i)=>{if(i)ctx.lineTo(pt[0],pt[1]);else ctx.moveTo(pt[0],pt[1]);});ctx.stroke();ctx.setLineDash([]);}
       ctx.fillStyle=blue;ctx.beginPath();ctx.arc(tr.cx,tr.cy,3,0,TAU);ctx.fill();});
     // objects and people from the on-device detector (red)
-    if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
+    if(objFresh()&&FACE.ores.detections&&FACE.ores.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
       FACE.ores.detections.forEach(o=>{const bb=o.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;const cat=o.categories&&o.categories[0];const name=cat?cat.categoryName:'object',sc=cat?cat.score:0;
         ctx.strokeStyle=red;ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);const lab=name+' '+sc.toFixed(2);const tw=ctx.measureText(lab).width+8;ctx.fillStyle=red;ctx.fillRect(x,y-18,tw,16);ctx.fillStyle='#fff';ctx.fillText(lab,x+4,y-16);});}
     // real faces (when the model is loaded)
-    if(FACE.res&&FACE.res.detections&&FACE.res.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
+    if(faceFresh()&&FACE.res.detections&&FACE.res.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
       FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;const sc=f.categories&&f.categories[0]?f.categories[0].score:0;
         ctx.strokeStyle='#FFD400';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);ctx.fillStyle='#FFD400';ctx.fillText('face '+sc.toFixed(2),x,y-14);
         (f.keypoints||[]).forEach(kp=>{let px=(kp.x*sw-sx0)*k,py=(kp.y*sh-sy0)*k;if(S.mirror)px=W-px;ctx.beginPath();ctx.arc(px,py,2.5,0,TAU);ctx.fill();});});}
@@ -748,7 +752,7 @@ const ASSET={logo:null,shield:null,scene:null};
 function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
 function boxMotion(tr){const x0=clamp((tr.x/A.sx)|0,0,A.w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,A.w-1),y0=clamp((tr.y/A.sy)|0,0,A.h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,A.h-1);let sum=0,n=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){sum+=A.er[y*A.w+x];n++;}return n?sum/n:0;}
 function mainTrack(){let best=null;TR.tracks.forEach(t=>{if(TR.f-t.seen>2)return;if(!best||t.area>best.area)best=t;});return best;}
-function largestFace(){if(!(FACE.state==='ready'&&FACE.res&&FACE.res.detections&&FACE.res.detections.length))return null;
+function largestFace(){if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detections&&FACE.res.detections.length))return null;
   const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw)return null;const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;let best=null;
   FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;
     let frontal=true;const kp=f.keypoints;if(kp&&kp.length>=3){const ex=(kp[0].x+kp[1].x)/2,nx=kp[2].x,span=Math.abs(kp[1].x-kp[0].x)||1e-3;frontal=Math.abs(nx-ex)/span<0.45;}
@@ -1094,6 +1098,7 @@ function loop(now){requestAnimationFrame(loop);if(now-last<14)return;const dt=Ma
   if(role==='sensor'){sensorTick(now);return;}
   if(source.kind==='demo')drawDemo(tAcc,false);
   runSeg(now);
+  runDetectors();
   analyze();
   if(mode)mode.draw(tAcc,dt);
   fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps';fpsN=0;fpsT=now;}
@@ -1105,7 +1110,7 @@ S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=cl
 resize();useDemo();setMode(S.mode);syncCtl();document.body.classList.add('ui-on');
 const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
-window.__gyeol={S,A,SEG,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
