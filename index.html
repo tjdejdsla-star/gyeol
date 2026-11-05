@@ -677,7 +677,66 @@ const mScribble={id:'scribble',name:'낙서',desc:'볼펜 낙서가 사람의 �
         c.stroke();}}
     ctx.drawImage(this.cv,0,0,W,H);
   }};
-const MODES=[mShapes,mDots,mGlyphs,mCurtain,mPaint,mWords,mPattern,mScribble,mFlow,mInk,mRipple,mEcho];
+const FACE={state:'idle',det:null,res:null,last:0};
+async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='loading';
+  try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
+    FACE.det=await vision.FaceDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});
+    FACE.state='ready';toast('얼굴 인식 모델 준비됨');}catch(e){FACE.state='offline';}}
+const mDetect={id:'detect',name:'인식',desc:'카메라 영상 위에 인식 박스·ID·궤적을 겹친다',
+  init(){this.tracks=[];this.nextId=1;this.vis=new Uint8Array(A.n);this.q=new Int32Array(A.n);this.f=0;this.log=[];},
+  drawSource(){const el=source.el;if(!el||A.remote){fillBg();return;}const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh){fillBg();return;}
+    const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;
+    ctx.save();if(S.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(el,sx,sy,cw,ch,0,0,W,H);}catch(e){}ctx.restore();
+    ctx.fillStyle='rgba(0,0,0,0.18)';ctx.fillRect(0,0,W,H);},
+  blobs(p,thr,minCnt){const w=A.w,h=A.h,n=A.n,vis=this.vis,q=this.q,out=[];vis.fill(0);
+    for(let s0=0;s0<n;s0++){if(vis[s0]||p[s0]<thr)continue;let head=0,tail=0;q[tail++]=s0;vis[s0]=1;let minx=w,maxx=0,miny=h,maxy=0,cnt=0,sum=0,sx=0,sy=0;
+      while(head<tail){const i=q[head++];const x=i%w,y=(i/w)|0;cnt++;sum+=p[i];sx+=x;sy+=y;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
+        if(x>0&&!vis[i-1]&&p[i-1]>=thr){vis[i-1]=1;q[tail++]=i-1;}if(x<w-1&&!vis[i+1]&&p[i+1]>=thr){vis[i+1]=1;q[tail++]=i+1;}
+        if(y>0&&!vis[i-w]&&p[i-w]>=thr){vis[i-w]=1;q[tail++]=i-w;}if(y<h-1&&!vis[i+w]&&p[i+w]>=thr){vis[i+w]=1;q[tail++]=i+w;}}
+      if(cnt>=minCnt)out.push({x:minx*A.sx,y:miny*A.sy,w:(maxx-minx+1)*A.sx,h:(maxy-miny+1)*A.sy,cx:(sx/cnt+0.5)*A.sx,cy:(sy/cnt+0.5)*A.sy,conf:Math.min(0.99,0.6+sum/cnt*0.4),area:cnt});}
+    return out;},
+  track(bl){const T=this.tracks,now=this.f;bl.forEach(b=>{let best=null,bd=1e9;T.forEach(t=>{if(t.used)return;const d=Math.hypot(t.cx-b.cx,t.cy-b.cy);if(d<bd&&d<Math.max(W,H)*0.18){bd=d;best=t;}});
+      if(best){Object.assign(best,b);best.used=true;best.seen=now;best.hist.push([b.cx,b.cy]);if(best.hist.length>40)best.hist.shift();}
+      else{const t=Object.assign({id:this.nextId++,seen:now,born:now,hist:[[b.cx,b.cy]],used:true},b);T.push(t);this.log.unshift('id '+t.id+' detected  '+(t.x|0)+','+(t.y|0));if(this.log.length>6)this.log.pop();}});
+    for(let i=T.length-1;i>=0;i--){T[i].used=false;if(now-T[i].seen>20){this.log.unshift('id '+T[i].id+' lost');if(this.log.length>6)this.log.pop();T.splice(i,1);}}},
+  draw(t){this.f++;this.drawSource();const P=pal(),red='#FF2A2A',blue='#2F6BFF';
+    if((this.f&1)===0){this.track(this.blobs(A.p,0.45,Math.max(10,A.n*0.003)));this.mboxes=this.blobs(A.er,0.35,4);}
+    // real face detection (on-device model) when a video source is available
+    if(!EMBEDDED&&(source.kind==='camera'||source.kind==='file')){if(FACE.state==='idle')loadFace();
+      if(FACE.state==='ready'&&t*1000-FACE.last>66){FACE.last=t*1000;try{FACE.res=FACE.det.detectForVideo(video,performance.now());}catch(e){FACE.res=null;}}}
+    const mono=(isTouch?11:13)+'px '+'ui-monospace,Menlo,monospace';
+    // flow vectors in blue, sampled sparsely
+    ctx.strokeStyle=rgba(blue,0.9);ctx.lineWidth=1;const vec=new Path2D(),st=Math.max(3,Math.round(A.w/40));
+    for(let y=0;y<A.h;y+=st)for(let x=0;x<A.w;x+=st){const i=y*A.w+x;if(A.e[i]<0.12)continue;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;vec.moveTo(px,py);vec.lineTo(px+A.u[i]*A.sx*4,py+A.v[i]*A.sy*4);}
+    ctx.stroke(vec);
+    ctx.font=mono;ctx.textBaseline='top';ctx.textAlign='left';
+    this.tracks.forEach(tr=>{const x=tr.x,y=tr.y,w=tr.w,h=tr.h,cl=w*0.18;
+      ctx.strokeStyle=red;ctx.lineWidth=isTouch?1.5:2;ctx.strokeRect(x,y,w,h);
+      // corner marks + face box (upper part of the body)
+      ctx.lineWidth=isTouch?3:4;ctx.beginPath();ctx.moveTo(x,y+cl);ctx.lineTo(x,y);ctx.lineTo(x+cl,y);ctx.moveTo(x+w-cl,y);ctx.lineTo(x+w,y);ctx.lineTo(x+w,y+cl);ctx.moveTo(x,y+h-cl);ctx.lineTo(x,y+h);ctx.lineTo(x+cl,y+h);ctx.moveTo(x+w-cl,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w,y+h-cl);ctx.stroke();
+      if(FACE.state!=='ready'&&h>w*1.4){const fs=Math.min(w*0.7,h*0.22);ctx.lineWidth=1.5;ctx.strokeRect(tr.cx-fs/2,y+h*0.02,fs,fs);ctx.fillStyle=red;ctx.fillText('face',tr.cx-fs/2,y+h*0.02+fs+2);}
+      // label
+      const lab='person '+tr.conf.toFixed(2)+'  id:'+tr.id;const tw=ctx.measureText(lab).width+8;ctx.fillStyle=red;ctx.fillRect(x,y-18,tw,16);ctx.fillStyle='#fff';ctx.fillText(lab,x+4,y-16);
+      ctx.fillStyle=red;ctx.fillText((tr.cx|0)+','+(tr.cy|0)+'  '+(tr.w|0)+'x'+(tr.h|0),x,y+h+3);
+      // trajectory
+      if(tr.hist.length>2){ctx.strokeStyle=rgba(red,0.8);ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();tr.hist.forEach((pt,i)=>{if(i)ctx.lineTo(pt[0],pt[1]);else ctx.moveTo(pt[0],pt[1]);});ctx.stroke();ctx.setLineDash([]);}
+      ctx.fillStyle=red;ctx.beginPath();ctx.arc(tr.cx,tr.cy,3,0,TAU);ctx.fill();});
+    // motion boxes (blue)
+    ctx.font=mono;ctx.strokeStyle=blue;ctx.lineWidth=1;(this.mboxes||[]).forEach(b=>{ctx.strokeRect(b.x,b.y,b.w,b.h);ctx.fillStyle=blue;ctx.fillText('motion '+b.conf.toFixed(2),b.x,b.y-14);});
+    // real faces (when the model is loaded)
+    if(FACE.res&&FACE.res.detections&&FACE.res.detections.length){const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;
+      FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;const sc=f.categories&&f.categories[0]?f.categories[0].score:0;
+        ctx.strokeStyle='#FFD400';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);ctx.fillStyle='#FFD400';ctx.fillText('face '+sc.toFixed(2),x,y-14);
+        (f.keypoints||[]).forEach(kp=>{let px=(kp.x*sw-sx0)*k,py=(kp.y*sh-sy0)*k;if(S.mirror)px=W-px;ctx.beginPath();ctx.arc(px,py,2.5,0,TAU);ctx.fill();});});}
+    // data readout + the sentence as a handwritten note
+    const lines=String(S.text||DEF.text).split('\n').filter(Boolean);const note=lines[(this.f/240|0)%lines.length];
+    ctx.font='italic 700 '+(isTouch?20:28)+'px '+SANS;ctx.fillStyle=red;ctx.fillText(note,16,16+(S.debug?0:0));
+    ctx.font=mono;ctx.fillStyle=blue;const y0=H-16-(this.log.length+2)*16;
+    ctx.fillText('tracks:'+this.tracks.length+'  motion:'+(A.level*100|0)+'%  grid:'+A.w+'x'+A.h+'  face-model:'+FACE.state+'  t:'+t.toFixed(1),16,y0);
+    this.log.forEach((l,i)=>ctx.fillText(l,16,y0+16*(i+1)));
+    ctx.strokeStyle=rgba(blue,0.6);ctx.lineWidth=1;ctx.strokeRect(10,y0-6,Math.min(W-20,320),(this.log.length+1)*16+12);
+  }};
+const MODES=[mShapes,mDots,mGlyphs,mCurtain,mPaint,mWords,mPattern,mScribble,mDetect,mFlow,mInk,mRipple,mEcho];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -687,7 +746,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=';
+const KEYS='1234567890-=[';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
