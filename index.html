@@ -949,7 +949,7 @@ const STACK={eng:null,pieces:[],fly:[],n:0,people:0,scale:1,zoomLeft:1,acc:0,las
 function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h);let best=0,bestN=0,id=0;for(let s0=0;s0<w*h;s0++){if(!on[s0]||lab[s0])continue;id++;let hd=0,tl=0;q[tl++]=s0;lab[s0]=id;
     while(hd<tl){const i=q[hd++],x=i%w;if(x>0&&on[i-1]&&!lab[i-1]){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&on[i+1]&&!lab[i+1]){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&on[i-w]&&!lab[i-w]){lab[i-w]=id;q[tl++]=i-w;}if(i<w*h-w&&on[i+w]&&!lab[i+w]){lab[i+w]=id;q[tl++]=i+w;}}
     if(tl>bestN){bestN=tl;best=id;}}for(let i=0;i<w*h;i++)if(lab[i]!==best)on[i]=0;}
-const mStack={id:'stack',name:'쌓기',desc:'앞에 3초 멈춰 서면 그 모습이 조각이 되어 왼쪽으로 옮겨져 떨어지고, 물리 법칙대로 구르며 쌓인다. 새로고침 전까지 모두 남는다',
+const mStack={id:'stack',name:'쌓기',busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 3초 멈춰 서면 그 모습이 조각이 되어 왼쪽으로 옮겨져 떨어지고, 물리 법칙대로 구르며 쌓인다. 새로고침 전까지 모두 남는다',
   init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.holdId=-1;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
@@ -993,6 +993,71 @@ const mStack={id:'stack',name:'쌓기',desc:'앞에 3초 멈춰 서면 그 모�
     this.msg=Math.max(0,this.msg-dt);const txt=this.msg>0?(this.lastPpl>1?this.lastPpl+'명이 함께 쌓였어요':STACK.people+'번째로 쌓였어요'):state==='far'?'조금 더 가까이 와 주세요':state==='close'?'조금만 뒤로 가 주세요':state==='move'?'그대로 멈춰 주세요':state==='hold'?'그대로… '+Math.max(1,Math.ceil(3-this.hold)):state==='done'?'쌓였어요 · 다음 친구도 서 보세요':'앞에 서서 3초 동안 멈춰 보세요';
     ctx.fillStyle='rgba(40,32,24,0.78)';ctx.fillText(txt,cx,ly);ctx.font='500 '+Math.round(fz*0.72)+'px '+SANS;ctx.fillStyle='rgba(40,32,24,0.45)';ctx.fillText('함께 쌓인 사람 '+STACK.people,cx,ly+fz*1.5);ctx.textAlign='left';
     if(!ok){ctx.fillStyle='rgba(40,32,24,0.6)';ctx.fillText('물리 엔진을 불러오지 못했어요',24,H-24);}}};
+/* 피하기: a dodging game. Glowing orbs fly in from the sides (and after a while from above) toward wherever people are standing; the body
+   is the only controller. Everyone in front shares three lives, the time survived is the score, and today's ranking stays until reload */
+const DODGE={scores:[]};
+const mDodge={id:'dodge',name:'피하기',desc:'양옆과 위에서 날아오는 빛을 몸으로 피하는 게임. 앞에 서면 3초 뒤 시작하고, 함께 세 번 맞으면 끝. 버틴 시간이 기록되고 오늘의 순위는 새로고침 전까지 남는다',
+  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.state='idle';this.stT=0;this.t=0;this.orbs=[];this.parts=[];this.sil=null;this.present=0;this.absent=0;this.spawnT=0.6;this.lives=3;this.inv=0;this.flash=0;this.shake=0;this.attract=0;this.sprites={};
+    const bw=Math.max(2,Math.round(W/3)),bh=Math.max(2,Math.round(H/3)),b=mkCanvas(bw,bh),bc=b.cx,g=bc.createRadialGradient(bw/2,bh*0.45,0,bw/2,bh*0.45,Math.hypot(bw,bh)*0.6);
+    g.addColorStop(0,'#171b25');g.addColorStop(1,'#07080c');bc.fillStyle=g;bc.fillRect(0,0,bw,bh);const im=bc.getImageData(0,0,bw,bh),d=im.data;for(let i=0;i<d.length;i+=4){const n=(Math.random()-0.5)*5;d[i]+=n;d[i+1]+=n;d[i+2]+=n;}bc.putImageData(im,0,0);this.bg=b;
+    const v=mkCanvas(bw,bh),vc=v.cx,vg=vc.createRadialGradient(bw/2,bh/2,Math.min(bw,bh)*0.3,bw/2,bh/2,Math.hypot(bw,bh)*0.55);vg.addColorStop(0,'rgba(255,90,80,0)');vg.addColorStop(1,'rgba(255,90,80,1)');vc.fillStyle=vg;vc.fillRect(0,0,bw,bh);this.vig=v;},
+  busy(){return this.state!=='idle';},
+  sprite(col){if(this.sprites[col])return this.sprites[col];const S2=128,c=mkCanvas(S2,S2),x=c.cx,g=x.createRadialGradient(S2/2,S2/2,0,S2/2,S2/2,S2/2),rgb=hex(col);
+    g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(0.16,'rgba(255,250,240,1)');g.addColorStop(0.3,'rgba('+rgb+',0.95)');g.addColorStop(0.55,'rgba('+rgb+',0.28)');g.addColorStop(1,'rgba('+rgb+',0)');x.fillStyle=g;x.fillRect(0,0,S2,S2);return this.sprites[col]=c;},
+  spawn(bb,soft){const t=this.t,r=H*(0.028+Math.random()*0.024),v=soft?W*0.12:W*Math.min(0.72,0.3+0.012*t),top=!soft&&t>12&&Math.random()<Math.min(0.35,0.08+t*0.008);
+    if(top){const x=bb?clamp(bb[0]+Math.random()*bb[2],r,W-r):r+Math.random()*(W-2*r);this.orbs.push({x,y:-r*2,vx:(Math.random()-0.5)*W*0.04,vy:v*0.8,r,col:'#ffd98a',warn:soft?0:0.75,side:'T',soft});}
+    else{const L=Math.random()<0.5,y=bb&&!soft&&Math.random()<0.8?clamp(bb[1]+r+Math.random()*Math.max(1,bb[3]-r*2),r,H-r):r+Math.random()*(H-2*r);
+      this.orbs.push({x:L?-r*2:W+r*2,y,vx:L?v:-v,vy:(Math.random()-0.5)*H*0.05,r,col:Math.random()<0.5?'#ffb547':'#ff7a5c',warn:soft?0:0.75,side:L?'L':'R',soft});}},
+  over(){this.state='over';this.stT=0;const sc=Math.round(this.t*10)/10;this.score=sc;DODGE.scores.push(sc);DODGE.scores.sort((a,b)=>b-a);this.rank=DODGE.scores.indexOf(sc)+1;this.best=this.rank===1;},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);if((this.f=(this.f||0)+1)%2===0)TR.update();const w=A.w,h=A.h,n=A.n,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
+    // who is there: presence, the box they occupy, how many
+    let cnt=0,x0=w,x1=-1,y0=h,y1=-1;for(let i=0;i<n;i++)if(pb[i]>0.5){cnt++;const x=i%w,y=(i/w)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+    const here=cnt>n*0.012,bb=here?[x0*W/w,y0*H/h,(x1-x0+1)*W/w,(y1-y0+1)*H/h]:null;let ppl=0;TR.tracks.forEach(tr=>{if(TR.f-tr.seen<=2&&(tr.hits||0)>=4)ppl++;});
+    this.present=here?this.present+dt:0;this.absent=here?0:this.absent+dt;this.stT+=dt;
+    const pS=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
+    // the round
+    if(this.state==='idle'){if(this.present>1){this.state='ready';this.stT=0;this.orbs=this.orbs.filter(o=>o.soft);}}
+    else if(this.state==='ready'){if(this.absent>1){this.state='idle';this.stT=0;}else if(this.stT>=3){this.state='play';this.stT=0;this.t=0;this.lives=3;this.inv=0;this.spawnT=0.4;}}
+    else if(this.state==='play'){this.t+=dt;if(this.absent>2){this.state='idle';this.stT=0;}
+      this.spawnT-=dt;if(this.spawnT<=0){this.spawn(bb,false);if(this.t>10&&Math.random()<0.3)this.spawn(bb,false);this.spawnT=Math.max(0.36,1.15-this.t*0.028)*(0.8+Math.random()*0.4);}}
+    else if(this.state==='over'){if(this.stT>5.5){if(here){this.state='ready';this.stT=0;}else{this.state='idle';this.stT=0;}}}
+    if(this.state==='idle'||this.state==='over'){this.attract-=dt;if(this.attract<=0){this.spawn(null,true);this.attract=1.2+Math.random()*1.4;}}
+    this.inv=Math.max(0,this.inv-dt);this.flash=Math.max(0,this.flash-dt*2.2);this.shake=Math.max(0,this.shake-dt*3);
+    // orbs move, and in play they are stopped by a body
+    for(let i=this.orbs.length-1;i>=0;i--){const o=this.orbs[i];if(o.warn>0){o.warn-=dt;continue;}o.x+=o.vx*dt;o.y+=o.vy*dt;
+      if(o.x<-o.r*4||o.x>W+o.r*4||o.y>H+o.r*4){this.orbs.splice(i,1);continue;}
+      if(this.state==='play'&&!o.soft&&this.inv<=0){let hit=pS(o.x,o.y)>0.55;for(let k=0;k<8&&!hit;k++){const a=k/8*TAU;if(pS(o.x+Math.cos(a)*o.r*0.72,o.y+Math.sin(a)*o.r*0.72)>0.55)hit=true;}
+        if(hit){this.lives--;this.inv=1.3;this.flash=1;this.shake=1;for(let k=0;k<18;k++){const a=Math.random()*TAU,sp=W*(0.05+Math.random()*0.18);this.parts.push({x:o.x,y:o.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.5+Math.random()*0.4,col:o.col,r:o.r*(0.08+Math.random()*0.12)});}
+          this.orbs.splice(i,1);if(this.lives<=0){this.over();this.orbs.forEach(q=>q.soft=true);}}}}
+    // ---- picture ----
+    ctx.save();if(this.shake>0){const m=this.shake*this.shake*H*0.012;ctx.translate((Math.random()-0.5)*m,(Math.random()-0.5)*m);}
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,-8,-8,W+16,H+16);
+    const hitK=this.inv/1.3,rgb=[Math.round(lerp(232,255,hitK)),Math.round(lerp(237,122,hitK)),Math.round(lerp(245,104,hitK))];this.sil=upsampleMask(pb,w,h,2,0.42,0.6,rgb,this.sil);
+    ctx.globalAlpha=this.state==='play'?(this.inv>0?0.55+0.45*(0.5+0.5*Math.cos(this.inv*26)):0.94):0.5;ctx.drawImage(this.sil,0,0,W,H);ctx.globalAlpha=1;
+    ctx.globalCompositeOperation='lighter';
+    for(const o of this.orbs){const sp=this.sprite(o.col),al=o.soft?0.55:1;
+      if(o.warn>0){const k=0.5+0.5*Math.sin(o.warn*22),ex=o.side==='L'?0:o.side==='R'?W:o.x,ey=o.side==='T'?0:o.y,rr=o.r*2.2;ctx.globalAlpha=0.25+0.45*k;ctx.drawImage(sp,ex-rr,ey-rr,rr*2,rr*2);continue;}
+      const tl=o.soft?0.45:0.16,tx=o.x-o.vx*tl,ty=o.y-o.vy*tl,g=ctx.createLinearGradient(tx,ty,o.x,o.y),rg=hex(o.col);g.addColorStop(0,'rgba('+rg+',0)');g.addColorStop(1,'rgba('+rg+','+(0.55*al)+')');
+      ctx.globalAlpha=1;ctx.strokeStyle=g;ctx.lineWidth=o.r*0.9;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(o.x,o.y);ctx.stroke();ctx.globalAlpha=al;const R=o.r*(o.soft?1.7:2.4);ctx.drawImage(sp,o.x-R,o.y-R,R*2,R*2);}
+    for(let i=this.parts.length-1;i>=0;i--){const q=this.parts[i];q.life-=dt;if(q.life<=0){this.parts.splice(i,1);continue;}q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=0.94;q.vy=q.vy*0.94+H*0.4*dt;ctx.globalAlpha=Math.min(1,q.life*2);const R=q.r*3;ctx.drawImage(this.sprite(q.col),q.x-R,q.y-R,R*2,R*2);}
+    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;if(this.flash>0){ctx.globalAlpha=this.flash*0.35;ctx.drawImage(this.vig,0,0,W,H);ctx.globalAlpha=1;}ctx.restore();
+    // ---- words ----
+    const fz=Math.max(14,Math.min(W,H)*0.03),cx=W/2;ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    const list=(y)=>{const top=DODGE.scores.slice(0,3);if(!top.length)return;ctx.font='600 '+Math.round(fz*0.62)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText('오늘의 순위',cx,y);
+      ctx.font='600 '+Math.round(fz*0.9)+'px '+SANS;top.forEach((sc,i)=>{ctx.fillStyle=i===0?'rgba(255,214,140,0.95)':'rgba(255,255,255,0.8)';ctx.fillText((i+1)+'   '+sc.toFixed(1)+'초',cx,y+fz*1.35*(i+1));});};
+    if(this.state==='idle'){ctx.font='800 '+Math.round(fz*3)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.95)';ctx.fillText('피하기',cx,H*0.36);
+      ctx.font='500 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillText('앞에 서면 시작해요 · 날아오는 빛을 몸으로 피하세요',cx,H*0.36+fz*1.8);list(H*0.36+fz*4);}
+    else if(this.state==='ready'){const k=3-this.stT,num=Math.max(1,Math.ceil(k)),fr=k-Math.floor(k);ctx.font='500 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.75)';ctx.fillText(ppl>1?ppl+'명이 함께 · 세 번 맞으면 끝나요':'세 번 맞으면 끝나요',cx,H*0.3);
+      ctx.save();ctx.translate(cx,H*0.52);const sc=1+0.25*fr;ctx.scale(sc,sc);ctx.globalAlpha=0.35+0.65*fr;ctx.font='800 '+Math.round(fz*5)+'px '+SANS;ctx.fillStyle='#ffffff';ctx.textBaseline='middle';ctx.fillText(String(num),0,0);ctx.restore();ctx.globalAlpha=1;ctx.textBaseline='alphabetic';}
+    else if(this.state==='play'){ctx.font='700 '+Math.round(fz*2.1)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.95)';const tt=this.t.toFixed(1),tw=ctx.measureText('8'.repeat(tt.length-1)+'.').width,x0=cx-tw/2-fz*0.45,aw=ctx.measureText(tt).width;ctx.textAlign='left';ctx.fillText(tt,x0,fz*3.1);
+      ctx.font='600 '+Math.round(fz*0.8)+'px '+SANS;ctx.fillText('초',x0+aw+fz*0.12,fz*3.1);ctx.textAlign='center';
+      for(let i=0;i<3;i++){const x=cx+(i-1)*fz*1.1,y=fz*4.1;ctx.beginPath();ctx.arc(x,y,fz*0.24,0,TAU);if(i<this.lives){ctx.fillStyle='#ffffff';ctx.fill();}else{ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1.5;ctx.stroke();}}
+      if(DODGE.scores.length){ctx.font='500 '+Math.round(fz*0.62)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText('오늘의 기록 '+DODGE.scores[0].toFixed(1)+'초',cx,fz*5.2);}}
+    else if(this.state==='over'){ctx.fillStyle='rgba(7,8,12,'+Math.min(0.55,this.stT*1.5)+')';ctx.fillRect(0,0,W,H);
+      ctx.font='600 '+Math.round(fz*0.95)+'px '+SANS;ctx.fillStyle=this.best?'rgba(255,214,140,0.95)':'rgba(255,255,255,0.75)';ctx.fillText(this.best?'오늘의 새 기록!':'오늘 '+DODGE.scores.length+'번 중 '+this.rank+'위',cx,H*0.27);
+      ctx.font='800 '+Math.round(fz*3.6)+'px '+SANS;ctx.fillStyle='#ffffff';ctx.fillText(this.score.toFixed(1)+'초',cx,H*0.27+fz*4);list(H*0.27+fz*6);
+      ctx.font='500 '+Math.round(fz*0.7)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillText(here?'잠시 뒤 다시 시작해요':'다음 친구도 도전해 보세요',cx,H-fz*2.2-(isTouch?50:0));}
+    ctx.textAlign='left';}};
 const mGaze={id:'gaze',name:'시선',desc:'차가운 바닥 위 한색 실루엣. 카메라를 가만히 바라보는 사람의 실루엣만 천천히 따뜻한 색으로 물들고, 시선이 떠나면 식는다',
   init(){const n=A.n;this.M=new Float32Array(n);this.Wf=new Float32Array(n);this.Wn=new Float32Array(n);this.Uf=new Float32Array(n);this.tmp=new Float32Array(n);this.warmth={};this.f=0;this.cv=null;},
   draw(t,dt){this.f++;if((this.f&1)===0)TR.update();const w=A.w,h=A.h,n=A.n,M=this.M,Wf=this.Wf,Wn=this.Wn,Uf=this.Uf,p=A.p;
@@ -1285,7 +1350,7 @@ const POET={sdk:null,loading:null,
     const p=pool[(Math.random()*pool.length)|0]||P[0];POET.lastTitle=p.t;return {title:p.t,lines:p.l.slice(),by:'local'};}
 };
 const POEM_IDLE=['가만히 서 있으면','당신을 위한 시가','이곳에 쓰입니다','STAND STILL','AND A POEM','WILL BE WRITTEN'];
-const mPoem={id:'poem',name:'시',fullFrame:true,desc:'앞에 가만히 서 있으면 그 사람의 실루엣을 보고 Claude가 짧은 시를 쓴다. 시는 몸의 윤곽을 따라 흐르고, 다리 사이와 바깥으로 흘러나온다',
+const mPoem={id:'poem',name:'시',fullFrame:true,busy(){return this.state!=='idle';},desc:'앞에 가만히 서 있으면 그 사람의 실루엣을 보고 Claude가 짧은 시를 쓴다. 시는 몸의 윤곽을 따라 흐르고, 다리 사이와 바깥으로 흘러나온다',
   init(){this.state='idle';this.hold=0;this.lastPos=null;this.poem=null;this.shown=0;this.f=0;this.snap=null;this.snapBox=null;this.sil=mkCanvas(2,2);this.tmp=new Float32Array(A.n);this.cool=0;},
   capture(tr){ // freeze the silhouette around this person: a blue-ready mask for the screen and a black-on-white PNG for Claude
     const pad=Math.max(tr.w,tr.h)*0.05,x0=Math.max(0,tr.x-pad),y0=Math.max(0,tr.y-pad),x1=Math.min(W,tr.x+tr.w+pad),y1=Math.min(H,tr.y+tr.h+pad);
@@ -1419,7 +1484,7 @@ const mColorDots={id:'colordots',name:'색점',desc:'노란 단색 배경 위에
 function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analysis, at a tiny size (one pixel per dot)
   const c=cv.cx;c.setTransform(1,0,0,1,0,0);const el=source.el;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!el||A.remote||!sw||!sh){c.fillStyle='#777';c.fillRect(0,0,w,h);return;}
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;c.save();if(S.mirror){c.translate(w,0);c.scale(-1,1);}c.imageSmoothingEnabled=true;try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(e){}c.restore();}
-const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack];
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mDodge];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1429,7 +1494,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',.';
+const KEYS='1234567890-=[]\\;\',./';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
@@ -1598,7 +1663,7 @@ function loop(now){requestAnimationFrame(loop);if(now-last<14)return;const dt=Ma
   if(frame%24===0)probeTitle();
   fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps';fpsN=0;fpsT=now;}
   if((frame&3)===0)meterEl.style.width=Math.round(A.level*100)+'%';
-  if(S.auto&&now-lastSwitch>S.auto*1000)nextMode(1);}
+  if(S.auto&&now-lastSwitch>S.auto*1000&&!(mode&&mode.busy&&mode.busy()))nextMode(1);}
 
 /* ---------- boot ---------- */
 S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=clamp(S.trailp|0,0,2);applyPresets();S.pal=clamp(S.pal|0,0,PALETTES.length-1);S.sens=clamp(S.sens|0,1,10);S.trail=clamp(S.trail|0,1,10);S.gain=clamp(S.gain|0,1,10);
