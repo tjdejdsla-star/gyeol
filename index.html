@@ -1205,8 +1205,11 @@ const mBalloon={id:'balloon',name:'풍선',needVideo:true,desc:'손을 위로 �
   // window reflections, a thin bright rim on the far side, and a little tied neck
   // a glossy, slightly see-through party balloon: lit from the upper left, the colour deepening toward the lower right, a glow of light
   // through the bottom, a broad soft sheen and a thin bright crescent along the lit edge, and a small knot in the same colour
-  sprite(col){if(this.sp[col])return this.sp[col];const S2=180,c=mkCanvas(S2,Math.round(S2*1.2)),x=c.cx,cx=S2/2,cy=S2*0.5,rx=S2*0.47,ry=S2*0.5,rgb=hex(col),mix=(c2,k)=>c2.map(v=>Math.round(v+(255-v)*k)),shade=(c2,k)=>c2.map(v=>Math.round(v*k)),rgba=(c2,a2)=>'rgba('+c2[0]+','+c2[1]+','+c2[2]+','+a2+')';
-    const body=new Path2D();for(let i=0;i<=96;i++){const a=i/96*TAU,sn=Math.sin(a),cs=Math.cos(a);let px=cs*rx,py=sn*ry*0.96;if(sn>0.55){const k=(sn-0.55)/0.45;px*=1-0.42*k*k;py+=ry*0.06*k*k;}if(sn<-0.3)px*=1-0.04*(-sn-0.3);i?body.lineTo(cx+px,cy+py):body.moveTo(cx+px,cy+py);}body.closePath();
+  sprite(col){if(this.sp[col])return this.sp[col];const S2=180,c=mkCanvas(S2,Math.round(S2*1.24)),x=c.cx,cx=S2/2,cy=S2*0.48,rx=S2*0.44,ry=S2*0.48,rgb=hex(col),mix=(c2,k)=>c2.map(v=>Math.round(v+(255-v)*k)),shade=(c2,k)=>c2.map(v=>Math.round(v*k)),rgba=(c2,a2)=>'rgba('+c2[0]+','+c2[1]+','+c2[2]+','+a2+')';
+    // an egg, fullest above the middle and narrowing toward the bottom, drawn in to a short neck just above the knot
+    const half=(y)=>{let wv=Math.sqrt(Math.max(0,1-y*y))*(1-0.13*y);if(y>0.62){const k=(y-0.62)/0.38;wv*=1-0.5*Math.pow(k,1.3);}return Math.max(wv,y>0.9?0.07:0);};
+    const pts=[];for(let i=0;i<=80;i++){const y=-1+i/80*1.97;pts.push([half(y),y]);}pts.push([0.07,1.0],[0.075,1.05]);
+    const body=new Path2D();body.moveTo(cx,cy-ry);for(const [hx,y] of pts)body.lineTo(cx+hx*rx,cy+y*ry);for(let i=pts.length-1;i>=0;i--)body.lineTo(cx-pts[i][0]*rx,cy+pts[i][1]*ry);body.closePath();
     let g=x.createRadialGradient(cx-rx*0.3,cy-ry*0.32,rx*0.05,cx-rx*0.05,cy,ry*1.18);g.addColorStop(0,rgba(mix(rgb,0.45),0.9));g.addColorStop(0.32,rgba(rgb,0.88));g.addColorStop(0.75,rgba(shade(rgb,0.8),0.9));g.addColorStop(1,rgba(shade(rgb,0.55),0.95));x.fillStyle=g;x.fill(body);
     x.save();x.clip(body);
     // light coming through: the lower right glows warmer and lighter
@@ -1220,8 +1223,8 @@ const mBalloon={id:'balloon',name:'풍선',needVideo:true,desc:'손을 위로 �
     x.strokeStyle=rgba(mix(rgb,0.5),0.45);x.lineWidth=S2*0.018;x.beginPath();x.ellipse(cx,cy+ry*0.03,rx*0.93,ry*0.93,0,-0.25*Math.PI,0.3*Math.PI);x.stroke();
     x.restore();
     // the knot: a little cone in a deeper shade
-    const kc=shade(rgb,0.78);x.fillStyle=rgba(kc,1);x.beginPath();x.moveTo(cx-rx*0.05,cy+ry*0.99);x.lineTo(cx+rx*0.05,cy+ry*0.99);x.lineTo(cx+rx*0.11,cy+ry*1.13);x.quadraticCurveTo(cx,cy+ry*1.09,cx-rx*0.11,cy+ry*1.13);x.closePath();x.fill();
-    x.fillStyle=rgba(mix(rgb,0.4),0.8);x.beginPath();x.ellipse(cx-rx*0.04,cy+ry*1.07,rx*0.025,ry*0.02,0,0,TAU);x.fill();
+    const kc=shade(rgb,0.75);x.fillStyle=rgba(kc,1);x.beginPath();x.moveTo(cx-rx*0.075,cy+ry*1.04);x.lineTo(cx+rx*0.075,cy+ry*1.04);x.lineTo(cx+rx*0.13,cy+ry*1.17);x.quadraticCurveTo(cx,cy+ry*1.13,cx-rx*0.13,cy+ry*1.17);x.closePath();x.fill();
+    x.fillStyle=rgba(mix(rgb,0.4),0.8);x.beginPath();x.ellipse(cx-rx*0.04,cy+ry*1.11,rx*0.03,ry*0.022,0,0,TAU);x.fill();
     return this.sp[col]=c;},
   pop(bl){const R=Math.random;this.pops.push({x:bl.x,y:bl.y,r:bl.r,t:0,col:bl.col});for(let i=0;i<46;i++){const a=R()*TAU,v=H*(0.25+R()*0.55);this.c.push({x:bl.x,y:bl.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-H*0.15,w:bl.r*(0.12+R()*0.12),h:bl.r*(0.05+R()*0.05),rot:R()*TAU,vr:(R()-0.5)*12,fl:R()*TAU,col:this.COLS[(R()*this.COLS.length)|0],t:0,life:3+R()*2});}
     if(this.c.length>900)this.c.splice(0,this.c.length-900);},
@@ -1234,7 +1237,7 @@ const mBalloon={id:'balloon',name:'풍선',needVideo:true,desc:'손을 위로 �
     const B=this.b;for(let i=B.length-1;i>=0;i--){const b=B[i];b.age+=dt;b.vy+=(-H*0.24-b.vy)*Math.min(1,dt*0.9);b.vx+=(Math.sin(t*1.3+b.ph)*W*0.02-b.vx)*Math.min(1,dt*0.8);
       for(const o of B){if(o===b)continue;const dx=b.x-o.x,dy=b.y-o.y,dd=Math.hypot(dx,dy),m=(b.r+o.r)*0.95;if(dd<m&&dd>0){const f=(m-dd)/m*W*0.6*dt;b.vx+=dx/dd*f;b.vy+=dy/dd*f*0.5;}}
       b.x+=b.vx*dt;b.y+=b.vy*dt;b.x=clamp(b.x,b.r,W-b.r);if(b.y-b.r*1.05<0){this.pop(b);B.splice(i,1);}}
-    for(const b of B){const sw=Math.sin(t*1.3+b.ph)*0.12,img=this.sprite(b.col),bw=b.r*2.1,bh=bw*1.2,sc2=hex(b.col).map(v=>Math.round(v+(255-v)*0.25));ctx.strokeStyle='rgba('+sc2.join(',')+',0.9)';ctx.lineWidth=1.2;ctx.beginPath();const kx=b.x-Math.sin(sw)*b.r*0.2,ky=b.y+b.r*1.18;ctx.moveTo(kx,ky);
+    for(const b of B){const sw=Math.sin(t*1.3+b.ph)*0.12,img=this.sprite(b.col),bw=b.r*2.2,bh=bw*1.24,sc2=hex(b.col).map(v=>Math.round(v+(255-v)*0.25));ctx.strokeStyle='rgba('+sc2.join(',')+',0.9)';ctx.lineWidth=1.2;ctx.beginPath();const kx=b.x-Math.sin(sw)*b.r*0.25,ky=b.y+b.r*1.28;ctx.moveTo(kx,ky);
       ctx.bezierCurveTo(kx+Math.sin(t*2+b.ph)*b.r*0.5,ky+b.r*1.0,kx-Math.sin(t*2.3+b.ph)*b.r*0.55,ky+b.r*2.0,kx+Math.sin(t*1.7+b.ph)*b.r*0.35,ky+b.r*3.2);ctx.stroke();
       ctx.save();ctx.translate(b.x,b.y);ctx.rotate(sw);ctx.drawImage(img,-bw/2,-bw*0.5,bw,bh);ctx.restore();}
     // the pop: a quick flash and ring, then confetti that flutters down
