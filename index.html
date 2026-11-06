@@ -485,15 +485,16 @@ function analyze(){
       for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x,xa=Math.min(mw-1,((sx+(xx+0.25)/w*cw)*kx)|0),xb=Math.min(mw-1,((sx+(xx+0.75)/w*cw)*kx)|0);
         const a=mk[ya+xa],b=mk[ya+xb],c=mk[yb+xa],e2=mk[yb+xb],mx=Math.max(a,b,c,e2),mean=(a+b+c+e2)*0.25;let v=mean>mx*0.8?mean:mx*0.8;out[y*w+x]=v<0?0:v>1?1:v;}}};
     const cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));if(segOK)samp(SEG.mask,SEG.mw,SEG.mh,cur);else cur.fill(0);
-    if(pmOK){// people the pose model found: its own full-body mask, and the selfie mask only right around those people (nothing else in the room)
-      const gp=A.gp&&A.gp.length===n?A.gp:(A.gp=new Float32Array(n)),nb=A.nb&&A.nb.length===n?A.nb:(A.nb=new Uint8Array(n)),nt=A.nt&&A.nt.length===n?A.nt:(A.nt=new Uint8Array(n));samp(PM.mask,PM.mw,PM.mh,gp);
+    const bm=personBoxMask(sx,sy,cw,ch,w,h,tnow);
+    if(pmOK||bm){// people the pose model or the person detector found: its own full-body mask, and the selfie mask only right around those people (nothing else in the room)
+      const gp=A.gp&&A.gp.length===n?A.gp:(A.gp=new Float32Array(n)),nb=A.nb&&A.nb.length===n?A.nb:(A.nb=new Uint8Array(n)),nt=A.nt&&A.nt.length===n?A.nt:(A.nt=new Uint8Array(n));if(pmOK)samp(PM.mask,PM.mw,PM.mh,gp);else gp.fill(0);
       // each blob of the selfie mask is kept whole if it touches anyone the pose model found: people overlapping each other stay one steady
       // shape even when the pose model drops one of them for a moment; a blob touching nobody (a chair, a poster) is dropped
       const lab=A.lab&&A.lab.length===n?A.lab:(A.lab=new Int32Array(n)),q=A.lq&&A.lq.length===n?A.lq:(A.lq=new Int32Array(n));lab.fill(0);let id=0;const keep=[0];
-      for(let s0=0;s0<n;s0++){if(lab[s0]||cur[s0]<0.35)continue;id++;let hd=0,tl=0,hit=false;q[tl++]=s0;lab[s0]=id;while(hd<tl){const i=q[hd++],x=i%w;if(gp[i]>0.3)hit=true;
-          if(x>0&&!lab[i-1]&&cur[i-1]>=0.35){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&!lab[i+1]&&cur[i+1]>=0.35){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&!lab[i-w]&&cur[i-w]>=0.35){lab[i-w]=id;q[tl++]=i-w;}if(i<n-w&&!lab[i+w]&&cur[i+w]>=0.35){lab[i+w]=id;q[tl++]=i+w;}}keep.push(hit?1:0);}
+      for(let s0=0;s0<n;s0++){if(lab[s0]||cur[s0]<0.35)continue;id++;let hd=0,tl=0,hit=false,inb=0;q[tl++]=s0;lab[s0]=id;while(hd<tl){const i=q[hd++],x=i%w;if(gp[i]>0.3)hit=true;if(bm&&bm[i])inb++;
+          if(x>0&&!lab[i-1]&&cur[i-1]>=0.35){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&!lab[i+1]&&cur[i+1]>=0.35){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&!lab[i-w]&&cur[i-w]>=0.35){lab[i-w]=id;q[tl++]=i-w;}if(i<n-w&&!lab[i+w]&&cur[i+w]>=0.35){lab[i+w]=id;q[tl++]=i+w;}}keep.push(hit||inb>=tl*0.3?1:0);}
       for(let i=0;i<n;i++){const s2=lab[i]?(keep[lab[i]]?cur[i]:0):cur[i]*0.5,g2=gp[i];cur[i]=g2>s2?g2:s2;}}
-    else if(poseOn&&tnow-PM.seen>900){for(let i=0;i<n;i++)cur[i]*=0.3;} // the pose model has seen nobody for a while: a lone selfie-mask blob is probably not a person
+    else if((poseOn||(FACE.obj&&tnow-FACE.otime<800))&&tnow-PM.seen>900&&tnow-(FACE.oseen||-1e9)>900){for(let i=0;i<n;i++)cur[i]*=0.3;} // the pose model has seen nobody for a while: a lone selfie-mask blob is probably not a person
     // the pose model knows where arms and legs are: along each visible limb, faint mask becomes solid (no mask at all stays empty, so a
     // late pose never paints a ghost arm)
     limbBoost(cur,w,h,sx,sy,cw,ch,sw,sh);
@@ -604,14 +605,27 @@ function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='fi
   const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
-  if(wantPose&&FACE.pose&&now-FACE.plast>(usePose?66:80)){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}}
-  if(wantObj&&FACE.obj&&now-FACE.olast>140){FACE.olast=now;try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;}catch(e){FACE.ores=null;}}}
+  if(wantPose&&FACE.pose&&now-FACE.plast>Math.max(usePose?66:80,(FACE.pcost||8)*3)){FACE.plast=now;runPose(now);}
+  runObj(now);}
+function runPose(now){const t0=performance.now();try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}FACE.pcost=(FACE.pcost||8)*0.7+(performance.now()-t0)*0.3;}
+function runObj(now){if(!FACE.obj||now-FACE.olast<clamp((FACE.ocost||20)*4,120,600))return;FACE.olast=now;const t0=performance.now();
+  try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.length)FACE.oseen=now;}catch(e){FACE.ores=null;}FACE.ocost=(FACE.ocost||20)*0.7+(performance.now()-t0)*0.3;}
+// the person detector's boxes on screen: from this camera, or relayed by the phone sensor
+function objScreen(){const now=performance.now();if(A.remote){const r=FACE.rboxes;return r&&now-r.t<700?r.B.map(b=>({x:b[0]*W,y:b[1]*H,w:b[2]*W,h:b[3]*H,score:b[4]})):null;}
+  const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<700))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw,out=[];
+  r.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k;const y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;if(x+w<0||x>W||y+h<0||y>H)return;out.push({x,y,w,h,score:c.score});});return out;}
+// the same boxes painted onto the analysis grid, a little wider than each person (for arms, and for movement since the detector last looked)
+function personBoxMask(sx,sy,cw,ch,w,h,now){const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<700))return null;const n=w*h,bm=A.bm&&A.bm.length===n?A.bm:(A.bm=new Uint8Array(n));bm.fill(0);let any=false;
+  for(const o of r.detections){const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')continue;const bb=o.boundingBox,ex=bb.width*0.15,ey=bb.height*0.06;let x0=(bb.originX-ex-sx)/cw*w,x1=(bb.originX+bb.width+ex-sx)/cw*w;if(S.mirror){const a=w-x1;x1=w-x0;x0=a;}
+    const xa=Math.max(0,Math.floor(x0)),xb=Math.min(w-1,Math.ceil(x1)),ya=Math.max(0,Math.floor((bb.originY-ey-sy)/ch*h)),yb=Math.min(h-1,Math.ceil((bb.originY+bb.height+ey-sy)/ch*h));if(xb<xa||yb<ya)continue;any=true;for(let y=ya;y<=yb;y++){const o2=y*w;for(let x=xa;x<=xb;x++)bm[o2+x]=1;}}
+  return any?bm:null;}
 async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='loading';
   try{const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');
     try{FACE.det=await mkTask(vision.FaceDetector,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});}catch(e){FACE.det=null;}
     FACE.state='ready';toast('얼굴 인식 모델 준비됨');
-    try{FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:5,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});toast('자세 인식 모델 준비됨 · 사람만 잡아요');setStatus(statusEl.textContent+' · 자세');}catch(e){}
-    try{FACE.obj=await vision.ObjectDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',delegate:'GPU'},runningMode:'VIDEO',scoreThreshold:0.4,maxResults:8});toast('사물 인식 모델 준비됨');}catch(e){}
+    try{FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:15,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});toast('자세 인식 모델 준비됨 · 사람만 잡아요');setStatus(statusEl.textContent+' · 자세');}catch(e){}
+    const od=v=>({baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_'+v+'/float16/1/efficientdet_'+v+'.tflite',delegate:'GPU'},runningMode:'VIDEO',scoreThreshold:0.3,maxResults:24,categoryAllowlist:['person']});
+    try{FACE.obj=await mkTask(vision.ObjectDetector,fs,od('lite2'));}catch(e){try{FACE.obj=await mkTask(vision.ObjectDetector,fs,od('lite0'));}catch(e2){FACE.obj=null;}}if(FACE.obj){toast('사람 찾기 모델 준비됨 · 최대 15명');setStatus(statusEl.textContent+' · 사람');}
   }catch(e){FACE.state='offline';}}
 const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
   prep(){if(!this.vis||this.vis.length!==A.n){this.vis=new Uint8Array(A.n);this.q=new Int32Array(A.n);}},
@@ -622,9 +636,13 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
         if(y>0&&!vis[i-w]&&p[i-w]>=thr){vis[i-w]=1;q[tail++]=i-w;}if(y<h-1&&!vis[i+w]&&p[i+w]>=thr){vis[i+w]=1;q[tail++]=i+w;}}
       if(cnt>=minCnt)out.push({x:minx*A.sx,y:miny*A.sy,w:(maxx-minx+1)*A.sx,h:(maxy-miny+1)*A.sy,cx:(sx/cnt+0.5)*A.sx,cy:(sy/cnt+0.5)*A.sy,conf:Math.min(0.99,0.6+sum/cnt*0.4),area:cnt});}
     return out;},
-  track(bl){this.f++;const T=this.tracks,now=this.f;bl.forEach(b=>{let best=null,bd=1e9;T.forEach(t=>{if(t.used)return;const d=Math.hypot(t.cx-b.cx,t.cy-b.cy);if(d<bd&&d<Math.max(W,H)*0.22){bd=d;best=t;}});
-      if(best){Object.assign(best,b);best.used=true;best.seen=now;best.hits=(best.hits||0)+1;best.sx+=(b.cx-best.sx)*0.2;best.sy+=(b.cy-best.sy)*0.2;best.hist.push([best.sx,best.sy]);if(best.hist.length>60)best.hist.shift();}
-      else{const t=Object.assign({id:this.nextId++,seen:now,born:now,hits:1,sx:b.cx,sy:b.cy,hist:[[b.cx,b.cy]],used:true},b);T.push(t);this.log.unshift('motion '+t.id+' at '+(t.x|0)+','+(t.y|0));if(this.log.length>6)this.log.pop();}});
+  track(bl){this.f++;const T=this.tracks,now=this.f,ms=performance.now(),thr=Math.max(W,H)*0.22,pairs=[];
+    bl.forEach((b,bi)=>T.forEach((t,ti)=>{const d=Math.hypot(t.cx-b.cx,t.cy-b.cy);if(d<thr)pairs.push([d,bi,ti]);}));pairs.sort((a,b)=>a[0]-b[0]);
+    const bt=new Int32Array(bl.length).fill(-1),tu=new Uint8Array(T.length);for(const q of pairs){if(bt[q[1]]>=0||tu[q[2]])continue;bt[q[1]]=q[2];tu[q[2]]=1;}
+    bl.forEach((b,bi)=>{const best=bt[bi]>=0?T[bt[bi]]:null;
+      if(best){const keep=best.pose,kt=best.poseT||0;Object.assign(best,b);if(b.pose)best.poseT=ms;else best.pose=keep&&ms-kt<300?keep:null;
+        best.used=true;best.seen=now;best.hits=(best.hits||0)+1;best.sx+=(b.cx-best.sx)*0.2;best.sy+=(b.cy-best.sy)*0.2;best.hist.push([best.sx,best.sy]);if(best.hist.length>60)best.hist.shift();}
+      else{const t=Object.assign({id:this.nextId++,seen:now,born:now,hits:1,sx:b.cx,sy:b.cy,hist:[[b.cx,b.cy]],used:true,pose:null,poseT:b.pose?ms:0},b);T.push(t);this.log.unshift('motion '+t.id+' at '+(t.x|0)+','+(t.y|0));if(this.log.length>6)this.log.pop();}});
     for(let i=T.length-1;i>=0;i--){T[i].used=false;if(now-T[i].seen>240){this.log.unshift('motion '+T[i].id+' ended');if(this.log.length>6)this.log.pop();T.splice(i,1);}}},
   splitWide(bl){ // a silhouette much wider than one person, with a clear valley in its column profile, is split at that valley
     const out=[],w=A.w;const sub=(x0,x1,y0,y1)=>{let mnx=1e9,mxx=-1,mny=1e9,mxy=-1,n=0,sx=0,sy=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)if(A.p[y*w+x]>0.45){n++;sx+=x;sy+=y;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;}
@@ -638,24 +656,26 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
     let changed=true;
     while(changed){changed=false;for(let i=0;i<bl.length&&!changed;i++)for(let j=i+1;j<bl.length;j++){const a=bl[i],b=bl[j];
       const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
-      const inside=ox>0.6*Math.min(a.w,b.w)&&oy>0.6*Math.min(a.h,b.h);
+      const I2=Math.max(0,ox)*Math.max(0,oy),inside=detector?I2/((a.w*a.h+b.w*b.h-I2)||1)>0.6:ox>0.6*Math.min(a.w,b.w)&&oy>0.6*Math.min(a.h,b.h);
       // only a small piece (a head, an arm, a hand) joins a bigger blob; two blobs of similar size are two people standing close
       const ratio=Math.min(a.area,b.area)/Math.max(a.area,b.area),stacked=!detector&&ratio<0.5&&ox>0.35*Math.min(a.w,b.w)&&oy>-H*0.22,beside=!detector&&ratio<0.3&&oy>0.35*Math.min(a.h,b.h)&&ox>-W*0.03;
       if(inside||stacked||beside){const x0=Math.min(a.x,b.x),y0=Math.min(a.y,b.y),x1=Math.max(a.x+a.w,b.x+b.w),y1=Math.max(a.y+a.h,b.y+b.h),n=a.area+b.area;
-        bl[i]={x:x0,y:y0,w:x1-x0,h:y1-y0,cx:(a.cx*a.area+b.cx*b.area)/n,cy:(a.cy*a.area+b.cy*b.area)/n,conf:Math.max(a.conf,b.conf),area:n};bl.splice(j,1);changed=true;break;}}}
+        bl[i]={x:x0,y:y0,w:x1-x0,h:y1-y0,cx:(a.cx*a.area+b.cx*b.area)/n,cy:(a.cy*a.area+b.cy*b.area)/n,conf:Math.max(a.conf,b.conf),area:n,pose:a.pose||b.pose};bl.splice(j,1);changed=true;break;}}}
     return bl;},
   update(){
-    // best: one skeleton per person from the pose model; each becomes one body with its joints attached
-    const PL=poseScreen();if(PL&&PL.length){const bl=[];
-      PL.forEach(L=>{
-        let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.forEach(q=>{if(q.v<0.4)return;x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);});if(x1<x0)return;
+    // every person: the person detector's boxes (it finds many people, small and far ones too), each carrying the skeleton that sits in it
+    // when the pose model found one; a skeleton the detector missed still counts. With neither, the silhouette's own blobs
+    const PL=poseScreen()||[],OB=objScreen();
+    if(PL.length||(OB&&OB.length)){const pb=[];
+      PL.forEach(L=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.forEach(q=>{if(q.v<0.4)return;x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);});if(x1<x0)return;
         const hipOK=L[23].v>0.4&&L[24].v>0.4,cx=hipOK?(L[23].x+L[24].x)/2:(x0+x1)/2,cy=hipOK?(L[23].y+L[24].y)/2:(y0+y1)/2,pad=(y1-y0)*0.06;
-        bl.push({x:x0-pad,y:y0-pad*2,w:x1-x0+pad*2,h:y1-y0+pad*3,cx,cy,conf:0.9,area:(x1-x0)*(y1-y0),pose:L});});
-      this.track(this.merge(bl,true));return;}
-    // next: person boxes from the object model
-    if(objFresh()&&FACE.ores.detections&&FACE.ores.detections.some(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person')){
-      const d2=srcDims(),sw=d2[0],sh=d2[1];const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx0=(sw-cw)/2,sy0=(sh-ch)/2,k=W/cw;const bl=[];
-      FACE.ores.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;bl.push({x,y,w,h,cx:x+w/2,cy:y+h/2,conf:c.score,area:w*h});});
+        pb.push({x:x0-pad,y:y0-pad*2,w:x1-x0+pad*2,h:y1-y0+pad*3,cx,cy,conf:0.9,area:(x1-x0)*(y1-y0),pose:L});});
+      let bl=pb;
+      if(OB&&OB.length){bl=[];const used=new Uint8Array(pb.length);
+        OB.forEach(o=>{let bi=-1,bs=0.15;pb.forEach((b,k)=>{if(used[k])return;const ix=Math.max(0,Math.min(o.x+o.w,b.x+b.w)-Math.max(o.x,b.x)),iy=Math.max(0,Math.min(o.y+o.h,b.y+b.h)-Math.max(o.y,b.y)),I=ix*iy,u=I/((o.w*o.h+b.w*b.h-I)||1),inn=b.cx>o.x&&b.cx<o.x+o.w&&b.cy>o.y&&b.cy<o.y+o.h?0.3:0;if(u+inn>bs){bs=u+inn;bi=k;}});
+          if(bi>=0){used[bi]=1;const b=pb[bi],x0=Math.min(o.x,b.x),y0=Math.min(o.y,b.y),x1=Math.max(o.x+o.w,b.x+b.w),y1=Math.max(o.y+o.h,b.y+b.h);bl.push({x:x0,y:y0,w:x1-x0,h:y1-y0,cx:b.cx,cy:b.cy,conf:0.92,area:(x1-x0)*(y1-y0),pose:b.pose});}
+          else bl.push({x:o.x,y:o.y,w:o.w,h:o.h,cx:o.x+o.w/2,cy:o.y+o.h*0.52,conf:o.score,area:o.w*o.h});});
+        pb.forEach((b,k)=>{if(!used[k])bl.push(b);});}
       this.track(this.merge(bl,true));return;}
     this.track(this.splitWide(this.merge(this.blobs(A.p,0.45,Math.max(12,A.n*0.004)),false)));}
 };
@@ -884,7 +904,8 @@ const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 �
     seg({x:hd.x,y:hd.y-hr*0.35},{x:hd.x,y:hd.y+hr*0.25},hr,0.93,1);seg({x:hd.x,y:hd.y+hr*0.7},sm,sw*0.2,0.89);seg(sm,hm,sw*0.56,0.67,2);
     [[11,13,15],[12,14,16]].forEach(([a,e,w2])=>{if(!ok(e))return;seg(P(a),P(e),sw*0.17,0.8,3);if(ok(w2)){seg(P(e),P(w2),sw*0.14,0.85);seg(P(w2),P(w2),sw*0.16,0.88);}});
     [[23,25,27],[24,26,28]].forEach(([a,e,f])=>{if(!ok(a)||!ok(e))return;seg(P(a),P(e),sw*0.25,0.63,2);if(ok(f)){seg(P(e),P(f),sw*0.18,0.58,2);seg(P(f),P(f),sw*0.17,0.62);}});
-    return {S,hd,hr,cx:sm.x,cy:sm.y,sw};},
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const q of S){const e=q[4]*2.3;x0=Math.min(x0,q[0]-e,q[2]-e);x1=Math.max(x1,q[0]+e,q[2]+e);y0=Math.min(y0,q[1]-e,q[3]-e);y1=Math.max(y1,q[1]+e,q[3]+e);}
+    return {S,hd,hr,cx:sm.x,cy:sm.y,sw,x0,y0,x1,y1};},
   draw(t){const tw=this.tw,th=this.th,n=tw*th,T=this.T,Ts=this.Ts,lut=this.lut,w=A.w,h=A.h,pb=this.pb;if((this.f=(this.f||0)+1)%2===0)TR.update();
     pb.set(A.p);blur3(pb,this.tmpg,w,h);
     const B=[];TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;const b=this.parts(tr);if(b)B.push(b);});
@@ -895,7 +916,7 @@ const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 �
         let v=0.29+0.05*yy-0.12*Math.max(0,xx-0.35)*(1-yy)+0.012*Math.sin(xx*7+tt)*Math.sin(yy*5-tt*0.8);
         const pm=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy;
         if(pm>0.02){const px=(x+0.5)*sx;let ws=0.04,ts=0.04*0.64;
-          for(const b of B){for(const q of b.S){const ax=q[0],ay=q[1],dx=q[2]-ax,dy=q[3]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u,dd=(ex*ex+ey*ey)/(q[4]*q[4]);if(dd>5)continue;
+          for(const b of B){if(px<b.x0||px>b.x1||py<b.y0||py>b.y1)continue;for(const q of b.S){const ax=q[0],ay=q[1],dx=q[2]-ax,dy=q[3]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u,dd=(ex*ex+ey*ey)/(q[4]*q[4]);if(dd>5)continue;
               const wt=Math.exp(-dd*1.6);let T0=q[5];
               if(q[6]===1){const fx2=(px-b.hd.x)/(b.hr*0.62),fy2=(py-b.hd.y-b.hr*0.12)/(b.hr*0.75);T0+=0.12*Math.exp(-(fx2*fx2+fy2*fy2));if(py<b.hd.y-b.hr*0.45)T0-=0.04;}
               else if(q[6]===2){const rx=(px-b.cx)/b.sw,ry=(py-b.cy)/b.sw;T0+=0.05*Math.sin(rx*4.3+ry*2.9+1.3)*Math.sin(rx*2.1-ry*3.7+0.4);}
@@ -1779,7 +1800,7 @@ const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 
       return {c,R,tips,lean:clamp(((head?head.x:sm[0])-hm[0])/Bs,-1,1)};}
     const c=[q.bx+q.bw/2,q.by+q.bh*0.48],R=clamp(q.bh*0.42,Math.min(W,H)*0.12,Math.min(H*0.42,W*0.46));return {c,R,tips:IA.map(a=>[Math.cos(a)*R,Math.sin(a)*R]),lean:0};},
   people(t,dt){const now=performance.now();if((this.f&1)===0)PEOPLE.update();for(const [a,b] of PEOPLE.takeRenames())if(this.st[a]&&!this.st[b]){this.st[b]=this.st[a];delete this.st[a];}
-    const seen={};let k=0;PEOPLE.list.forEach(q=>{if(k>=6)return;const tr=q.tr,L=tr?(tr.pose||rigFromSilhouette(tr)):null,g=this.geo(q,L);if(!g)return;k++;seen[q.key]=1;
+    const seen={};let k=0;PEOPLE.list.forEach(q=>{if(k>=15)return;const tr=q.tr,L=tr?(tr.pose||rigFromSilhouette(tr)):null,g=this.geo(q,L);if(!g)return;k++;seen[q.key]=1;
       let s=this.st[q.key];if(!s)s=this.st[q.key]={moon:(this.cnt++)%2===1,c:g.c.slice(),R:g.R,rel:g.tips.map(v=>v.slice()),lean:g.lean,a:0,ph:Math.random()*TAU};
       const e=Math.min(1,dt*7),ec=Math.min(1,dt*10);s.c[0]+=(g.c[0]-s.c[0])*ec;s.c[1]+=(g.c[1]-s.c[1])*ec;s.R+=(g.R-s.R)*e;s.lean+=(g.lean-s.lean)*Math.min(1,dt*4);
       for(let i=0;i<5;i++){s.rel[i][0]+=(g.tips[i][0]-s.rel[i][0])*e;s.rel[i][1]+=(g.tips[i][1]-s.rel[i][1])*e;}s.a=Math.min(1,s.a+dt*1.8);s.seen=now;});
@@ -1970,7 +1991,7 @@ function createHostPeer(){if(peer){try{peer.destroy();}catch(e){}}code=genCode()
   peer.on('call',call=>{try{if(RV.call)try{RV.call.close();}catch(e){}RV.call=call;call.answer();call.on('stream',st=>{RV.el.srcObject=st;RV.el.play().catch(()=>{});RV.on=true;});call.on('close',()=>{if(RV.call===call){RV.on=false;RV.call=null;}});call.on('error',()=>{RV.on=false;});}catch(e){}});
   peer.on('connection',c=>{if(conn&&conn.open){try{c.close();}catch(e){}return;}conn=c;
     c.on('open',()=>{onSensorConnected();sendHello();wantVideo();});
-    c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info'){setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));RV.mirror=m.mirror!=null?!!m.mirror:m.facing==='user';}else if(m.type==='pose'&&Array.isArray(m.L))FACE.rpose={L:m.L,t:performance.now()};}catch(e){}}
+    c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info'){setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));RV.mirror=m.mirror!=null?!!m.mirror:m.facing==='user';}else if(m.type==='pose'&&Array.isArray(m.L)){FACE.rpose={L:m.L,t:performance.now()};if(Array.isArray(m.B))FACE.rboxes={B:m.B,t:performance.now()};}}catch(e){}}
       else if(d instanceof ArrayBuffer)decodePacket(d);else if(d&&d.buffer instanceof ArrayBuffer)decodePacket(d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength));else if(typeof Blob!=='undefined'&&d instanceof Blob)d.arrayBuffer().then(decodePacket);});
     c.on('close',()=>onSensorLost(c));c.on('error',()=>onSensorLost(c));});
   peer.on('error',err=>{if(err&&err.type==='unavailable-id'){createHostPeer();return;}linkErr.hidden=false;linkErr.textContent='중계 서버 오류: '+((err&&err.type)||'unknown')+'. 인터넷 연결을 확인하고 새로고침해 주세요.';});
@@ -2018,9 +2039,11 @@ function drawSensorPreview(now){const w=A.w,h=A.h;if(!w)return;const cv=sensorVi
   sOv.cx.putImageData(sImg,0,0);c.drawImage(sOv,0,0,cv.width,cv.height);
   sFpsN++;if(now-sFpsT>1000){sFps=Math.round(sFpsN*1000/(now-sFpsT));sFpsN=0;sFpsT=now;bytesRate=bytesAcc/((now-bytesT)/1000);bytesAcc=0;bytesT=now;
     sensorStatus.textContent=(conn&&conn.open?'연결됨':'연결 대기')+' · '+sFps+' fps · '+(bytesRate/1024).toFixed(0)+' KB/s · '+w+'×'+h+' 격자';}}
-function runPoseSensor(now){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(FACE.state==='idle')loadFace();if(FACE.state!=='ready'||!FACE.pose||now-FACE.plast<80)return;FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}
+function runPoseSensor(now){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;runObj(now);if(!FACE.pose||now-FACE.plast<Math.max(80,(FACE.pcost||8)*3))return;FACE.plast=now;runPose(now);
   // landmarks in the shared frame (the analysis crop, mirrored like the grid), so the monitor places them exactly where the shapes are
-  if(conn&&conn.open&&A.crop){const cr=A.crop,lms=FACE.pres&&FACE.pres.landmarks||[];try{conn.send(JSON.stringify({type:'pose',L:lms.map(lm=>lm.map(q=>{let x=(q.x*cr[4]-cr[0])/cr[2];if(S.mirror)x=1-x;return [Math.round(x*1e4)/1e4,Math.round((q.y*cr[5]-cr[1])/cr[3]*1e4)/1e4,Math.round((q.visibility==null?1:q.visibility)*100)/100];}))}));}catch(e){}}}
+  if(conn&&conn.open&&A.crop){const cr=A.crop,lms=FACE.pres&&FACE.pres.landmarks||[],r4=v=>Math.round(v*1e4)/1e4,od=FACE.ores&&now-FACE.otime<600&&FACE.ores.detections||[];
+    const B=od.filter(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person').map(o=>{const bb=o.boundingBox;let x=(bb.originX-cr[0])/cr[2];const w2=bb.width/cr[2];if(S.mirror)x=1-x-w2;return [r4(x),r4((bb.originY-cr[1])/cr[3]),r4(w2),r4(bb.height/cr[3]),Math.round(o.categories[0].score*100)/100];});
+    try{conn.send(JSON.stringify({type:'pose',B,L:lms.map(lm=>lm.map(q=>{let x=(q.x*cr[4]-cr[0])/cr[2];if(S.mirror)x=1-x;return [Math.round(x*1e4)/1e4,Math.round((q.y*cr[5]-cr[1])/cr[3]*1e4)/1e4,Math.round((q.visibility==null?1:q.visibility)*100)/100];}))}));}catch(e){}}}
 function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);runSeg(now);runPoseSensor(now);const ok=analyze();drawSensorPreview(now);
   if(ok&&conn&&conn.open&&now-lastSend>=45){const dc=conn.dataChannel;if(!dc||dc.bufferedAmount<65536){try{const b=encodePacket(seq++);conn.send(b);bytesAcc+=b.byteLength;lastSend=now;}catch(e){}}}}
 
