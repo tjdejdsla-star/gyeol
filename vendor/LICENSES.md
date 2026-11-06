@@ -2,7 +2,7 @@
 
 | 파일 | 출처 | 라이선스 |
 |---|---|---|
-| `vendor/mediapipe/` | @mediapipe/tasks-vision 0.10.14 (Google) | Apache-2.0 |
+| `vendor/mediapipe/` | @mediapipe/tasks-vision 0.10.14 (Google), SIMD 실행 파일만 (없는 브라우저는 CDN) | Apache-2.0 |
 | `models/*.tflite`, `models/*.task` | MediaPipe 공식 모델 (storage.googleapis.com/mediapipe-models) | Apache-2.0 |
 | `vendor/rapier2d.mjs` | @dimforge/rapier2d-compat 0.21.0 (Dimforge) | Apache-2.0 (`LICENSE-rapier.txt`) |
 | `vendor/peerjs.min.js` | peerjs 1.5.4 | MIT (`LICENSE-peerjs.txt`) |

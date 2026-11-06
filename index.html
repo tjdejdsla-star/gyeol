@@ -425,7 +425,7 @@ function runMC(now){if(ML.turn!=='mc'||MC.state!=='ready')return;MC.last=now;ML.
 let MPV=null;const MP={local:false};
 function mpVision(){if(MPV)return MPV;const L=new URL('vendor/mediapipe',location.href).href,Cd='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
   MPV=(async()=>{let local=false;try{const r=await fetch(L+'/wasm/vision_wasm_internal.js',{method:'HEAD',cache:'no-store'});local=r.ok;if(local){const m=await fetch(new URL('models/selfie_segmenter.tflite',location.href).href,{method:'HEAD',cache:'no-store'});MP.local=m.ok;}}catch(e){}
-    for(const V of local?[L,Cd]:[Cd]){try{const vision=await import(V+'/vision_bundle.mjs');const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');return {vision,fs};}catch(e){}}throw new Error('vision');})();
+    for(const V of local?[L,Cd]:[Cd]){try{const vision=await import(V+'/vision_bundle.mjs');if(V===L&&vision.FilesetResolver.isSimdSupported&&!(await vision.FilesetResolver.isSimdSupported()))continue;const fs=await vision.FilesetResolver.forVisionTasks(V+'/wasm');return {vision,fs};}catch(e){}}throw new Error('vision');})();
   MPV.catch(()=>{MPV=null;});return MPV;}
 async function mkTask(cls,fs,opt){const url=opt.baseOptions.modelAssetPath,local=MP.local&&/^https:\/\/storage\.googleapis\.com\/mediapipe-models\//.test(url)?new URL('models/'+url.split('/').pop(),location.href).href:null;
   const one=async p=>{const o=Object.assign({},opt,{baseOptions:Object.assign({},opt.baseOptions,{modelAssetPath:p})});try{return await cls.createFromOptions(fs,o);}catch(e){o.baseOptions.delegate='CPU';return await cls.createFromOptions(fs,o);}};
