@@ -183,6 +183,13 @@ body.role-sensor #exhibit{display:none}
     </div>
   </div>
 
+  <div class="group"><h4>쌓기</h4>
+    <div class="rows">
+      <div class="row"><div class="l">찍히는 거리<small>이 거리 안에 선 사람만 찍혀요</small></div><div class="seg" id="segStackDist"><button>가까이</button><button>보통</button><button>멀리</button></div></div>
+    </div>
+    <p class="foot">더 멀리 선 사람은 화면에 옅게만 보이고, 조각에도 숫자에도 들어가지 않아요. 카메라 앞 <b>약 2m</b>(가까이), <b>약 2.5m</b>(보통), <b>약 3.5m</b>(멀리) 안쪽이 기준이에요. 카메라마다 조금씩 달라요.</p>
+  </div>
+
   <div class="group"><h4>시 (Claude 연결)</h4>
     <div class="rows"><div class="row"><input id="claudeKey" type="password" autocomplete="off" spellcheck="false" placeholder="Claude API 키 (sk-ant-…)" aria-label="Claude API 키" style="flex:1;min-width:0;font:inherit;font-size:15px;background:transparent;border:0;color:var(--label)"><button class="tbtn" id="btnKeySave">저장</button></div>
       <button class="row btnrow red" id="btnKeyClear">키 지우기</button></div>
@@ -321,7 +328,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion'};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
 function save(){try{localStorage.setItem('gyeol.settings',JSON.stringify(S));}catch(e){}}
@@ -602,7 +609,7 @@ function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now(
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star'||id==='cari',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&now-FACE.plast>Math.max(usePose?66:80,(FACE.pcost||8)*3)){FACE.plast=now;runPose(now);}
@@ -1040,6 +1047,26 @@ function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h)
 const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 쨍한 색 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
   init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.holdId=-1;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
+  // how far back someone may stand and still be taken: the height they would have with the whole body in view, as a share of the screen
+  farH(){return [0.8,0.6,0.42][S.stackDist==null?1:S.stackDist]*H;},
+  // that height, from the skeleton when there is one (shoulder width, torso, the width between the ears; each only shrinks when turned or
+  // bent, so the largest is kept), else from the person's box, which is all of them when their feet are in view
+  bodyH(tr){const L=tr.pose;let e=0;
+    if(L){const ok=i=>L[i]&&L[i].v>0.5,d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+      if(ok(11)&&ok(12)){e=Math.max(e,d(L[11],L[12])/0.25);if(ok(23)&&ok(24))e=Math.max(e,Math.hypot((L[11].x+L[12].x-L[23].x-L[24].x)/2,(L[11].y+L[12].y-L[23].y-L[24].y)/2)/0.3);}
+      if(ok(7)&&ok(8))e=Math.max(e,d(L[7],L[8])/0.09);}
+    return e>0?e:tr.h;},
+  // the grid cells inside the box of someone standing too far back (and outside everyone near enough): left out of the shape
+  outMask(live){const w=A.w,h=A.h,n=w*h;if(!this.bad||this.bad.length!==n)this.bad=new Uint8Array(n);const bad=this.bad;bad.fill(0);let any=false;
+    const box=(t,m,v)=>{const ex=t.w*m,ey=t.h*m,x0=clamp(Math.floor((t.x-ex)/A.sx),0,w-1),x1=clamp(Math.ceil((t.x+t.w+ex)/A.sx),0,w-1),y0=clamp(Math.floor((t.y-ey)/A.sy),0,h-1),y1=clamp(Math.ceil((t.y+t.h+ey)/A.sy),0,h-1);for(let y=y0;y<=y1;y++)bad.fill(v,y*w+x0,y*w+x1+1);};
+    live.forEach(t=>{if(t.stS==='far'){box(t,0.05,1);any=true;}});
+    // where a near person's box overlaps a far one, a cell is the near person's only if it lies along their own skeleton (body, arms, head,
+    // with room for hair and clothes); without a skeleton their whole box is kept
+    if(any)live.forEach(t=>{if(t.stS==='far')return;const b=t.pose?mThermal.parts(t):null;if(!b){box(t,0.08,0);return;}
+      const x0=clamp(Math.floor(b.x0/A.sx),0,w-1),x1=clamp(Math.ceil(b.x1/A.sx),0,w-1),y0=clamp(Math.floor(b.y0/A.sy),0,h-1),y1=clamp(Math.ceil(b.y1/A.sy),0,h-1);
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(!bad[i])continue;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;
+        for(const q of b.S){const ax=q[0],ay=q[1],dx=q[2]-ax,dy=q[3]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u,r=q[4]*1.55+A.sx;if(ex*ex+ey*ey<r*r){bad[i]=0;break;}}}});
+    this.badOn=any;return any;},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
   // person's box across the whole frame, bridging hairline gaps, so a group that touches comes out as a single piece
   // while someone holds still, their shape is remembered as a short running average: an arm the model drops now and then stays,
@@ -1049,11 +1076,11 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
   // person's box across the whole frame; weaker parts (a thin raised arm) are kept as long as they connect to the body
   group(tr){const w=A.w,h=A.h,n=w*h,p=this.accP&&this.accP.length===n?this.accP:A.p;if(!this.gv||this.gv.length!==n){this.gv=new Uint8Array(n);this.gq=new Int32Array(n);}const vis=this.gv,q=this.gq;
-    vis.fill(0);let hd=0,tl=0;const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1);
-    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(p[i]>0.5&&!vis[i]){vis[i]=1;q[tl++]=i;}}
+    vis.fill(0);let hd=0,tl=0;const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1),BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null;
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(p[i]>0.5&&!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}
     let mnx=w,mxx=-1,mny=h,mxy=-1;while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;
       const bx0=x0-(x1-x0)*0.1,bx1=x1+(x1-x0)*0.1,by0=y0-(y1-y0)*0.1,by1=y1+(y1-y0)*0.1,E=A.e;
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(vis[j]||p[j]<=0.28)continue;if((xx<bx0||xx>bx1||yy<by0||yy>by1)&&E[j]>0.4)continue;vis[j]=1;q[tl++]=j;}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(vis[j]||p[j]<=0.28||(BAD&&BAD[j]))continue;if((xx<bx0||xx>bx1||yy<by0||yy>by1)&&E[j]>0.4)continue;vis[j]=1;q[tl++]=j;}}
     return mxx<0?null:{vis,mnx,mxx,mny,mxy};},
   capture(tr,col){const g=this.group(tr);if(!g)return null;const w=A.w,h=A.h,vis=g.vis,gx0=g.mnx-2,gy0=g.mny-2,gw=g.mxx-g.mnx+5,gh=g.mxy-g.mny+5;
     const keep=new Uint8Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const cx=gx0+x,cy=gy0+y;let k=0;for(let dy=-2;dy<=2&&!k;dy++)for(let dx=-2;dx<=2;dx++){const xx=cx+dx,yy=cy+dy;if(xx>=0&&yy>=0&&xx<w&&yy<h&&vis[yy*w+xx]){k=1;break;}}keep[y*gw+x]=k;}
@@ -1063,26 +1090,34 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     // weak but connected parts become solid, edges softened; then one solid piece: specks that do not touch the body are dropped
     m=hyst(m,mw2,mh2,0.5,0.22);{const tb=new Float32Array(m.length);blur3(m,tb,mw2,mh2);}
     const on=new Uint8Array(mw2*mh2);for(let i=0;i<on.length;i++)on[i]=m[i]>0.4?1:0;keepLargest(on,mw2,mh2);for(let i=0;i<on.length;i++)if(m[i]>0.4&&!on[i])m[i]=0;
-    const bx0=g.mnx*A.sx,bx1=(g.mxx+1)*A.sx,by0=g.mny*A.sy,by1=(g.mxy+1)*A.sy;let ppl=0;TR.tracks.forEach(t=>{if(TR.f-t.seen<=2&&t.sx>=bx0&&t.sx<=bx1&&t.sy>=by0&&t.sy<=by1)ppl++;});
-    return {m,gw:mw2,gh:mh2,sx:gx0*A.sx,sy:gy0*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:Math.max(1,ppl)};},
+    const bx0=g.mnx*A.sx,bx1=(g.mxx+1)*A.sx,by0=g.mny*A.sy,by1=(g.mxy+1)*A.sy,who=[tr];TR.tracks.forEach(t=>{if(t!==tr&&TR.f-t.seen<=2&&t.stS&&t.stS!=='far'&&t.sx>=bx0&&t.sx<=bx1&&t.sy>=by0&&t.sy<=by1)who.push(t);});
+    return {m,gw:mw2,gh:mh2,sx:gx0*A.sx,sy:gy0*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:who.length,who};},
   draw(t,dt){dt=dt||0.016;if((this.f=(this.f||0)+1)%2===0)TR.update();const ok=STACK.ensure(),ww=this.wellW(),k=ww/STACK.viewW,fy=H;
     ctx.fillStyle='#ede8df';ctx.fillRect(0,0,W,H);
     // everyone in front: a quiet warm-grey shadow across the whole screen
-    const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);this.live=upsampleMask(pb,w,h,2,0.38,0.62,[214,205,192],this.live);ctx.imageSmoothingEnabled=true;
-    const rw=W-ww,vs=Math.min(rw/W*0.96,1),vx=ww+(rw-W*vs)/2,vy=H-H*vs;ctx.drawImage(this.live,vx,vy,W*vs,H*vs);
+    // who is in front, how far back each one stands, and whether they are still
+    const now=performance.now(),HOLD=this.HOLD,FAR=this.farH(),live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=6);
+    TR.tracks.forEach(tr=>{if(tr.stackT&&TR.f-tr.seen>12)tr.stackT=0;});
+    live.forEach(tr=>{const e=this.bodyH(tr);tr.bh=tr.bh&&TR.f-(tr.bhF||-9)<=4?tr.bh+(e-tr.bh)*0.25:e;tr.bhF=TR.f;
+      const hs=tr.hist,nn=hs.length,still=nn>8&&Math.hypot(hs[nn-1][0]-hs[nn-9][0],hs[nn-1][1]-hs[nn-9][1])<W*0.02,done=tr.stackT&&now-tr.stackT<12000&&Math.hypot(tr.sx-tr.stackX,tr.sy-tr.stackY)<W*0.2&&tr.bh>tr.stackH*0.7&&tr.bh<tr.stackH*1.45,
+        L=tr.pose,cut=L&&L[0]&&L[0].v>0.5?L[0].y<H*0.08:tr.y<A.sy*0.6;
+      tr.stS=tr.bh<FAR*(tr.stS==='far'?1.06:0.94)?'far':done?'done':cut&&tr.h>H*0.8?'close':!still?'move':'hold';tr.stHold=tr.stS==='hold'?(tr.stHold||0)+dt:Math.max(0,(tr.stHold||0)-dt*1.5);});
+    // everyone in front: a quiet warm-grey shadow; those standing too far back only a faint one
+    const w=A.w,h=A.h,n=A.n,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);const out=this.outMask(live);
+    if(out){if(!this.pf||this.pf.length!==n)this.pf=new Float32Array(n);const pf=this.pf,bad=this.bad;for(let i=0;i<n;i++){if(bad[i]){pf[i]=pb[i];pb[i]=0;}else pf[i]=0;}this.liveFar=upsampleMask(pf,w,h,2,0.38,0.62,[228,222,212],this.liveFar);}
+    this.live=upsampleMask(pb,w,h,2,0.38,0.62,[214,205,192],this.live);ctx.imageSmoothingEnabled=true;
+    const rw=W-ww,vs=Math.min(rw/W*0.96,1),vx=ww+(rw-W*vs)/2,vy=H-H*vs;if(out)ctx.drawImage(this.liveFar,vx,vy,W*vs,H*vs);ctx.drawImage(this.live,vx,vy,W*vs,H*vs);
     if(this.hold>0.05&&this.hiN>2){const HW=w*this.K,HH=h*this.K;if(this.f%3===0||!this.liveHi){this.disp=hyst(this.hi,HW,HH,0.5,0.22,this.disp);if(!this.dtmp||this.dtmp.length!==HW*HH)this.dtmp=new Float32Array(HW*HH);blur3(this.disp,this.dtmp,HW,HH);
       this.liveHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,[214,205,192],this.liveHi);this.fillHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,hex(this.col||'#8fa382'),this.fillHi);}ctx.drawImage(this.liveHi,vx,vy,W*vs,H*vs);}else{this.liveHi=null;}
     // who is being measured, and whether they are close enough and still enough
     // every person keeps their own clock: whoever stands still long enough is taken, however much the others around them move
-    const now=performance.now(),HOLD=this.HOLD,live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=6);
-    live.forEach(tr=>{const hs=tr.hist,nn=hs.length,still=nn>8&&Math.hypot(hs[nn-1][0]-hs[nn-9][0],hs[nn-1][1]-hs[nn-9][1])<W*0.02,done=tr.stackT&&now-tr.stackT<12000&&Math.hypot(tr.sx-tr.stackX,tr.sy-tr.stackY)<W*0.2;
-      tr.stS=done?'done':tr.h<H*0.42?'far':tr.y<A.sy*0.6&&tr.h>H*0.8?'close':!still?'move':'hold';tr.stHold=tr.stS==='hold'?(tr.stHold||0)+dt:Math.max(0,(tr.stHold||0)-dt*1.5);});
-    let cand=null;live.forEach(tr=>{if(!cand||tr.stHold>cand.stHold+1e-6||(Math.abs(tr.stHold-cand.stHold)<1e-6&&tr.area>cand.area))cand=tr;});
+    // the one being measured: among those near enough, whoever has held still longest; only if nobody is near enough, the nearest of the rest
+    const near=live.filter(tr=>tr.stS!=='far'),pool=near.length?near:live;let cand=null;pool.forEach(tr=>{if(!cand||tr.stHold>cand.stHold+1e-6||(Math.abs(tr.stHold-cand.stHold)<1e-6&&tr.bh>cand.bh))cand=tr;});
     const state=cand?cand.stS:'none';if(cand&&cand.id!==this.holdId){this.holdId=cand.id;this.gb=null;this.col=null;if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);}
     this.hold=cand?cand.stHold:0;if(this.hold>0.05&&cand)this.accum(cand);else this.resetAcc();
     if(this.hold>0.05&&cand){if(!this.col)this.col=STACK.color();const pr=Math.min(1,this.hold/HOLD),rgb=hex(this.col);const g=(this.f&3)===0||!this.gb?this.group(cand):null;if(g)this.gb=[g.mnx*A.sx,g.mny*A.sy,(g.mxx-g.mnx+1)*A.sx,(g.mxy-g.mny+1)*A.sy];
       const gb=this.gb||[cand.x,cand.y,cand.w,cand.h];this.fill=upsampleMask(pb,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]*1.3+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);if(this.liveHi&&this.fillHi)ctx.drawImage(this.fillHi,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
-    if(this.hold>=HOLD&&cand&&ok){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;cand.stHold=0;this.resetAcc();cand.stackT=now;cand.stackX=cand.sx;cand.stackY=cand.sy;
+    if(this.hold>=HOLD&&cand&&ok){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.resetAcc();(c?c.who:[cand]).forEach(t=>{t.stHold=0;t.stackT=now;t.stackX=t.sx;t.stackY=t.sy;t.stackH=t.bh;});
       if(c){const pc=STACK.make(c.m,c.gw,c.gh,c.col,k);if(pc){STACK.people+=c.ppl;this.lastPpl=c.ppl;STACK.fly.push({pc,t:0,sx:vx+c.sx*vs,sy:vy+c.sy*vs,sw:c.sw*vs,sh:c.sh*vs});this.msg=2.4;}}}
     // the pile
     if(ok)STACK.step(dt,k);const flying=new Set(STACK.fly.map(f=>f.pc));
@@ -1875,7 +1910,151 @@ const mGhost={id:'ghost',name:'잔상',desc:'실제 모습 대신 실루엣만 �
     for(const q of this.dust){ctx.fillStyle=q.dark?'rgba(60,50,60,'+q.a+')':'rgba(255,255,255,'+(q.a+0.2)+')';ctx.beginPath();ctx.arc(q.x*W,q.y*H,q.r,0,TAU);ctx.fill();}
     ctx.lineWidth=0.8;for(const q of this.hair){const x0=q.x*W,y0=q.y*H,l=q.l*Math.min(W,H)*2;ctx.strokeStyle=q.dark?'rgba(70,40,70,0.28)':'rgba(255,255,255,0.5)';ctx.beginPath();ctx.moveTo(x0,y0);ctx.quadraticCurveTo(x0+Math.cos(q.a+q.c)*l*0.6,y0+Math.sin(q.a+q.c)*l*0.6,x0+Math.cos(q.a)*l,y0+Math.sin(q.a)*l);ctx.stroke();}
     try{if(!this.pat)this.pat=ctx.createPattern(this.grain(),'repeat');ctx.save();ctx.globalCompositeOperation='overlay';ctx.globalAlpha=0.2;const ox=(Math.random()*200)|0,oy=(Math.random()*200)|0;ctx.translate(-ox,-oy);ctx.fillStyle=this.pat;ctx.fillRect(0,0,W+ox,H+oy);ctx.restore();}catch(e){}}};
-const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mStar,mGhost];
+/* 캐리커처: stand still in front for a moment and a pen draws you as a caricature: a big head on a small body, the eyes and the smile a
+   little larger, ink lines that grow out from the face, then soft marker colour. Each finished drawing is pinned to the wall beside it and
+   stays there until the page is reloaded */
+const CARI={wall:[],no:0,
+  gauss(src,w,h,sg,out,tmp){const r=Math.max(1,Math.ceil(sg*2.8)),k=new Float32Array(r*2+1);let s=0;for(let i=-r;i<=r;i++){k[i+r]=Math.exp(-i*i/(2*sg*sg));s+=k[i+r];}for(let i=0;i<k.length;i++)k[i]/=s;
+    for(let y=0;y<h;y++){const o=y*w;for(let x=0;x<w;x++){let a=0;for(let j=-r;j<=r;j++){let xx=x+j;xx=xx<0?0:xx>=w?w-1:xx;a+=src[o+xx]*k[j+r];}tmp[o+x]=a;}}
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){let a=0;for(let j=-r;j<=r;j++){let yy=y+j;yy=yy<0?0:yy>=h?h-1:yy;a+=tmp[yy*w+x]*k[j+r];}out[y*w+x]=a;}return out;},
+  // edge-keeping smoothing (Kuwahara, through summed tables): each pixel takes the mean of whichever of its four corner squares is the most even
+  kuwahara(R,G,B,w,h,r){const n=w*h,W1=w+1,sat=()=>new Float64Array(W1*(h+1)),SL=sat(),SL2=sat(),SR=sat(),SG=sat(),SB=sat();
+    for(let y=0;y<h;y++){let aL=0,aL2=0,aR=0,aG=0,aB=0;for(let x=0;x<w;x++){const i=y*w+x,l=0.3*R[i]+0.59*G[i]+0.11*B[i];aL+=l;aL2+=l*l;aR+=R[i];aG+=G[i];aB+=B[i];const o=(y+1)*W1+x+1,u=y*W1+x+1;SL[o]=SL[u]+aL;SL2[o]=SL2[u]+aL2;SR[o]=SR[u]+aR;SG[o]=SG[u]+aG;SB[o]=SB[u]+aB;}}
+    const box=(S,x0,y0,x1,y1)=>S[(y1+1)*W1+x1+1]-S[y0*W1+x1+1]-S[(y1+1)*W1+x0]+S[y0*W1+x0];const oR=new Float32Array(n),oG=new Float32Array(n),oB=new Float32Array(n);
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){let best=1e18,bx0=0,by0=0,bx1=0,by1=0;for(let q=0;q<4;q++){const x0=q&1?x:Math.max(0,x-r),x1=q&1?Math.min(w-1,x+r):x,y0=q&2?y:Math.max(0,y-r),y1=q&2?Math.min(h-1,y+r):y,c=(x1-x0+1)*(y1-y0+1),m=box(SL,x0,y0,x1,y1)/c,v=box(SL2,x0,y0,x1,y1)/c-m*m;if(v<best){best=v;bx0=x0;by0=y0;bx1=x1;by1=y1;}}
+      const c=(bx1-bx0+1)*(by1-by0+1),i=y*w+x;oR[i]=box(SR,bx0,by0,bx1,by1)/c;oG[i]=box(SG,bx0,by0,bx1,by1)/c;oB[i]=box(SB,bx0,by0,bx1,by1)/c;}
+    return [oR,oG,oB];},
+  // where the head is and how big: from the eyes and the mouth (the chin, the top of the hair and the width follow from them)
+  geo(k){const eL=k.eL,eR=k.eR,eM={x:(eL.x+eR.x)/2,y:(eL.y+eR.y)/2},ed=Math.max(4,Math.hypot(eR.x-eL.x,eR.y-eL.y));
+    const mo=k.mo||(k.no?{x:k.no.x+(k.no.x-eM.x)*0.9,y:k.no.y+(k.no.y-eM.y)*0.9}:{x:eM.x,y:eM.y+ed*1.05});let em=Math.hypot(mo.x-eM.x,mo.y-eM.y);em=Math.max(em,ed*0.8);
+    const hc=em*1.62;return {eL,eR,eM,ed,mo,mw:k.mw||ed*0.95,hc,chin:eM.y+hc,top:eM.y-hc*1.3,hw:hc*1.3,no:k.no};},
+  // the picture bent into a caricature: the head kept large, the body below the neck half as big, the neck squeezed between them,
+  // the eyes and the smile swollen a little. Rows are read from the screen-space picture G (of the region X0,Y0 at gs pixels per point)
+  warp(G,X0,Y0,gs,k,maskAt,box){const g=this.geo(k),HC=150,sH=HC/g.hc,sB=sH*0.5,y1=g.chin+g.hc*0.02,y2=g.chin+g.hc*0.62,gw=G.width,gh=G.height,top=Math.max(g.top,Y0),bot=Math.min(box.y1,Y0+gh/gs);
+    const sc=y=>y<y1?sH:y>y2?sB:sH+(sB-sH)*((y-y1)/(y2-y1))**0.8;const rowsY=[];let acc=0;for(let y=top;y<bot;y+=0.25){acc+=sc(y)*0.25;while(rowsY.length<acc)rowsY.push(y);}
+    const oh=Math.max(8,rowsY.length),px=g.eM.x,ow=Math.ceil(Math.max(g.hw*sH,Math.max(Math.abs(box.x0-px),Math.abs(box.x1-px))*sB)*2+24),pxo=ow/2,n=ow*oh;while(rowsY.length<oh)rowsY.push(bot);
+    const R=new Float32Array(n),Gc=new Float32Array(n),B=new Float32Array(n),M=new Float32Array(n);let sd;try{sd=G.cx.getImageData(0,0,gw,gh).data;}catch(e){return null;}
+    const bul=[[g.eL,g.ed*0.62,0.24],[g.eR,g.ed*0.62,0.24],[g.mo,g.mw*0.95,0.15]];
+    for(let yo=0;yo<oh;yo++){const yy=rowsY[yo],s=sc(yy);for(let xo=0;xo<ow;xo++){let sx=px+(xo-pxo)/s,sy=yy;
+        if(yy<y2)for(const b of bul){const dx=sx-b[0].x,dy=sy-b[0].y,d2=(dx*dx+dy*dy)/(b[1]*b[1]);if(d2<1){const f=1-b[2]*(1-d2)*(1-d2);sx=b[0].x+dx*f;sy=b[0].y+dy*f;}}
+        const i=yo*ow+xo;M[i]=maskAt(sx,sy);const gx=(sx-X0)*gs,gy=(sy-Y0)*gs;if(gx<0||gy<0||gx>gw-1.01||gy>gh-1.01){R[i]=Gc[i]=B[i]=255;M[i]=0;continue;}
+        const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,o=(y0*gw+x0)*4,o2=o+gw*4,a=(1-fx)*(1-fy),b=fx*(1-fy),c=(1-fx)*fy,d=fx*fy;
+        R[i]=sd[o]*a+sd[o+4]*b+sd[o2]*c+sd[o2+4]*d;Gc[i]=sd[o+1]*a+sd[o+5]*b+sd[o2+1]*c+sd[o2+5]*d;B[i]=sd[o+2]*a+sd[o+6]*b+sd[o2+2]*c+sd[o2+6]*d;}}
+    const toO=p=>{let lo=0,hi=oh-1;while(lo<hi){const m=(lo+hi)>>1;if(rowsY[m]<p.y)lo=m+1;else hi=m;}return {x:pxo+(p.x-px)*sc(p.y),y:lo};};
+    return {ow,oh,R,G:Gc,B,M,g,toO,sH,neck:toO({x:px,y:g.chin+g.hc*0.5}).y};},
+  // the pen: edges of the smoothed picture (a difference of two blurs), only inside the person; below the neck only the stronger ones;
+  // a clean line along the person's outline; specks of a few pixels dropped
+  ink(o){const w=o.ow,h=o.oh,n=w*h,tmp=new Float32Array(n),Mb=this.gauss(o.M,w,h,1.4,new Float32Array(n),tmp),[R,G,B]=this.kuwahara(o.R,o.G,o.B,w,h,4);
+    const L=new Float32Array(n);for(let i=0;i<n;i++)L[i]=(0.3*R[i]+0.59*G[i]+0.11*B[i])/255;
+    const g1=this.gauss(L,w,h,1.5,new Float32Array(n),tmp),g2=this.gauss(L,w,h,2.4,new Float32Array(n),tmp),ink=new Float32Array(n),yb=o.neck;
+    for(let i=0;i<n;i++){const d=g1[i]-0.997*g2[i],e=i<yb*w?-0.007:-0.016;let a=d<e?Math.tanh((e-d)*80):0;const t=(Mb[i]-0.6)/0.25;ink[i]=a*(t<=0?0:t>=1?1:t);}
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x,gx=(Mb[i+1]-Mb[i-1])*0.5,gy=(Mb[i+w]-Mb[i-w])*0.5,gm=Math.hypot(gx,gy);if(gm<1e-3)continue;const a=2-Math.abs(Mb[i]-0.5)/gm;if(a>0&&a>ink[i])ink[i]=Math.min(1,a);}
+    const lab=new Uint8Array(n),q=new Int32Array(n);for(let s=0;s<n;s++){if(lab[s]||ink[s]<0.35)continue;let hd=0,tl=0;q[tl++]=s;lab[s]=1;while(hd<tl){const i=q[hd++],x=i%w;
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const xx=x+dx,j=i+dy*w+dx;if(xx<0||xx>=w||j<0||j>=n||lab[j]||ink[j]<0.35)continue;lab[j]=1;q[tl++]=j;}}
+      if(tl<14)for(let k=0;k<tl;k++)ink[q[k]]=0;}
+    return {ink,R,G,B,Mb,L};},
+  // marker colour: hue and strength from a wide soft blur (so they never break into patches), lightness from a gentle one laid in three
+  // tones (shadow, base, light) with soft steps; dark places lose their colour and become a soft warm grey; a little blush on the cheeks
+  color(o,st){const w=o.ow,h=o.oh,n=w*h,tmp=new Float32Array(n),wR=this.gauss(st.R,w,h,5,new Float32Array(n),tmp),wG=this.gauss(st.G,w,h,5,new Float32Array(n),tmp),wB=this.gauss(st.B,w,h,5,new Float32Array(n),tmp),Ls=this.gauss(st.L,w,h,2.4,new Float32Array(n),tmp);
+    const f=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;return t<1/6?p+(q-p)*6*t:t<1/2?q:t<2/3?p+(q-p)*(2/3-t)*6:p;},s3=(v,e)=>{let a=(v-e)/0.05+0.5;return a<=0?0:a>=1?1:a*a*(3-2*a);};
+    const g=o.g,ch=[o.toO(g.eL),o.toO(g.eR)].map((p,j)=>({x:p.x+(j?1:-1)*g.ed*o.sH*0.18,y:p.y+g.ed*o.sH*0.62,r:g.ed*o.sH*0.34}));
+    const cv=mkCanvas(w,h),id=cv.cx.createImageData(w,h),d=id.data;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;let al=(st.Mb[i]-0.45)/0.15;if(al<=0)continue;al=al>=1?1:al;
+      const r0=wR[i]/255,g0=wG[i]/255,b0=wB[i]/255,mx=Math.max(r0,g0,b0),mn=Math.min(r0,g0,b0),l0=(mx+mn)/2;let hh=0,s=0;if(mx!==mn){const dd=mx-mn;s=l0>0.5?dd/(2-mx-mn):dd/(mx+mn);hh=(mx===r0?(g0-b0)/dd+(g0<b0?6:0):mx===g0?(b0-r0)/dd+2:(r0-g0)/dd+4)/6;}
+      const lv=Ls[i],L=0.46+0.24*s3(lv,0.28)+0.2*s3(lv,0.55),dk=lv<0.32?(lv/0.32)**2:1;s=(s<0.12?s*0.4:Math.min(0.62,s*1.08))*dk;const qq=L<0.5?L*(1+s):L+s-L*s,pp=2*L-qq;
+      let r=f(pp,qq,hh+1/3)*255,gg=f(pp,qq,hh)*255,b=f(pp,qq,hh-1/3)*255;for(const c of ch){const dd=((x-c.x)**2+(y-c.y)**2)/(c.r*c.r);if(dd<1){const kk=0.3*(1-dd)*(1-dd);r+=(238-r)*kk;gg+=(132-gg)*kk;b+=(132-b)*kk;}}
+      const o2=i*4;d[o2]=r;d[o2+1]=gg;d[o2+2]=b;d[o2+3]=al*235;}
+    cv.cx.putImageData(id,0,0);return cv;},
+  // when each drop of ink is laid down: every line grows from the end nearest the face along its own length; lines near the eyes come first,
+  // then outward to the hair, the outline and the body
+  order(o,st){const w=o.ow,h=o.oh,n=w*h,ink=st.ink,c0=o.toO({x:o.g.eM.x,y:o.g.eM.y+o.g.hc*0.25}),lab=new Uint8Array(n),q=new Int32Array(n),dist=new Int32Array(n),rt=new Float32Array(n),comps=[];let maxS=1;
+    const nb=(i,fn)=>{const x=i%w;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;const xx=x+dx,j=i+dy*w+dx;if(xx<0||xx>=w||j<0||j>=n)continue;fn(j);}};
+    for(let s=0;s<n;s++){if(lab[s]||ink[s]<0.06)continue;let hd=0,tl=0,seed=s,sd=1e18;q[tl++]=s;lab[s]=1;while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0,dd=(x-c0.x)**2+(y-c0.y)**2;if(dd<sd){sd=dd;seed=i;}nb(i,j=>{if(!lab[j]&&ink[j]>=0.06){lab[j]=1;q[tl++]=j;}});}
+      comps.push({seed,sd:Math.sqrt(sd)});if(Math.sqrt(sd)>maxS)maxS=Math.sqrt(sd);}
+    const seen=new Uint8Array(n);let T=0;
+    for(const c of comps){let hd=0,tl=0;q[tl++]=c.seed;seen[c.seed]=1;dist[c.seed]=0;let md=1;while(hd<tl){const i=q[hd++];nb(i,j=>{if(!seen[j]&&ink[j]>=0.06){seen[j]=1;dist[j]=dist[i]+1;if(dist[j]>md)md=dist[j];q[tl++]=j;}});}
+      const st0=Math.pow(c.sd/maxS,0.8)*3.1+Math.random()*0.25,du=Math.min(1.7,Math.max(0.2,md/260));for(let k=0;k<tl;k++){const i=q[k];rt[i]=st0+dist[i]/md*du;if(rt[i]>T)T=rt[i];}}
+    const idx=[];for(let i=0;i<n;i++)if(seen[i])idx.push(i);idx.sort((a,b)=>rt[a]-rt[b]);return {idx:Int32Array.from(idx),rt,T};},
+};
+const mCari={id:'cari',name:'캐리커처',needVideo:true,HOLD:2.5,busy(){return this.st!=='watch'||this.hold>0.3;},desc:'앞에 서서 잠깐 가만히 있으면 펜과 마커로 캐리커처를 그려 준다. 얼굴은 크게 몸은 작게, 눈과 웃음은 조금 더 크게. 다 그린 그림은 옆 벽에 붙어 새로고침 전까지 남는다',
+  init(){this.st='watch';this.hold=0;this.job=null;this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.live=null;this.flash=0;},
+  // this person's face points on screen: the face detector's (sharper up close, on this device), else the pose model's
+  face(tr){const L=tr.pose,ok=i=>L&&L[i]&&L[i].v>0.5;
+    if(!A.remote&&FACE.state==='ready'&&faceFresh()&&FACE.res&&FACE.res.detections){const d2=srcDims(),sw=d2[0],sh=d2[1];if(sw){const c=coverCrop(sw,sh),k=W/c[2],P=q=>{let x=(q.x*sw-c[0])*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-c[1])*k};};
+      for(const f of FACE.res.detections){const kp=f.keypoints;if(!kp||kp.length<4)continue;const a=P(kp[0]),b=P(kp[1]),cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;if(cx>tr.x&&cx<tr.x+tr.w&&cy>tr.y-A.sy*2&&cy<tr.y+tr.h*0.5)return {eL:a.x<b.x?a:b,eR:a.x<b.x?b:a,no:P(kp[2]),mo:P(kp[3])};}}}
+    if(!(ok(0)&&ok(2)&&ok(5)))return null;const a=L[2],b=L[5],k={eL:a.x<b.x?a:b,eR:a.x<b.x?b:a,no:L[0]};
+    if(ok(9)&&ok(10)){k.mo={x:(L[9].x+L[10].x)/2,y:(L[9].y+L[10].y)/2};k.mw=Math.hypot(L[9].x-L[10].x,L[9].y-L[10].y);}return k;},
+  // the moment the shutter goes: this person's part of the picture and of the shape is kept; the drawing is then worked out over a few frames
+  snap(tr){const src=videoSrc(),k=tr.ck;if(!src||!k)return false;const g=CARI.geo(k);
+    const X0=Math.max(0,Math.min(tr.x,g.eM.x-g.hw*1.15)),X1=Math.min(W,Math.max(tr.x+tr.w,g.eM.x+g.hw*1.15)),Y0=Math.max(0,g.top),Y1=Math.min(H,Math.max(g.chin+g.hc,tr.y+tr.h+A.sy)),cw=X1-X0,ch=Y1-Y0;if(cw<20||ch<20)return false;
+    const sH=150/g.hc,gs=Math.min(sH*1.1,Math.sqrt(2.4e6/(cw*ch))),gw=Math.max(2,Math.round(cw*gs)),gh=Math.max(2,Math.round(ch*gs)),G=mkCanvas(gw,gh),c=coverCrop(src.vw,src.vh),kx=c[2]/W,ky=c[3]/H;G.cx.imageSmoothingEnabled=true;
+    try{if(src.mirror){G.cx.translate(gw,0);G.cx.scale(-1,1);G.cx.drawImage(src.el,c[0]+(W-X1)*kx,c[1]+Y0*ky,cw*kx,ch*ky,0,0,gw,gh);}else G.cx.drawImage(src.el,c[0]+X0*kx,c[1]+Y0*ky,cw*kx,ch*ky,0,0,gw,gh);}catch(e){return false;}
+    // the person's shape: the segmenter's own mask on this device (finer at the hair), else the grid (all a phone sensor sends); only
+    // around this person, so a neighbour standing close is not drawn in
+    const w=A.w,h=A.h,P=Float32Array.from(A.p),useSeg=!A.remote&&SEG.mask&&performance.now()-SEG.fresh<500,SM=useSeg?Float32Array.from(SEG.mask):null,smw=SEG.mw,smh=SEG.mh,mir=src.mirror,vw=src.vw,vh=src.vh;
+    const bx0=Math.min(tr.x,g.eM.x-g.hw)-tr.w*0.12,bx1=Math.max(tr.x+tr.w,g.eM.x+g.hw)+tr.w*0.12,soft=Math.max(8,tr.w*0.1);
+    const maskAt=(X,Y)=>{let m;if(SM){let vx=c[0]+(mir?W-X:X)*kx,vy=c[1]+Y*ky;let mx=vx/vw*smw-0.5,my=vy/vh*smh-0.5;mx=mx<0?0:mx>smw-1.001?smw-1.001:mx;my=my<0?0:my>smh-1.001?smh-1.001:my;const x0=mx|0,y0=my|0,fx=mx-x0,fy=my-y0,i=y0*smw+x0;m=(SM[i]*(1-fx)+SM[i+1]*fx)*(1-fy)+(SM[i+smw]*(1-fx)+SM[i+smw+1]*fx)*fy;}
+      else{let gx=X/A.sx-0.5,gy=Y/A.sy-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;m=(P[i]*(1-fx)+P[i+1]*fx)*(1-fy)+(P[i+w]*(1-fx)+P[i+w+1]*fx)*fy;}
+      const e=Math.min(X-bx0,bx1-X)/soft;return m*(e<=0?0:e>=1?1:e);};
+    this.job={step:0,G,X0,Y0,gs,k,maskAt,box:{x0:bx0,x1:bx1,y1:Y1},tr};tr.cariT=performance.now();tr.cariX=tr.sx;tr.cariY=tr.sy;this.st='work';this.flash=1;return true;},
+  work(){const j=this.job;if(!j)return;try{
+    if(j.step===0){j.o=CARI.warp(j.G,j.X0,j.Y0,j.gs,j.k,j.maskAt,j.box);j.G=null;if(!j.o)throw 0;}
+    else if(j.step===1)j.st=CARI.ink(j.o);
+    else if(j.step===2)j.col=CARI.color(j.o,j.st);
+    else if(j.step===3){j.ord=CARI.order(j.o,j.st);const w=j.o.ow,h=j.o.oh;j.lc=mkCanvas(w,h);j.lim=j.lc.cx.createImageData(w,h);j.cur=0;j.t=0;this.st='draw';CARI.no++;j.no=CARI.no;j.label='No. '+j.no+' · '+new Date().toLocaleDateString('ko-KR');}
+    j.step++;}catch(e){this.job=null;this.st='watch';}},
+  // the drawing laid out on its paper: inside the area left of the wall (or above it), as large as fits
+  lay(){const land=W>=H*1.05,fz=Math.max(13,Math.min(22,W/64));if(land){const wx=Math.round(W*0.7);return {land,fz,rx:0,ry:0,rw:wx,rh:H,wx,wy:0,ww:W-wx,wh:H};}const wy=Math.round(H*0.8);return {land,fz,rx:0,ry:0,rw:W,rh:wy,wx:0,wy,ww:W,wh:H-wy};},
+  card(L,ar){const top=Math.max(64,L.fz*3.4),bot=L.fz*4.2,cap=L.fz*1.9,ah=L.rh-top-bot,aw=L.rw*0.88;let dh=ah-cap,dw=dh*ar*1.12;if(dw>aw){dw=aw;dh=dw/ar/1.12;}const cw=dw,chh=dh+cap,cx=L.rx+(L.rw-cw)/2,cy=top+(ah-chh)/2;return {x:cx,y:cy,w:cw,h:chh,dh,cap};},
+  // a sheet for a drawing of shape ar inside the rect R, with a strip for its number below
+  fit(R,ar,capF){let w=Math.min(R.w,R.h*(1-capF)*0.92*ar/0.9),h=w*0.9/ar/0.92/(1-capF);if(h>R.h){h=R.h;w=h*(1-capF)*0.92*ar/0.9;}return {x:R.x+(R.w-w)/2,y:R.y+(R.h-h)/2,w,h};},
+  slot(L,i){const cols=L.land?2:4,rows=L.land?3:1,pad=L.fz*0.9,cw=(L.ww-pad*(cols+1))/cols,chh=(L.wh-pad*(rows+1)-(L.land?L.fz*3:0))/rows,c=i%cols,r=(i/cols)|0;if(r>=rows)return null;return {x:L.wx+pad+c*(cw+pad),y:L.wy+pad+(L.land?L.fz*3:0)+r*(chh+pad),w:cw,h:chh};},
+  // one drawing on its paper at rect R (paper, colour, ink, and its number underneath)
+  paper(c,R,D,colA,cap){const x=R.x,y=R.y,w=R.w,h=R.h;c.save();c.shadowColor='rgba(60,45,30,0.16)';c.shadowBlur=Math.max(4,w*0.03);c.shadowOffsetY=Math.max(1,w*0.008);c.fillStyle='#fffdf8';c.beginPath();c.roundRect?c.roundRect(x,y,w,h,Math.max(3,w*0.012)):c.rect(x,y,w,h);c.fill();c.restore();
+    const capH=cap?h*cap:0,ih=(h-capH)*0.92,iw=Math.min(w*0.9,ih*D.ar),dx=x+(w-iw)/2,dy=y+(h-capH-ih)/2+(h-capH)*0.02;c.imageSmoothingEnabled=true;
+    if(D.col&&colA>0){c.save();c.globalAlpha=colA;c.globalCompositeOperation='multiply';c.drawImage(D.col,dx,dy,iw,ih);c.restore();}if(D.line)c.drawImage(D.line,dx,dy,iw,ih);
+    if(cap){c.font='500 '+Math.max(9,Math.round(capH*0.36))+'px '+SANS;c.textAlign='center';c.textBaseline='middle';c.fillStyle='rgba(40,32,24,0.5)';c.fillText(D.label,x+w/2,y+h-capH*0.55);c.textAlign='left';}},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);if((this.f=(this.f||0)+1)%2===0)TR.update();const L=this.lay(),now=performance.now(),fz=L.fz;
+    ctx.fillStyle='#f3efe7';ctx.fillRect(0,0,W,H);
+    // everyone in front, as a quiet warm shadow (fainter while a drawing is being made)
+    const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);this.live=upsampleMask(pb,w,h,2,0.38,0.62,[222,214,202],this.live);ctx.imageSmoothingEnabled=true;ctx.globalAlpha=this.st==='watch'?1:0.45;ctx.drawImage(this.live,0,0,W,H);ctx.globalAlpha=1;
+    if(this.st==='work')this.work();
+    // who could be drawn: near enough for a clear face, looking this way, and still
+    const live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=6);TR.tracks.forEach(tr=>{if(tr.cariT&&TR.f-tr.seen>12)tr.cariT=0;});let cand=null;
+    live.forEach(tr=>{const k=this.face(tr);tr.ck=k;const ed=k?Math.hypot(k.eR.x-k.eL.x,k.eR.y-k.eL.y):0,hs=tr.hist,nn=hs.length,still=nn>8&&Math.hypot(hs[nn-1][0]-hs[nn-9][0],hs[nn-1][1]-hs[nn-9][1])<W*0.02,
+        done=tr.cariT&&now-tr.cariT<20000&&Math.hypot(tr.sx-tr.cariX,tr.sy-tr.cariY)<W*0.2;
+      tr.cS=!k?'noface':ed<H*0.024?'far':done?'done':!still?'move':'hold';tr.cHold=this.st==='watch'&&tr.cS==='hold'?(tr.cHold||0)+dt:Math.max(0,(tr.cHold||0)-dt*1.5);
+      const rk=tr.cS==='hold'?3:tr.cS==='move'?2:tr.cS==='done'?1.5:tr.cS==='far'?1:0;if(!cand||rk>cand.rk||(rk===cand.rk&&(tr.cHold>cand.tr.cHold+1e-6||(Math.abs(tr.cHold-cand.tr.cHold)<1e-6&&tr.area>cand.tr.area))))cand={tr,rk};});
+    const ct=cand?cand.tr:null;this.hold=this.st==='watch'&&ct?ct.cHold:0;const vid=!!videoSrc();
+    if(this.st==='watch'&&ct&&ct.ck&&this.hold>0.05&&vid){const g=CARI.geo(ct.ck),r=g.hc*1.2,cx=g.eM.x,cy=g.eM.y+g.hc*0.05,pr=Math.min(1,this.hold/this.HOLD);
+      ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='rgba(40,32,24,0.12)';ctx.beginPath();ctx.arc(cx,cy,r,0,TAU);ctx.stroke();ctx.strokeStyle='rgba(40,32,24,0.72)';ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+TAU*pr);ctx.stroke();}
+    if(this.st==='watch'&&ct&&this.hold>=this.HOLD&&vid){ct.cHold=0;this.hold=0;this.snap(ct);}
+    // the wall of finished drawings
+    const wall=CARI.wall,j=this.job,shelf=this.st==='shelve'?Math.min(1,(j.t-j.tEnd)/0.9):0,es=shelf*shelf*(3-2*shelf);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.fillRect(L.wx,L.wy,L.ww,L.wh);ctx.strokeStyle='rgba(60,45,30,0.12)';ctx.lineWidth=1;ctx.beginPath();if(L.land){ctx.moveTo(L.wx+0.5,0);ctx.lineTo(L.wx+0.5,H);}else{ctx.moveTo(0,L.wy+0.5);ctx.lineTo(W,L.wy+0.5);}ctx.stroke();
+    if(L.land){ctx.font='600 '+Math.round(fz*0.8)+'px '+SANS;ctx.fillStyle='rgba(40,32,24,0.55)';ctx.textBaseline='alphabetic';ctx.fillText('오늘 그린 캐리커처',L.wx+fz*0.9,fz*2.4);}
+    for(let i=0;i<wall.length;i++){const a=this.slot(L,i),b=this.slot(L,i+1);if(!a)break;const R=b&&es>0?{x:lerp(a.x,b.x,es),y:lerp(a.y,b.y,es),w:lerp(a.w,b.w,es),h:lerp(a.h,b.h,es)}:a;if(!b&&es>0){ctx.globalAlpha=1-es;}
+      const D=wall[i];this.paper(ctx,this.fit(R,D.ar,0.14),D,1,0.14);ctx.globalAlpha=1;}
+    // the drawing being made: the pen first, then the colour washed in from the top
+    if(j&&(this.st==='draw'||this.st==='show'||this.st==='shelve')){j.t+=dt;const o=j.o,ord=j.ord,d=j.lim.data,ink=j.st.ink,tl=j.t*1.0;let ch=false;
+      while(j.cur<ord.idx.length&&ord.rt[ord.idx[j.cur]]<=tl){const i=ord.idx[j.cur++],a=ink[i],q=i*4;d[q]=28;d[q+1]=24;d[q+2]=26;d[q+3]=Math.min(255,a*250);ch=true;}if(ch)j.lc.cx.putImageData(j.lim,0,0);
+      const cs=ord.T*0.55,ce=ord.T+1.8,cp=clamp((j.t-cs)/(ce-cs),0,1);
+      if(cp>0&&cp<1){if(!j.cc||j.cc.width!==o.ow)j.cc=mkCanvas(o.ow,o.oh);const c2=j.cc.cx;c2.globalCompositeOperation='source-over';c2.clearRect(0,0,o.ow,o.oh);c2.drawImage(j.col,0,0);c2.globalCompositeOperation='destination-in';
+        const yy=cp*(o.oh*1.25),gr=c2.createLinearGradient(0,yy-o.oh*0.25,0,yy);gr.addColorStop(0,'rgba(0,0,0,1)');gr.addColorStop(1,'rgba(0,0,0,0)');c2.fillStyle=gr;c2.fillRect(0,0,o.ow,o.oh);c2.globalCompositeOperation='source-over';}
+      const D={ar:o.ow/o.oh,line:j.lc,col:cp>=1?j.col:cp>0?j.cc:null,label:j.label};
+      if(this.st==='draw'&&j.cur>=ord.idx.length&&cp>=1){this.st='show';j.tShow=j.t;}
+      if(this.st==='show'&&j.t-j.tShow>7){this.st='shelve';j.tEnd=j.t;}
+      const C=this.card(L,D.ar),dest=this.slot(L,0);let R={x:C.x,y:C.y,w:C.w,h:C.h};
+      if(this.st==='shelve'&&dest){const T2=this.fit(dest,D.ar,0.14);R={x:lerp(R.x,T2.x,es),y:lerp(R.y,T2.y,es),w:lerp(R.w,T2.w,es),h:lerp(R.h,T2.h,es)};}
+      this.paper(ctx,R,D,1,C.cap/C.h);
+      if(this.st==='shelve'&&shelf>=1){const th=Math.min(1,320/o.oh),tw2=Math.max(2,Math.round(o.ow*th)),th2=Math.max(2,Math.round(o.oh*th)),cC=mkCanvas(tw2,th2),lC=mkCanvas(tw2,th2);
+        cC.cx.imageSmoothingEnabled=true;cC.cx.drawImage(j.col,0,0,tw2,th2);lC.cx.imageSmoothingEnabled=true;lC.cx.drawImage(j.lc,0,0,tw2,th2);wall.unshift({ar:D.ar,col:cC,line:lC,label:'No. '+j.no});if(wall.length>8)wall.length=8;this.job=null;this.st='watch';}}
+    if(this.flash>0){ctx.fillStyle='rgba(255,255,255,'+(this.flash*0.75)+')';ctx.fillRect(0,0,W,H);this.flash=Math.max(0,this.flash-dt*2.6);}
+    // quiet words: what to do, and what is happening
+    const s=ct?ct.cS:'none',txt=!vid?'카메라 화면을 기다리고 있어요':this.st==='work'?'찰칵 · 그리기 시작할게요':this.st==='draw'?'그리는 중…':this.st==='show'||this.st==='shelve'?(j?j.no:CARI.no)+'번째 캐리커처를 그렸어요':
+      s==='far'?'조금 더 가까이 와 주세요':s==='noface'?'카메라 쪽으로 얼굴을 보여 주세요':s==='move'?'그대로 멈춰 주세요':s==='hold'?'그대로… '+Math.max(1,Math.ceil(this.HOLD-this.hold)):s==='done'?'방금 그렸어요 · 다음 친구도 서 보세요':'앞에 서서 잠깐 가만히 있으면 캐리커처를 그려 드려요';
+    ctx.font='500 '+fz+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillStyle='rgba(40,32,24,0.78)';ctx.fillText(txt,L.rx+L.rw/2,L.rh-fz*1.8);ctx.textAlign='left';}};
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mStar,mGhost,mCari];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1885,7 +2064,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`qwer';
+const KEYS='1234567890-=[]\\;\',./`qwert';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
@@ -1913,8 +2092,9 @@ seg('#segReact',i=>{S.react=i;});seg('#sReact',i=>{S.react=i;});
 seg('#segTrail',i=>{S.trailp=i;});
 seg('#segDetect',i=>{S.detect=i===0?'motion':'presence';resetBackground();toast(S.detect==='motion'?'움직이는 것만 형태로 봐요':'가만히 있는 사람도 잡아요. 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
 seg('#segAuto',i=>{S.auto=AUTOS[i];lastSwitch=performance.now();});
+seg('#segStackDist',i=>{S.stackDist=i;});
 const swMirror=$('#swMirror');
-function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));
+function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);
   swMirror.checked=!!S.mirror;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
 $('#btnKeySave').addEventListener('click',()=>{const v=$('#claudeKey').value.trim();POET.setKey(v);$('#claudeKey').value='';$('#claudeKey').placeholder=v?'저장됨 · 바꾸려면 새 키 입력':'Claude API 키 (sk-ant-…)';toast(v?'Claude 키를 저장했어요':'키가 비어 있어요');});
