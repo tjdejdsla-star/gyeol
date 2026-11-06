@@ -1,0 +1,17 @@
+// 숭의 전시 웹앱 오프라인 저장: 인식 모델·라이브러리(vendor/, models/, 같은 파일의 CDN 사본)는 한 번 받으면 저장해 두고 다시 받지 않는다.
+// index.html은 늘 새로 받아 오고(업데이트가 바로 보이게), 인터넷이 끊겼을 때만 저장해 둔 것을 쓴다.
+const C = 'gyeol-v1';
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => {
+  const req = e.request; if (req.method !== 'GET') return;
+  const u = new URL(req.url), same = u.origin === self.location.origin;
+  const heavy = (same && /\/(vendor|models)\//.test(u.pathname)) || /storage\.googleapis\.com\/mediapipe-models\/|cdn\.jsdelivr\.net\/npm\/(@mediapipe|@dimforge|peerjs|qrcode)/.test(u.href);
+  if (heavy) {
+    e.respondWith(caches.open(C).then(async c => { const hit = await c.match(req); if (hit) return hit; const r = await fetch(req); if (r.ok) c.put(req, r.clone()); return r; }));
+    return;
+  }
+  if (same && (u.pathname.endsWith('/') || u.pathname.endsWith('.html'))) {
+    e.respondWith(fetch(req).then(r => { if (r.ok) { const cl = r.clone(); caches.open(C).then(c => c.put(req, cl)); } return r; }).catch(() => caches.match(req)));
+  }
+});
