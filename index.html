@@ -601,7 +601,7 @@ function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now(
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&now-FACE.plast>(usePose?66:80)){FACE.plast=now;try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}}
@@ -869,31 +869,43 @@ const mHalftone={id:'halftone',name:'망점',desc:'흰 바탕에 하늘색 망�
 
 /* 열화상: a thermal camera. People are warm, the room is cool; the hottest parts (head, hands, the core of the body) burn toward white.
    The palette is a calm one: deep navy, steel blue, teal, amber, coral, white, instead of a hard rainbow */
-const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 사람은 따뜻하게, 공간은 차갑게. 머리와 손, 몸의 중심이 가장 뜨겁게 하얘진다. 차분한 남색·청록·호박·산호 색조',
-  init(){this.tw=Math.max(64,Math.round(W/(isTouch?5:4)));this.th=Math.max(36,Math.round(H/(isTouch?5:4)));this.src=mkCanvas(this.tw,this.th);this.out=mkCanvas(this.tw,this.th);this.img=this.out.cx.createImageData(this.tw,this.th);
-    const n=this.tw*this.th;this.L=new Float32Array(n);this.Lb=new Float32Array(n);this.T=new Float32Array(n);this.Ts=new Float32Array(n);this.tmp=new Float32Array(n);this.pb=new Float32Array(A.n);this.dep=new Float32Array(A.n);this.tmpg=new Float32Array(A.n);
-    const st=[[0,[10,14,38]],[0.14,[26,36,92]],[0.28,[38,84,150]],[0.42,[52,150,160]],[0.54,[150,182,128]],[0.64,[226,184,92]],[0.75,[234,130,72]],[0.86,[224,86,96]],[0.94,[244,178,186]],[1,[255,246,238]]];
+const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 파란 공간 위에 사람이 무지갯빛 온도로 떠오른다. 얼굴이 가장 뜨겁게 하얗고, 목과 팔은 붉게, 옷과 다리는 노랑·연두로 나뉜다. 얼굴 생김새는 보이지 않는다',
+  init(){this.tw=Math.max(64,Math.round(W/(isTouch?5:4)));this.th=Math.max(36,Math.round(H/(isTouch?5:4)));this.out=mkCanvas(this.tw,this.th);this.img=this.out.cx.createImageData(this.tw,this.th);
+    const n=this.tw*this.th;this.T=new Float32Array(n);this.Ts=new Float32Array(n);this.tmp=new Float32Array(n);this.pb=new Float32Array(A.n);this.tmpg=new Float32Array(A.n);this.init2=false;
+    // the classic rainbow: deep blue room, cyan and green at the cool edge of a body, yellow clothes, orange and red skin, a pink-white face
+    const st=[[0,[6,16,84]],[0.16,[14,46,160]],[0.28,[24,94,210]],[0.37,[34,132,226]],[0.45,[38,176,186]],[0.52,[96,206,86]],[0.59,[186,224,52]],[0.66,[244,228,48]],[0.73,[255,180,40]],[0.8,[252,104,50]],[0.86,[238,48,92]],[0.92,[244,104,146]],[0.97,[252,196,204]],[1,[255,242,238]]];
     this.lut=new Uint8ClampedArray(256*3);for(let i=0;i<256;i++){const v=i/255;let a=st[0],b=st[st.length-1];for(let j=0;j<st.length-1;j++)if(v>=st[j][0]&&v<=st[j+1][0]){a=st[j];b=st[j+1];break;}const f=(v-a[0])/((b[0]-a[0])||1);for(let c=0;c<3;c++)this.lut[i*3+c]=a[1][c]+(b[1][c]-a[1][c])*f;}},
-  draw(t){const tw=this.tw,th=this.th,n=tw*th,L=this.L,Lb=this.Lb,T=this.T,Ts=this.Ts,lut=this.lut,w=A.w,h=A.h,pb=this.pb,dep=this.dep;if((this.f=(this.f||0)+1)%2===0)TR.update();
-    // the room: brightness of the scene, softened, gives the cool background its shapes; an edge pass adds the fine outlines a thermal camera overlays
-    {const gr=A.gray,ok=A.frames>0&&gr&&gr.length===w*h;for(let y=0;y<th;y++){let gy=(y+0.5)*h/th-0.5;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const y0=gy|0,fy=gy-y0;for(let x=0;x<tw;x++){let gx=(x+0.5)*w/tw-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;const x0=gx|0,fx=gx-x0,i=y0*w+x0;
-      L[y*tw+x]=ok?((gr[i]*(1-fx)+gr[i+1]*fx)*(1-fy)+(gr[i+w]*(1-fx)+gr[i+w+1]*fx)*fy)/255:0.3;}}}
-    Lb.set(L);box5(Lb,this.tmp,tw,th);box5(Lb,this.tmp,tw,th);
-    // people: warm, hotter toward the middle of the body (distance from the outline), hottest at the head and hands
-    pb.set(A.p);blur3(pb,this.tmpg,w,h);dep.set(pb);box5(dep,this.tmpg,w,h);box5(dep,this.tmpg,w,h);
-    const hot=[];TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;const hb=headBox(tr,tr.pose);if(hb)hot.push([hb[0]+hb[2]/2,hb[1]+hb[3]*0.5,Math.max(hb[2],hb[3])*0.75]);
-      if(tr.pose)[15,16].forEach(j=>{const q=tr.pose[j];if(q&&q.v>0.5)hot.push([q.x,q.y,tr.h*0.06]);});});
-    const kx=w/tw,ky=h/th,sx=W/tw,sy=H/th;
-    for(let y=0;y<th;y++){let gy=(y+0.5)*ky-0.5;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const y0=gy|0,fy=gy-y0;
-      for(let x=0;x<tw;x++){let gx=(x+0.5)*kx-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;const x0=gx|0,fx=gx-x0,i0=y0*w+x0,i=y*tw+x;
-        const pm=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy,dp=(dep[i0]*(1-fx)+dep[i0+1]*fx)*(1-fy)+(dep[i0+w]*(1-fx)+dep[i0+w+1]*fx)*fy;
-        const ex=x>0&&x<tw-1?L[i+1]-L[i-1]:0,ey=y>0&&y<th-1?L[i+tw]-L[i-tw]:0,edge=Math.min(1,Math.hypot(ex,ey)*3);
-        let v=0.1+0.3*Lb[i]+0.05*edge;
-        if(pm>0.02){let body=0.48+0.22*Math.pow(dp,1.4);for(const q of hot){const dx=(x+0.5)*sx-q[0],dy=(y+0.5)*sy-q[1],r2=q[2]*q[2];body+=0.2*Math.exp(-(dx*dx+dy*dy)/r2);}v=v*(1-pm)+((0.1+0.3*Lb[i])*0.3+body)*pm;}
+  // one person's body as warm parts along the skeleton: head (the face hottest), neck, the clothed body, arms and hands, legs
+  parts(tr){const L=tr.pose||rigFromSilhouette(tr);if(!L)return null;const ok=i=>L[i]&&L[i].v>0.4,P=i=>L[i];if(!ok(11)||!ok(12))return null;
+    const sm={x:(P(11).x+P(12).x)/2,y:(P(11).y+P(12).y)/2},sw=Math.max(8,Math.hypot(P(11).x-P(12).x,P(11).y-P(12).y));
+    const hm=ok(23)&&ok(24)?{x:(P(23).x+P(24).x)/2,y:(P(23).y+P(24).y)/2}:{x:sm.x,y:sm.y+sw*1.3};
+    let hd=ok(0)?{x:P(0).x,y:P(0).y}:{x:sm.x,y:sm.y-sw*0.75};if(ok(7)&&ok(8))hd={x:((P(7).x+P(8).x)/2+hd.x)/2,y:((P(7).y+P(8).y)/2+hd.y)/2};
+    const S=[],seg=(a,b,r,T,k)=>S.push([a.x,a.y,b.x,b.y,r,T,k||0]),hr=sw*0.36;
+    seg({x:hd.x,y:hd.y-hr*0.35},{x:hd.x,y:hd.y+hr*0.25},hr,0.93,1);seg({x:hd.x,y:hd.y+hr*0.7},sm,sw*0.2,0.89);seg(sm,hm,sw*0.56,0.67,2);
+    [[11,13,15],[12,14,16]].forEach(([a,e,w2])=>{if(!ok(e))return;seg(P(a),P(e),sw*0.17,0.8,3);if(ok(w2)){seg(P(e),P(w2),sw*0.14,0.85);seg(P(w2),P(w2),sw*0.16,0.88);}});
+    [[23,25,27],[24,26,28]].forEach(([a,e,f])=>{if(!ok(a)||!ok(e))return;seg(P(a),P(e),sw*0.25,0.63,2);if(ok(f)){seg(P(e),P(f),sw*0.18,0.58,2);seg(P(f),P(f),sw*0.17,0.62);}});
+    return {S,hd,hr,cx:sm.x,cy:sm.y,sw};},
+  draw(t){const tw=this.tw,th=this.th,n=tw*th,T=this.T,Ts=this.Ts,lut=this.lut,w=A.w,h=A.h,pb=this.pb;if((this.f=(this.f||0)+1)%2===0)TR.update();
+    pb.set(A.p);blur3(pb,this.tmpg,w,h);
+    const B=[];TR.tracks.forEach(tr=>{if(TR.f-tr.seen>2)return;const b=this.parts(tr);if(b)B.push(b);});
+    const kx=w/tw,ky=h/th,sx=W/tw,sy=H/th,tt=t*0.2;
+    for(let y=0;y<th;y++){let gy=(y+0.5)*ky-0.5;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const y0=gy|0,fy=gy-y0,yy=y/th,py=(y+0.5)*sy;
+      for(let x=0;x<tw;x++){let gx=(x+0.5)*kx-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;const x0=gx|0,fx=gx-x0,i0=y0*w+x0,i=y*tw+x,xx=x/tw;
+        // the room: an even cold blue, deeper toward the top right, with a slow faint drift; nothing of the picture is used
+        let v=0.29+0.05*yy-0.12*Math.max(0,xx-0.35)*(1-yy)+0.012*Math.sin(xx*7+tt)*Math.sin(yy*5-tt*0.8);
+        const pm=(pb[i0]*(1-fx)+pb[i0+1]*fx)*(1-fy)+(pb[i0+w]*(1-fx)+pb[i0+w+1]*fx)*fy;
+        if(pm>0.02){const px=(x+0.5)*sx;let ws=0.04,ts=0.04*0.64;
+          for(const b of B){for(const q of b.S){const ax=q[0],ay=q[1],dx=q[2]-ax,dy=q[3]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u,dd=(ex*ex+ey*ey)/(q[4]*q[4]);if(dd>5)continue;
+              const wt=Math.exp(-dd*1.6);let T0=q[5];
+              if(q[6]===1){const fx2=(px-b.hd.x)/(b.hr*0.62),fy2=(py-b.hd.y-b.hr*0.12)/(b.hr*0.75);T0+=0.12*Math.exp(-(fx2*fx2+fy2*fy2));if(py<b.hd.y-b.hr*0.45)T0-=0.04;}
+              else if(q[6]===2){const rx=(px-b.cx)/b.sw,ry=(py-b.cy)/b.sw;T0+=0.05*Math.sin(rx*4.3+ry*2.9+1.3)*Math.sin(rx*2.1-ry*3.7+0.4);}
+              else if(q[6]===3)T0+=0.04*Math.sin((px-b.cx)/b.sw*6+(py-b.cy)/b.sw*3);
+              ws+=wt;ts+=wt*T0;}}
+          v=v*(1-pm)+(ts/ws)*pm;}
         T[i]=v;}}
-    // heat spreads a little and settles over time, like a real sensor
-    box5(T,this.tmp,tw,th);if(!this.init2){Ts.set(T);this.init2=true;}else for(let i=0;i<n;i++)Ts[i]+=(T[i]-Ts[i])*0.35;
-    const d=this.img.data;for(let i=0;i<n;i++){let v=Ts[i];v=v<0?0:v>1?1:v;const li=((v*255)|0)*3,q=i*4;d[q]=lut[li];d[q+1]=lut[li+1];d[q+2]=lut[li+2];d[q+3]=255;}
+    // heat spreads and blurs like a real sensor, and settles over time
+    box5(T,this.tmp,tw,th);box5(T,this.tmp,tw,th);box5(T,this.tmp,tw,th);if(!this.init2){Ts.set(T);this.init2=true;}else for(let i=0;i<n;i++)Ts[i]+=(T[i]-Ts[i])*0.35;
+    const d=this.img.data;let r=(this.f*9301+49297)>>>0||1;for(let i=0;i<n;i++){let v=Ts[i];v=v<0?0:v>1?1:v;r^=r<<13;r^=r>>>17;r^=r<<5;const g=((r>>>0)%11)-5,li=((v*255)|0)*3,q=i*4;d[q]=lut[li]+g;d[q+1]=lut[li+1]+g;d[q+2]=lut[li+2]+g;d[q+3]=255;}
     this.out.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.out,0,0,W,H);
     // a quiet reading: a slim scale on the right and the warmest point, in degrees
     let mi=0,mv=0;for(let i=0;i<n;i++)if(Ts[i]>mv){mv=Ts[i];mi=i;}const tmax=(20+16.5*mv).toFixed(1),hx=((mi%tw)+0.5)*sx,hy=(((mi/tw)|0)+0.5)*sy;
@@ -901,7 +913,7 @@ const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 �
     ctx.fillStyle=g;ctx.fillRect(bx,by,8,bh);const fz=Math.round(clamp(Math.min(W,H)*0.024,13,22));ctx.font='700 '+fz+'px '+SANS;ctx.textBaseline='middle';
     const tag=(txt,x,y,al)=>{ctx.textAlign=al;const tw=ctx.measureText(txt).width,px=fz*0.5,x0=al==='right'?x-tw-px:x-px;ctx.fillStyle='rgba(8,12,28,0.62)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x0,y-fz*0.78,tw+px*2,fz*1.56,fz*0.5);else ctx.rect(x0,y-fz*0.78,tw+px*2,fz*1.56);ctx.fill();ctx.fillStyle='#ffffff';ctx.fillText(txt,x,y);};
     tag('36.5°',bx-10,by,'right');tag('20.0°',bx-10,by+bh,'right');
-    if(mv>0.55){ctx.strokeStyle='rgba(255,255,255,0.95)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(hx-11,hy);ctx.lineTo(hx+11,hy);ctx.moveTo(hx,hy-11);ctx.lineTo(hx,hy+11);ctx.stroke();ctx.font='800 '+Math.round(fz*1.25)+'px '+SANS;tag(tmax+'°',hx+18+fz*0.5,hy-fz*1.2,'left');}
+    if(mv>0.6){ctx.strokeStyle='rgba(255,255,255,0.95)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(hx-11,hy);ctx.lineTo(hx+11,hy);ctx.moveTo(hx,hy-11);ctx.lineTo(hx,hy+11);ctx.stroke();ctx.font='800 '+Math.round(fz*1.25)+'px '+SANS;tag(tmax+'°',hx+18+fz*0.5,hy-fz*1.2,'left');}
     ctx.textAlign='left';ctx.textBaseline='alphabetic';
   }};
 /* 말씀: a wall of scripture that never stops flowing. When someone steps in, every line parts around their shape, the letters crowding smaller toward
@@ -1157,13 +1169,13 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
 /* 물감: the surface of water with oil on it. A film of iridescent colour (magenta, violet, blue, cyan, green, gold, orange) drifts and
    curls; wherever people move, the water follows them and drags the colour into swirls and fine marbled lines. A small fluid simulation
    (advection, pressure projection, a little vorticity) on a coarse grid; colour comes from the film's thickness through a thin-film palette */
-const mFluid={id:'fluid',name:'물감',desc:'상아빛 종이 위 마블링처럼 금·청록·남색·장밋빛 물감이 천천히 흐르고 감긴다. 사람이 지나가면 그 움직임대로 물감이 밀리고 소용돌이치며 번진다',
+const mFluid={id:'fluid',name:'물감',desc:'홀로그램 필름처럼 하늘·민트·연노랑·라일락 파스텔 물감이 가는 결을 띠고 천천히 흐르고 감긴다. 사람이 지나가면 그 움직임대로 물감이 밀리고 소용돌이치며 번진다',
   init(){const R=Math.random,gw=this.gw=isTouch?120:168,gh=this.gh=Math.max(8,Math.round(gw*H/W)),n=gw*gh;['vx','vy','ux','uy','p','dv','T','T2','S','S2','cu','D','D2','fx','fy','ft'].forEach(k=>this[k]=new Float32Array(n));
     const noise=(sc,seed)=>{const cw=Math.ceil(gw/sc)+3,chh=Math.ceil(gh/sc)+3,g=new Float32Array(cw*chh);for(let i=0;i<g.length;i++)g[i]=R();const out=new Float32Array(n);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const fx=x/sc,fy=y/sc,x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,sx=tx*tx*(3-2*tx),sy=ty*ty*(3-2*ty),i=y0*cw+x0;out[y*gw+x]=(g[i]*(1-sx)+g[i+1]*sx)*(1-sy)+(g[i+cw]*(1-sx)+g[i+cw+1]*sx)*sy;}return out;};
     const a=noise(gw/3,1),b=noise(gw/7,2),c=noise(gw/16,3),d2=noise(gw/4,4),e2=noise(gw/28,5),e3=noise(gw/12,6);for(let i=0;i<n;i++){this.T[i]=(a[i]*1.0+b[i]*0.55+c[i]*0.25)*2.1;this.S[i]=0.2+0.8*Math.min(1,Math.max(0,(d2[i]-0.2)*1.6));this.D[i]=e2[i]*0.7+e3[i]*0.5;}
     // a swirl to start from, so the film already looks stirred
     for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const i=y*gw+x,dx=x-gw*0.5,dy=y-gh*0.5;this.vx[i]=-dy*0.012+(b[i]-0.5)*0.6;this.vy[i]=dx*0.012+(c[i]-0.5)*0.6;}
-    const st=[[0,'#efe7da'],[0.13,'#e7d9c4'],[0.19,'#c9a462'],[0.23,'#eadcc7'],[0.33,'#97b0a6'],[0.43,'#2f5c66'],[0.51,'#1b2947'],[0.57,'#3a3962'],[0.64,'#b48a8e'],[0.72,'#e9d7cc'],[0.79,'#d8b676'],[0.84,'#f2eadd'],[1,'#efe7da']].map(q=>[q[0],hex(q[1])]);
+    const st=[[0,'#fbf8e4'],[0.11,'#fdf0ac'],[0.23,'#c4f0c6'],[0.35,'#8de2dc'],[0.47,'#7cc4f4'],[0.59,'#a0b4f6'],[0.71,'#c8a8f2'],[0.81,'#e6c0f0'],[0.9,'#f8f2f8'],[1,'#fbf8e4']].map(q=>[q[0],hex(q[1])]);
     const lut=this.lut=new Uint8ClampedArray(1024*3);for(let i=0;i<1024;i++){const v=i/1024;let A2=st[0],B2=st[st.length-1];for(let j=0;j<st.length-1;j++)if(v>=st[j][0]&&v<=st[j+1][0]){A2=st[j];B2=st[j+1];break;}const f=(v-A2[0])/((B2[0]-A2[0])||1),e=f*f*(3-2*f);for(let c2=0;c2<3;c2++)lut[i*3+c2]=A2[1][c2]+(B2[1][c2]-A2[1][c2])*e;}
     this.rw=gw*3;this.rh=gh*3;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.prevP=new Float32Array(A.n);},
   adv(src,dst,vx,vy){const gw=this.gw,gh=this.gh;for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const i=y*gw+x;let px=x-vx[i],py=y-vy[i];px=px<0?0:px>gw-1.001?gw-1.001:px;py=py<0?0:py>gh-1.001?gh-1.001:py;const x0=px|0,y0=py|0,fx=px-x0,fy=py-y0,j=y0*gw+x0;
@@ -1189,10 +1201,10 @@ const mFluid={id:'fluid',name:'물감',desc:'상아빛 종이 위 마블링처�
     // the colour film rides the water
     this.adv(this.T,this.T2,vx,vy);let tmp=this.T;this.T=this.T2;this.T2=tmp;this.adv(this.S,this.S2,vx,vy);tmp=this.S;this.S=this.S2;this.S2=tmp;this.adv(this.D,this.D2,vx,vy);tmp=this.D;this.D=this.D2;this.D2=tmp;
     // draw: thickness through the thin-film colours, duller where the film is thin (S), with a soft sheen from the film's slope
-    const T=this.T,S=this.S,Dd=this.D,lut=this.lut,rw=this.rw,rh=this.rh,d=this.img.data,g2=[240,233,222];
+    const T=this.T,S=this.S,Dd=this.D,lut=this.lut,rw=this.rw,rh=this.rh,d=this.img.data,g2=[248,248,242];
     for(let y=0;y<rh;y++){let gy=(y+0.5)/3-0.5;gy=gy<0?0:gy>gh-1.001?gh-1.001:gy;const y0=gy|0,fy=gy-y0;for(let x=0;x<rw;x++){let gx=(x+0.5)/3-0.5;gx=gx<0?0:gx>gw-1.001?gw-1.001:gx;const x0=gx|0,fx=gx-x0,i=y0*gw+x0;
         const tv=(T[i]*(1-fx)+T[i+1]*fx)*(1-fy)+(T[i+gw]*(1-fx)+T[i+gw+1]*fx)*fy+((Dd[i]*(1-fx)+Dd[i+1]*fx)*(1-fy)+(Dd[i+gw]*(1-fx)+Dd[i+gw+1]*fx)*fy)*0.32,sv=(S[i]*(1-fx)+S[i+1]*fx)*(1-fy)+(S[i+gw]*(1-fx)+S[i+gw+1]*fx)*fy;
-        const li=(((tv%1)+1)%1*1023|0)*3,m=0.35+(sv<0?0:sv>1?1:sv)*0.65,b=1,o=(y*rw+x)*4;d[o]=(g2[0]+(lut[li]-g2[0])*m)*b;d[o+1]=(g2[1]+(lut[li+1]-g2[1])*m)*b;d[o+2]=(g2[2]+(lut[li+2]-g2[2])*m)*b;d[o+3]=255;}}
+        const gT=Math.abs(T[i+1]-T[i])+Math.abs(T[i+gw]-T[i]),fd=1-gT*9,li=(((tv%1)+1)%1*1023|0)*3,m=0.5+(sv<0?0:sv>1?1:sv)*0.5,b=fd>0?1+0.065*fd*Math.sin(tv*TAU*9):1,o=(y*rw+x)*4;d[o]=(g2[0]+(lut[li]-g2[0])*m)*b;d[o+1]=(g2[1]+(lut[li+1]-g2[1])*m)*b;d[o+2]=(g2[2]+(lut[li+2]-g2[2])*m)*b;d[o+3]=255;}}
     this.cv.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,6,6,rw-12,rh-12,0,0,W,H);}};
 
 const EMOJI_FONT='"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif';
@@ -1346,17 +1358,26 @@ const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 �
   }};
 
 /* 파동: a clean silhouette that tears into waveforms and block noise while moving, and settles back when still */
-const mWave={id:'wave',name:'파동',desc:'움직이는 속도만큼 실루엣이 좌우로 크게 물결치며 일렁이고, 멈추면 다시 또렷한 사람이 된다',
+const mWave={id:'wave',name:'파동',needVideo:true,desc:'실제 화면 속 얼굴과 몸이 물에 비친 것처럼 좌우로 일렁인다. 가만히 있어도 잔잔히 흔들리고, 움직일수록 크게 출렁인다. 실제 화면 그대로',
   init(){this.s=isTouch?2:3;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.ph=0;this.dxr=new Float32Array(this.rh);this.dyc=new Float32Array(this.rw);},
-  draw(t,dt){const P=pal(),rw=this.rw,rh=this.rh,s=this.s,w=A.w,h=A.h,out=this.img.data,p=A.p;
-    // speed = motion inside the people; amplitude eases toward it so the surface swells and settles smoothly
-    // speed is read from how much the person's shape itself changes between frames, so a still person stays still
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);const p=A.p;
+    // how much the people move (how much their shape changes between frames) swells the waves; a still person keeps a gentle sway
     if(!this.prev||this.prev.length!==A.n){this.prev=new Float32Array(A.n);this.prev.set(p);}
     const pv=this.prev;let ch=0,cn=0;for(let i=0;i<A.n;i++){const a=p[i],b=pv[i];if(a>0.3||b>0.3){ch+=a>b?a-b:b-a;cn++;}pv[i]=a;}
     const target=cn>20?Math.min(1,Math.max(0,(ch/cn-0.018)*12)):0;
-    this.amp+=(target-this.amp)*(target>this.amp?0.09:0.03);const amp=this.amp;this.ph+=dt*(1.0+amp*3.2);const ph=this.ph;
-    // a long, wide side-to-side swell travelling down the body, a finer ripple riding on it, and a slight vertical sway; no noise, no blocks
-    const A1=amp*rw*0.11,A2=amp*rh*0.02,k1=TAU/(rh*0.38),k2=TAU/(rh*0.11),k3=TAU/(rw*0.2),dxr=this.dxr,dyc=this.dyc;
+    this.amp+=(target-this.amp)*(target>this.amp?0.09:0.03);const amp=this.amp;this.ph+=dt*(1.1+amp*2.6);const ph=this.ph;
+    const src=videoSrc();if(!src){this.drawShape(amp,ph);return;}
+    // the real picture cut into thin rows, each slid sideways along a long swell with a finer ripple riding on it, like a face seen in water;
+    // it is taken slightly zoomed in so the sliding never shows an edge
+    const M=0.12,c=coverCrop(src.vw,src.vh),z=1+2*M,sw=c[2]/z,sh=c[3]/z,sx0=c[0]+(c[2]-sw)/2,sy0=c[1]+(c[3]-sh)/2,mx=Math.max(0,src.vw-sw);
+    const A1=W*(0.024+0.07*amp),k1=TAU/(H*0.34),k2=TAU/(H*0.075),st=Math.max(2,Math.round(H/300)),ks=sw/W,kh=sh/H;
+    ctx.save();if(src.mirror){ctx.translate(W,0);ctx.scale(-1,1);}
+    for(let y=0;y<H;y+=st){const yc=y+st*0.5,dx=A1*(Math.sin(yc*k1+ph*1.6)+0.26*Math.sin(yc*k2-ph*2.4));let sx=sx0-dx*ks;sx=sx<0?0:sx>mx?mx:sx;
+      try{ctx.drawImage(src.el,sx,sy0+y*kh,sw,st*kh,0,y,W,st+0.5);}catch(e){break;}}
+    ctx.restore();},
+  // until the picture arrives: the silhouette, swelling the same way
+  drawShape(amp,ph){const P=pal(),rw=this.rw,rh=this.rh,s=this.s,w=A.w,h=A.h,out=this.img.data,p=A.p;
+    const A1=(0.3+0.7*amp)*rw*0.11,A2=amp*rh*0.02,k1=TAU/(rh*0.38),k2=TAU/(rh*0.11),k3=TAU/(rw*0.2),dxr=this.dxr,dyc=this.dyc;
     for(let y=0;y<rh;y++)dxr[y]=A1*(Math.sin(y*k1+ph*1.7)+0.28*Math.sin(y*k2-ph*2.6));
     for(let x=0;x<rw;x++)dyc[x]=A2*Math.sin(x*k3+ph*1.6);
     const ink=P.light?[20,20,22]:P.fgRGB[0],bg=P.light?[232,231,228]:P.bgRGB,iw=1/s,mw=w-1.001,mh=h-1.001;
@@ -1491,7 +1512,7 @@ const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
     bodies.sort((a,b)=>a.id-b.id).forEach(tr=>{const tf=this.trackFace[tr.id],faceId=tf&&now-tf.t<10000?tf.mem:null,key=faceId!=null?'f'+faceId:'t'+tr.id;if(taken.has(key))return;taken.add(key);
       const prev=this.trackKey[tr.id];if(prev&&prev!==key)this.renames.push([prev,key]);this.trackKey[tr.id]=key;const fc=tf&&now-tf.t<400?tf.face:null;
       const nr=nearOf(tr),ns=this.nearSm||(this.nearSm={}),o=ns[key];const near=o==null?nr:o+(nr-o)*(nr>o?0.35:0.06);ns[key]=near;
-      list.push({key,x:tr.sx,y:tr.sy,bx:tr.x,by:tr.y,bw:tr.w,bh:tr.h,near,faceId,face:fc});});
+      list.push({key,x:tr.sx,y:tr.sy,bx:tr.x,by:tr.y,bw:tr.w,bh:tr.h,near,faceId,face:fc,tr});});
     faces.forEach(fc=>{if(fc.body||fc.mem==null)return;const key='f'+fc.mem;if(taken.has(key))return;taken.add(key);const ty=fc.cy+fc.sh*2.2;
       const s=this.sm[key]||(this.sm[key]={x:fc.cx,y:ty});s.x+=(fc.cx-s.x)*0.25;s.y+=(ty-s.y)*0.25;
       list.push({key,x:s.x,y:s.y,bx:fc.sx-fc.sw,by:fc.sy,bw:fc.sw*3,bh:fc.sh*7,near:clamp((fc.sh/H-0.05)/0.22,0,1),faceId:fc.mem,face:fc});});
@@ -1722,7 +1743,106 @@ function gridColors(cols,rows,M){const n=cols*rows;if(!M.pxc||M.pxc.length!==n*4
 function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analysis, at a tiny size (one pixel per dot)
   const c=cv.cx;c.setTransform(1,0,0,1,0,0);const el=source.el;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!el||A.remote||!sw||!sh){c.fillStyle='#777';c.fillRect(0,0,w,h);return;}
   const SA=W/H;let cw=sw,ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}const sx=(sw-cw)/2,sy=(sh-ch)/2;c.save();if(S.mirror){c.translate(w,0);c.scale(-1,1);}c.imageSmoothingEnabled=true;try{c.drawImage(el,sx,sy,cw,ch,0,0,w,h);}catch(e){}c.restore();}
-const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon];
+/* 별: everyone becomes one big star or moon. Through frosted glass, soft yellow stars and blue moons drift over a ground of blue and yellow;
+   each person's own star (or moon) stands where they stand, its points leaning after their head, hands and feet, breathing and turning
+   slowly, and the stars around make room for it. Nothing of the person is shown */
+const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 파란 달이 되어 몸짓을 따라 천천히 움직이고, 주변 별과 달은 비켜 흐른다. 파랑과 노랑이 번진 젖빛 유리 너머처럼. 사람 모습은 보이지 않는다',
+  init(){const R=Math.random,lw=Math.max(32,Math.round(W/4)),lh=Math.max(18,Math.round(H/4)),mk=a=>mkCanvas(Math.max(4,Math.round(lw/a)),Math.max(4,Math.round(lh/a)));
+    this.lw=lw;this.lh=lh;this.A1=mk(1);this.A2=mk(2);this.A3=mk(4);this.A4=mk(8);this.U3=mk(4);this.U2=mk(2);this.U1=mk(1);this.P1=mk(1);this.P2=mk(2);this.P3=mk(4);this.Q2=mk(2);this.Q1=mk(1);
+    this.st=this.st||{};this.f=0;this.alone=0;if(this.cnt==null)this.cnt=0;
+    // the ground: big yellow stars and blue moons spread evenly, each wandering and turning very slowly
+    if(!this.amb){const amb=[],cols=5,rows=3,BL=['#1c47d2','#2c66e0','#5d98ea','#2251d8'];for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const k=r*cols+c,star=(k+r)%3===0;
+      amb.push({star,x:(c+0.15+R()*0.7)/cols,y:(r+0.15+R()*0.7)/rows,s:star?0.2+R()*0.07:0.13+R()*0.08,rot:R()*TAU,vr:(R()-0.5)*0.05,ph:R()*TAU,col:star?(R()<0.6?'#f7d83a':'#f9e78a'):BL[(R()*BL.length)|0],th:0.35+R()*0.35,ox:0,oy:0});}this.amb=amb;}},
+  // a five-pointed star through the given tips (in order of angle), its valleys halfway between neighbouring tips
+  starPath(x,cx,cy,tips){x.beginPath();for(let i=0;i<5;i++){const a=tips[i],b=tips[(i+1)%5],la=Math.hypot(a[0]-cx,a[1]-cy),lb=Math.hypot(b[0]-cx,b[1]-cy),aa=Math.atan2(a[1]-cy,a[0]-cx);let d=Math.atan2(b[1]-cy,b[0]-cx)-aa;while(d<=0)d+=TAU;
+      const am=aa+d/2,ri=(la+lb)*0.5*0.47;if(i===0)x.moveTo(a[0],a[1]);x.lineTo(cx+Math.cos(am)*ri,cy+Math.sin(am)*ri);x.lineTo(b[0],b[1]);}x.closePath();},
+  // a crescent: a disc of radius r with a disc of radius r*rk, set off by r*dk toward phi, taken away
+  moonPath(x,cx,cy,r,phi,dk,rk){const d=r*dk,r2=r*rk,xi=(d*d+r*r-r2*r2)/(2*d),yi=Math.sqrt(Math.max(0,r*r-xi*xi)),a1=Math.atan2(yi,xi),b1=Math.atan2(yi,xi-d),b2=Math.atan2(-yi,xi-d);
+    x.save();x.translate(cx,cy);x.rotate(phi);x.beginPath();x.arc(0,0,r,a1,TAU-a1,false);x.arc(d,0,r2,b2,b1,true);x.closePath();x.restore();},
+  // where a person's star goes: its centre at the middle of the body, its size from the body, its points leaning after head, hands and feet
+  geo(q,L){const ok=i=>L&&L[i]&&L[i].v>0.4,IA=[0,1,2,3,4].map(i=>-Math.PI/2+i*TAU/5);
+    if(ok(11)&&ok(12)){const sm=[(L[11].x+L[12].x)/2,(L[11].y+L[12].y)/2],sw=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y)||1,hm=ok(23)&&ok(24)?[(L[23].x+L[24].x)/2,(L[23].y+L[24].y)/2]:[sm[0],sm[1]+sw*1.25];
+      const Bs=Math.max(Math.hypot(hm[0]-sm[0],hm[1]-sm[1]),sw*0.9),c=[(sm[0]+hm[0])/2,(sm[1]+hm[1])/2],R=clamp(Bs*1.3,Math.min(W,H)*0.12,Math.min(H*0.42,W*0.46));
+      const pick=(a,b)=>{const P=ok(a)?L[a]:null,Q=ok(b)?L[b]:null;if(P&&Q)return P.x<Q.x?[P,Q]:[Q,P];const o=P||Q;return o?(o.x<c[0]?[o,null]:[null,o]):[null,null];};
+      const hands=pick(15,16),feet=pick(27,28),head=ok(0)?L[0]:null,J=[head,hands[1],feet[1],feet[0],hands[0]],EX=[1.15,1.55,1.75,1.75,1.55];
+      const tips=IA.map((a0,i)=>{let a=a0,f=1;const j=J[i];if(j){const dx=j.x-c[0],dy=j.y-c[1];let d=Math.atan2(dy,dx)-a0;while(d>Math.PI)d-=TAU;while(d<-Math.PI)d+=TAU;a=a0+clamp(d,-0.5,0.5)*0.75;f=clamp(Math.hypot(dx,dy)/(Bs*EX[i]),0.78,1.3);}
+        return [Math.cos(a)*R*f,Math.sin(a)*R*f];});
+      return {c,R,tips,lean:clamp(((head?head.x:sm[0])-hm[0])/Bs,-1,1)};}
+    const c=[q.bx+q.bw/2,q.by+q.bh*0.48],R=clamp(q.bh*0.42,Math.min(W,H)*0.12,Math.min(H*0.42,W*0.46));return {c,R,tips:IA.map(a=>[Math.cos(a)*R,Math.sin(a)*R]),lean:0};},
+  people(t,dt){const now=performance.now();if((this.f&1)===0)PEOPLE.update();for(const [a,b] of PEOPLE.takeRenames())if(this.st[a]&&!this.st[b]){this.st[b]=this.st[a];delete this.st[a];}
+    const seen={};let k=0;PEOPLE.list.forEach(q=>{if(k>=6)return;const tr=q.tr,L=tr?(tr.pose||rigFromSilhouette(tr)):null,g=this.geo(q,L);if(!g)return;k++;seen[q.key]=1;
+      let s=this.st[q.key];if(!s)s=this.st[q.key]={moon:(this.cnt++)%2===1,c:g.c.slice(),R:g.R,rel:g.tips.map(v=>v.slice()),lean:g.lean,a:0,ph:Math.random()*TAU};
+      const e=Math.min(1,dt*7),ec=Math.min(1,dt*10);s.c[0]+=(g.c[0]-s.c[0])*ec;s.c[1]+=(g.c[1]-s.c[1])*ec;s.R+=(g.R-s.R)*e;s.lean+=(g.lean-s.lean)*Math.min(1,dt*4);
+      for(let i=0;i<5;i++){s.rel[i][0]+=(g.tips[i][0]-s.rel[i][0])*e;s.rel[i][1]+=(g.tips[i][1]-s.rel[i][1])*e;}s.a=Math.min(1,s.a+dt*1.8);s.seen=now;});
+    for(const key in this.st){if(seen[key])continue;const s=this.st[key];s.a-=dt*1.1;if(s.a<=0)delete this.st[key];}
+    this.alone=k?0:this.alone+dt;},
+  drawGround(x,t,dt){x.setTransform(this.lw/W,0,0,this.lh/H,0,0);let g=x.createLinearGradient(0,0,W,H);g.addColorStop(0,'#cddff3');g.addColorStop(0.5,'#eef0d4');g.addColorStop(1,'#f5eaa6');x.fillStyle=g;x.fillRect(0,0,W,H);
+    const pc=[];for(const k in this.st){const s=this.st[k];if(s.a>0.05)pc.push([s.c[0],s.c[1],s.R*s.a]);}const M=Math.min(W,H),ek=Math.min(1,dt*1.2);
+    for(const b of this.amb){const bx=(b.x+0.035*Math.sin(t*0.06+b.ph))*W,by=(b.y+0.035*Math.cos(t*0.05+b.ph*1.3))*H,r=b.s*M;let tx=0,ty=0;
+      for(const p of pc){const dx=bx-p[0],dy=by-p[1],d=Math.hypot(dx,dy)||1,m=p[2]*1.05+r*0.45;if(d<m){const f=Math.min(m-d,r*1.3);tx+=dx/d*f;ty+=dy/d*f;}}
+      b.ox+=(tx-b.ox)*ek;b.oy+=(ty-b.oy)*ek;b.rot+=b.vr*dt;const X=bx+b.ox,Y=by+b.oy;x.fillStyle=b.col;
+      if(b.star){this.starPath(x,X,Y,[0,1,2,3,4].map(i=>{const a=-Math.PI/2+b.rot+i*TAU/5;return [X+Math.cos(a)*r,Y+Math.sin(a)*r];}));x.fill();x.lineJoin='round';x.lineWidth=r*0.12;x.strokeStyle=b.col;x.stroke();}
+      else{this.moonPath(x,X,Y,r,b.rot,b.th+0.25,0.85);x.fill();}}
+    x.setTransform(1,0,0,1,0,0);},
+  drawPeople(x,t){x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,this.lw,this.lh);x.setTransform(this.lw/W,0,0,this.lh/H,0,0);
+    for(const key in this.st){const s=this.st[key];if(s.a<=0.01)continue;const br=1+0.035*Math.sin(t*1.3+s.ph),cx=s.c[0],cy=s.c[1]+Math.sin(t*0.8+s.ph)*s.R*0.03;x.globalAlpha=Math.min(1,s.a);
+      if(s.moon){const r=s.R*0.8*br,phi=-0.75+s.lean*0.5+0.18*Math.sin(t*0.37+s.ph);this.moonPath(x,cx,cy,r,phi,0.5,0.82);const g=x.createRadialGradient(cx-r*0.35,cy-r*0.1,r*0.1,cx,cy,r);g.addColorStop(0,'#4f8cee');g.addColorStop(0.55,'#2556d8');g.addColorStop(1,'#1a3fc2');x.fillStyle=g;x.fill();}
+      else{const rot=0.07*Math.sin(t*0.45+s.ph)+s.lean*0.12,cs=Math.cos(rot),sn=Math.sin(rot);this.starPath(x,cx,cy,s.rel.map(v=>[cx+(v[0]*cs-v[1]*sn)*br,cy+(v[0]*sn+v[1]*cs)*br]));
+        const g=x.createRadialGradient(cx,cy,0,cx,cy,s.R*1.05);g.addColorStop(0,'#fff5b4');g.addColorStop(0.35,'#fbe45a');g.addColorStop(1,'#f4cf26');x.fillStyle=g;x.fill();x.lineJoin='round';x.lineWidth=s.R*0.14;x.strokeStyle='#f5d332';x.stroke();}}
+    x.globalAlpha=1;x.setTransform(1,0,0,1,0,0);},
+  step(a,b){const x=b.cx;x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,b.width,b.height);x.imageSmoothingEnabled=true;x.drawImage(a,0,0,b.width,b.height);},
+  // the frosted glass: a tile of tiny raised squiggles, laid over everything
+  frost(){if(mStar.tex)return mStar.tex;const S2=220,c=mkCanvas(S2,S2),x=c.cx,R=Math.random;x.fillStyle='rgb(128,128,128)';x.fillRect(0,0,S2,S2);x.lineCap='round';x.lineJoin='round';
+    for(let i=0;i<1500;i++){let px=R()*S2,py=R()*S2,a=R()*TAU;const pts=[[px,py]],nn=3+((R()*4)|0);for(let k=0;k<nn;k++){a+=(R()-0.5)*2.4;const l=1.1+R()*2.2;px+=Math.cos(a)*l;py+=Math.sin(a)*l;pts.push([px,py]);}
+      const lw=0.8+R()*0.6;for(const [col,o] of [['rgba(70,70,70,0.55)',0.8],['rgba(240,240,240,0.7)',0]])for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++){x.strokeStyle=col;x.lineWidth=lw;x.beginPath();pts.forEach((p,k)=>{const X=p[0]+o+ox*S2,Y=p[1]+o+oy*S2;if(k)x.lineTo(X,Y);else x.moveTo(X,Y);});x.stroke();}}
+    return mStar.tex=c;},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);this.f++;this.people(t,dt);
+    // the ground, blurred deep; the people's stars and moons over it, blurred a little less, so they read first
+    this.drawGround(this.A1.cx,t,dt);this.step(this.A1,this.A2);this.step(this.A2,this.A3);this.step(this.A3,this.A4);this.step(this.A4,this.U3);this.step(this.U3,this.U2);this.step(this.U2,this.U1);
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.U1,0,0,W,H);
+    this.drawPeople(this.P1.cx,t);this.step(this.P1,this.P2);this.step(this.P2,this.P3);this.step(this.P3,this.Q2);this.step(this.Q2,this.Q1);ctx.drawImage(this.Q1,0,0,W,H);
+    try{if(!this.pat)this.pat=ctx.createPattern(this.frost(),'repeat');ctx.save();ctx.globalCompositeOperation='overlay';ctx.globalAlpha=0.48;ctx.fillStyle=this.pat;ctx.fillRect(0,0,W,H);ctx.restore();}catch(e){}
+    if(this.alone>2.5){const fz=Math.max(14,Math.min(21,W/62));ctx.font='600 '+fz+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='middle';const msg='앞에 서면 별이나 달이 돼요',tw=ctx.measureText(msg).width,by=H-fz*2.6-(isTouch?56:0);
+      ctx.fillStyle='rgba(18,40,130,0.34)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1,fz*1.05);else ctx.rect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1);ctx.fill();ctx.fillStyle='#fff';ctx.fillText(msg,W/2,by);ctx.textAlign='left';ctx.textBaseline='alphabetic';}}};
+
+/* 잔상: no person is shown, only a soft warm silhouette on grey paper; wherever it has just been it leaves layered after-images, lilac and
+   violet the oldest, then magenta, pink and red, with the orange body on top and a yellow and lilac fringe at its sides, under film grain
+   and a passing streak of light */
+const mGhost={id:'ghost',name:'잔상',desc:'실제 모습 대신 흐릿한 실루엣만 회색 종이 위에 주황빛으로 뜨고, 지나온 자리마다 라일락·보라·자홍·분홍 잔상이 겹겹이 번져 남는다',
+  K:10,
+  init(){const w=A.w,h=A.h,R=Math.random;this.c0=mkCanvas(w,h);this.c1=mkCanvas(w*2,h*2);this.img=new ImageData(w,h);this.pb=new Float32Array(A.n);this.pd=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.ring=[];this.f=0;
+    this.dust=[];for(let i=0;i<50;i++)this.dust.push({x:R(),y:R(),r:0.4+R()*1.3,a:0.12+R()*0.3,dark:R()<0.55});this.hair=[];for(let i=0;i<7;i++)this.hair.push({x:R(),y:R(),l:0.03+R()*0.07,a:R()*TAU,c:(R()-0.5)*0.8,dark:R()<0.5});},
+  grain(){if(mGhost.gt)return mGhost.gt;const S2=200,c=mkCanvas(S2,S2),im=c.cx.createImageData(S2,S2),d=im.data;for(let i=0;i<S2*S2;i++){const v=128+(Math.random()-0.5)*110;d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;}c.cx.putImageData(im,0,0);return mGhost.gt=c;},
+  draw(t,dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,pd=this.pd,tmp=this.tmp,K=this.K;pb.set(A.p);blur3(pb,tmp,w,h);box5(pb,tmp,w,h);pd.set(pb);box5(pd,tmp,w,h);box5(pd,tmp,w,h);
+    if((this.f++)%3===0){const a=this.ring.length>=K?this.ring.shift():new Float32Array(n);a.set(pb);this.ring.push(a);}
+    const ring=this.ring,nr=ring.length,mid=pd,d=this.img.data,mw=w-1.001,mh=h-1.001;
+    const samp=(m,gx,gy)=>{gx=gx<0?0:gx>mw?mw:gx;gy=gy<0?0:gy>mh?mh:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (m[i]*(1-fx)+m[i+1]*fx)*(1-fy)+(m[i+w]*(1-fx)+m[i+w+1]*fx)*fy;};
+    // trail colours from the oldest to the newest
+    const TC=[[208,186,240],[196,152,236],[184,106,226],[194,74,214],[218,60,184],[234,58,142],[242,62,106],[244,72,78],[246,96,58],[248,120,48]];
+    const oL=w*0.045,oR=w*0.05,o1=w*0.02,o2=w*0.024,wob=Math.sin(t*0.7)*w*0.004,tt=t*0.3;
+    for(let y=0;y<h;y++){const vy=y/h-0.5;for(let x=0;x<w;x++){const i=y*w+x,vx=x/w-0.5,vg=1-0.26*(vx*vx+vy*vy);let r=232*vg,g=230*vg,b=228*vg,m,a;
+        // the outer hazes and the fringes either side: lilac far left, magenta near left, yellow near right, pale pink far right
+        m=samp(mid,x+oL+wob,y);if(m>0.01){a=Math.min(1,m*1.25)*0.55;r+=(210-r)*a;g+=(186-g)*a;b+=(240-b)*a;}
+        m=samp(mid,x-oR-wob,y);if(m>0.01){a=Math.min(1,m*1.25)*0.42;r+=(242-r)*a;g+=(200-g)*a;b+=(236-b)*a;}
+        m=samp(pb,x+o1,y);if(m>0.01){a=m*0.62;r+=(180-r)*a;g+=(72-g)*a;b+=(214-b)*a;}
+        m=samp(pb,x-o2,y);if(m>0.01){a=m*0.7;r+=(250-r)*a;g+=(226-g)*a;b+=(96-b)*a;}
+        // where the body has just been
+        const pn=pb[i]*0.9;for(let k=0;k<nr;k++){m=ring[k][i]-pn;if(m<0.01)continue;const c=TC[nr>1?Math.round(k/(nr-1)*9):9];a=Math.min(1,m*1.3)*(0.4+0.45*k/Math.max(1,nr-1));r+=(c[0]-r)*a;g+=(c[1]-g)*a;b+=(c[2]-b)*a;}
+        // the body itself: pink-red at its edge, orange inside, lighter at the heart, wandering a little between them
+        m=pb[i];if(m>0.2){a=clamp((m-0.22)/0.4,0,1);a=a*a*(3-2*a)*0.94;const dp=pd[i],nz=0.5+0.5*Math.sin(x*0.09+tt)*Math.sin(y*0.07-tt*0.8),e=clamp((dp-0.35)/0.55,0,1)*(0.75+0.25*nz),top=clamp(1-(y/h)*2.2,0,1)*0.35;
+          let cr=236+(250-236)*e,cg=62+(132-62)*e,cb=98+(46-98)*e;if(e>0.8){const k2=(e-0.8)/0.2;cr+=(253-cr)*k2*0.6;cg+=(170-cg)*k2*0.6;cb+=(92-cb)*k2*0.6;}cr+=(222-cr)*top;cg+=(58-cg)*top;cb+=(150-cb)*top;
+          r+=(cr-r)*a;g+=(cg-g)*a;b+=(cb-b)*a;}
+        const o=i*4;d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=255;}}
+    this.c0.cx.putImageData(this.img,0,0);this.c1.cx.imageSmoothingEnabled=true;this.c1.cx.drawImage(this.c0,0,0,w*2,h*2);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.c1,0,0,W,H);
+    // a streak of light leaking across from the upper right, drifting
+    ctx.save();ctx.globalCompositeOperation='screen';const lx=W*(0.66+0.03*Math.sin(t*0.13)),ly=H*(0.27+0.02*Math.cos(t*0.11)),la=0.5+0.15*Math.sin(t*0.4);ctx.translate(lx,ly);ctx.rotate(-0.62);
+    ctx.scale(1,0.07);let g=ctx.createRadialGradient(0,0,0,0,0,W*0.34);g.addColorStop(0,'rgba(255,250,242,'+la+')');g.addColorStop(0.5,'rgba(255,246,236,'+la*0.35+')');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,W*0.34,0,TAU);ctx.fill();
+    ctx.scale(1,0.35);g=ctx.createRadialGradient(0,0,0,0,0,W*0.2);g.addColorStop(0,'rgba(255,255,255,'+la*0.9+')');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,W*0.2,0,TAU);ctx.fill();ctx.restore();
+    // dust and a few hairline scratches, then film grain over it all
+    for(const q of this.dust){ctx.fillStyle=q.dark?'rgba(60,50,60,'+q.a+')':'rgba(255,255,255,'+(q.a+0.2)+')';ctx.beginPath();ctx.arc(q.x*W,q.y*H,q.r,0,TAU);ctx.fill();}
+    ctx.lineWidth=0.8;for(const q of this.hair){const x0=q.x*W,y0=q.y*H,l=q.l*Math.min(W,H)*2;ctx.strokeStyle=q.dark?'rgba(70,40,70,0.28)':'rgba(255,255,255,0.5)';ctx.beginPath();ctx.moveTo(x0,y0);ctx.quadraticCurveTo(x0+Math.cos(q.a+q.c)*l*0.6,y0+Math.sin(q.a+q.c)*l*0.6,x0+Math.cos(q.a)*l,y0+Math.sin(q.a)*l);ctx.stroke();}
+    try{if(!this.pat)this.pat=ctx.createPattern(this.grain(),'repeat');ctx.save();ctx.globalCompositeOperation='overlay';ctx.globalAlpha=0.2;const ox=(Math.random()*200)|0,oy=(Math.random()*200)|0;ctx.translate(-ox,-oy);ctx.fillStyle=this.pat;ctx.fillRect(0,0,W+ox,H+oy);ctx.restore();}catch(e){}}};
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mStar,mGhost];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -1732,7 +1852,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`qw';
+const KEYS='1234567890-=[]\\;\',./`qwer';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
