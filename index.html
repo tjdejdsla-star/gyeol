@@ -1358,7 +1358,7 @@ const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 �
   }};
 
 /* 파동: a clean silhouette that tears into waveforms and block noise while moving, and settles back when still */
-const mWave={id:'wave',name:'파동',needVideo:true,desc:'실제 화면 속 얼굴과 몸이 물에 비친 것처럼 좌우로 일렁인다. 가만히 있어도 잔잔히 흔들리고, 움직일수록 크게 출렁인다. 실제 화면 그대로',
+const mWave={id:'wave',name:'파동',needVideo:true,desc:'배경은 지우고 실제 화면에서 사람만 오려 내어, 물에 비친 것처럼 좌우로 일렁이게 한다. 가만히 있어도 잔잔히 흔들리고, 움직일수록 크게 출렁인다',
   init(){this.s=isTouch?2:3;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.ph=0;this.dxr=new Float32Array(this.rh);this.dyc=new Float32Array(this.rw);},
   draw(t,dt){dt=Math.min(dt||0.016,0.05);const p=A.p;
     // how much the people move (how much their shape changes between frames) swells the waves; a still person keeps a gentle sway
@@ -1367,14 +1367,23 @@ const mWave={id:'wave',name:'파동',needVideo:true,desc:'실제 화면 속 얼�
     const target=cn>20?Math.min(1,Math.max(0,(ch/cn-0.018)*12)):0;
     this.amp+=(target-this.amp)*(target>this.amp?0.09:0.03);const amp=this.amp;this.ph+=dt*(1.1+amp*2.6);const ph=this.ph;
     const src=videoSrc();if(!src){this.drawShape(amp,ph);return;}
-    // the real picture cut into thin rows, each slid sideways along a long swell with a finer ripple riding on it, like a face seen in water;
-    // it is taken slightly zoomed in so the sliding never shows an edge
-    const M=0.12,c=coverCrop(src.vw,src.vh),z=1+2*M,sw=c[2]/z,sh=c[3]/z,sx0=c[0]+(c[2]-sw)/2,sy0=c[1]+(c[3]-sh)/2,mx=Math.max(0,src.vw-sw);
-    const A1=W*(0.024+0.07*amp),k1=TAU/(H*0.34),k2=TAU/(H*0.075),st=Math.max(2,Math.round(H/300)),ks=sw/W,kh=sh/H;
-    ctx.save();if(src.mirror){ctx.translate(W,0);ctx.scale(-1,1);}
-    for(let y=0;y<H;y+=st){const yc=y+st*0.5,dx=A1*(Math.sin(yc*k1+ph*1.6)+0.26*Math.sin(yc*k2-ph*2.4));let sx=sx0-dx*ks;sx=sx<0?0:sx>mx?mx:sx;
-      try{ctx.drawImage(src.el,sx,sy0+y*kh,sw,st*kh,0,y,W,st+0.5);}catch(e){break;}}
-    ctx.restore();},
+    // only the person, cut out of the real picture: the picture and the person's shape are both cut into thin rows and slid sideways along
+    // the same long swell (with a finer ripple riding on it), like a face seen in water; the room behind is left out entirely
+    const q=Math.min(DPR,1.5),cw=Math.max(1,Math.round(W*q)),chh=Math.max(1,Math.round(H*q));
+    if(!this.V||this.V.width!==cw||this.V.height!==chh){this.V=mkCanvas(cw,chh);this.M2=mkCanvas(cw,chh);}
+    const w=A.w,h=A.h,mw2=w*2,mh2=h*2;if(!this.MC||this.MC.width!==mw2||this.MC.height!==mh2){this.MC=mkCanvas(mw2,mh2);this.mimg=new ImageData(mw2,mh2);}
+    // the person's shape at twice the grid, with a clean edge, turned the same way as the camera picture
+    {const md=this.mimg.data,mx2=w-1.001,my2=h-1.001,mir=src.mirror;for(let y=0;y<mh2;y++){let gy=(y+0.5)*0.5-0.5;gy=gy<0?0:gy>my2?my2:gy;const y0=gy|0,fy=gy-y0;
+      for(let x=0;x<mw2;x++){let gx=((mir?mw2-1-x:x)+0.5)*0.5-0.5;gx=gx<0?0:gx>mx2?mx2:gx;const x0=gx|0,fx=gx-x0,i=y0*w+x0,v=(p[i]*(1-fx)+p[i+1]*fx)*(1-fy)+(p[i+w]*(1-fx)+p[i+w+1]*fx)*fy;
+        let al=(v-0.38)/0.24;al=al<=0?0:al>=1?1:al*al*(3-2*al);const o=(y*mw2+x)*4;md[o]=md[o+1]=md[o+2]=255;md[o+3]=al*255;}}this.MC.cx.putImageData(this.mimg,0,0);}
+    const M=0.12,z=1+2*M,A1=W*(0.024+0.07*amp),k1=TAU/(H*0.34),k2=TAU/(H*0.075),st=Math.max(2,Math.round(H/300));
+    const rows=(c2,el,x0,y0,fw,fh,full)=>{const sw=fw/z,sh=fh/z,sx0=x0+(fw-sw)/2,sy0=y0+(fh-sh)/2,mx=Math.max(0,full-sw),ks=sw/W,kh=sh/H;
+      c2.setTransform(1,0,0,1,0,0);c2.globalCompositeOperation='source-over';c2.clearRect(0,0,cw,chh);c2.setTransform(q,0,0,q,0,0);if(src.mirror){c2.translate(W,0);c2.scale(-1,1);}c2.imageSmoothingEnabled=true;
+      for(let y=0;y<H;y+=st){const yc=y+st*0.5,dx=A1*(Math.sin(yc*k1+ph*1.6)+0.26*Math.sin(yc*k2-ph*2.4));let sx=sx0-dx*ks;sx=sx<0?0:sx>mx?mx:sx;
+        try{c2.drawImage(el,sx,sy0+y*kh,sw,st*kh,0,y,W,st+0.5);}catch(e){break;}}c2.setTransform(1,0,0,1,0,0);};
+    const c=coverCrop(src.vw,src.vh);rows(this.V.cx,src.el,c[0],c[1],c[2],c[3],src.vw);rows(this.M2.cx,this.MC,0,0,mw2,mh2,mw2);
+    const vx=this.V.cx;vx.globalCompositeOperation='destination-in';vx.drawImage(this.M2,0,0);vx.globalCompositeOperation='source-over';
+    fillBg();ctx.imageSmoothingEnabled=true;ctx.drawImage(this.V,0,0,W,H);},
   // until the picture arrives: the silhouette, swelling the same way
   drawShape(amp,ph){const P=pal(),rw=this.rw,rh=this.rh,s=this.s,w=A.w,h=A.h,out=this.img.data,p=A.p;
     const A1=(0.3+0.7*amp)*rw*0.11,A2=amp*rh*0.02,k1=TAU/(rh*0.38),k2=TAU/(rh*0.11),k3=TAU/(rw*0.2),dxr=this.dxr,dyc=this.dyc;
@@ -1805,39 +1814,42 @@ const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 
     if(this.alone>2.5){const fz=Math.max(14,Math.min(21,W/62));ctx.font='600 '+fz+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='middle';const msg='앞에 서면 별이나 달이 돼요',tw=ctx.measureText(msg).width,by=H-fz*2.6-(isTouch?56:0);
       ctx.fillStyle='rgba(18,40,130,0.34)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1,fz*1.05);else ctx.rect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1);ctx.fill();ctx.fillStyle='#fff';ctx.fillText(msg,W/2,by);ctx.textAlign='left';ctx.textBaseline='alphabetic';}}};
 
-/* 잔상: no person is shown, only a soft warm silhouette on grey paper; wherever it has just been it leaves layered after-images, lilac and
-   violet the oldest, then magenta, pink and red, with the orange body on top and a yellow and lilac fringe at its sides, under film grain
-   and a passing streak of light */
-const mGhost={id:'ghost',name:'잔상',desc:'실제 모습 대신 흐릿한 실루엣만 회색 종이 위에 주황빛으로 뜨고, 지나온 자리마다 라일락·보라·자홍·분홍 잔상이 겹겹이 번져 남는다',
-  K:10,
-  init(){const w=A.w,h=A.h,R=Math.random;this.c0=mkCanvas(w,h);this.c1=mkCanvas(w*2,h*2);this.img=new ImageData(w,h);this.pb=new Float32Array(A.n);this.pd=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.ring=[];this.f=0;
+/* 잔상: no person is shown, only a warm silhouette on grey paper; wherever it has just been it leaves a string of separate copies, each
+   with its own clean outline, stepping back in colour from orange through pink and magenta to violet and lilac, under film grain */
+const mGhost={id:'ghost',name:'잔상',desc:'실제 모습 대신 실루엣만 회색 종이 위에 주황빛으로 뜨고, 움직이면 지나온 자리마다 외곽이 또렷한 잔상이 탁탁 끊겨 남는다. 색은 분홍·자홍·보라·라일락으로 차례로 물든다',
+  K:8,
+  init(){const w=A.w,h=A.h,R=Math.random;this.rw=w*2;this.rh=h*2;this.c0=mkCanvas(this.rw,this.rh);this.img=new ImageData(this.rw,this.rh);
+    this.ps=new Float32Array(A.n);this.pb=new Float32Array(A.n);this.pd=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.U=new Float32Array(A.n);this.U2=new Float32Array(A.n);this.ring=[];this.f=0;
     this.dust=[];for(let i=0;i<50;i++)this.dust.push({x:R(),y:R(),r:0.4+R()*1.3,a:0.12+R()*0.3,dark:R()<0.55});this.hair=[];for(let i=0;i<7;i++)this.hair.push({x:R(),y:R(),l:0.03+R()*0.07,a:R()*TAU,c:(R()-0.5)*0.8,dark:R()<0.5});},
   grain(){if(mGhost.gt)return mGhost.gt;const S2=200,c=mkCanvas(S2,S2),im=c.cx.createImageData(S2,S2),d=im.data;for(let i=0;i<S2*S2;i++){const v=128+(Math.random()-0.5)*110;d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;}c.cx.putImageData(im,0,0);return mGhost.gt=c;},
-  draw(t,dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,pd=this.pd,tmp=this.tmp,K=this.K;pb.set(A.p);blur3(pb,tmp,w,h);box5(pb,tmp,w,h);pd.set(pb);box5(pd,tmp,w,h);box5(pd,tmp,w,h);
-    if((this.f++)%3===0){const a=this.ring.length>=K?this.ring.shift():new Float32Array(n);a.set(pb);this.ring.push(a);}
-    const ring=this.ring,nr=ring.length,mid=pd,d=this.img.data,mw=w-1.001,mh=h-1.001;
+  draw(t,dt){const w=A.w,h=A.h,n=A.n,ps=this.ps,pb=this.pb,pd=this.pd,tmp=this.tmp,K=this.K;
+    // the outline (lightly smoothed), a softer copy for the side glows and a very soft one for the colour inside the body
+    ps.set(A.p);blur3(ps,tmp,w,h);pb.set(ps);box5(pb,tmp,w,h);pd.set(pb);box5(pd,tmp,w,h);box5(pd,tmp,w,h);
+    // a snapshot of the outline every few frames; each stays a separate copy with its own clean edge, so a movement leaves distinct steps
+    if((this.f++)%4===0){const a=this.ring.length>=K?this.ring.shift():new Float32Array(n);a.set(ps);this.ring.push(a);}
+    const ring=this.ring,nr=ring.length,U=this.U,U2=this.U2;U.fill(0);for(const m of ring)for(let i=0;i<n;i++)if(m[i]>U[i])U[i]=m[i];
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){let v=0;for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=h)continue;for(let dx=-1;dx<=1;dx++){const xx=x+dx;if(xx<0||xx>=w)continue;const q=U[yy*w+xx];if(q>v)v=q;}}U2[y*w+x]=v;}
+    const rw=this.rw,rh=this.rh,d=this.img.data,mw=w-1.001,mh=h-1.001;
     const samp=(m,gx,gy)=>{gx=gx<0?0:gx>mw?mw:gx;gy=gy<0?0:gy>mh?mh:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (m[i]*(1-fx)+m[i+1]*fx)*(1-fy)+(m[i+w]*(1-fx)+m[i+w+1]*fx)*fy;};
-    // trail colours from the oldest to the newest
-    const TC=[[208,186,240],[196,152,236],[184,106,226],[194,74,214],[218,60,184],[234,58,142],[242,62,106],[244,72,78],[246,96,58],[248,120,48]];
+    const cut=m=>{let a=(m-0.42)/0.12;return a<=0?0:a>=1?1:a*a*(3-2*a);};
+    // copy colours from the oldest to the newest
+    const TC=[[206,184,240],[190,146,236],[180,104,226],[196,72,214],[220,60,180],[236,58,138],[244,66,98],[246,92,62]];
     const oL=w*0.045,oR=w*0.05,o1=w*0.02,o2=w*0.024,wob=Math.sin(t*0.7)*w*0.004,tt=t*0.3;
-    for(let y=0;y<h;y++){const vy=y/h-0.5;for(let x=0;x<w;x++){const i=y*w+x,vx=x/w-0.5,vg=1-0.26*(vx*vx+vy*vy);let r=232*vg,g=230*vg,b=228*vg,m,a;
-        // the outer hazes and the fringes either side: lilac far left, magenta near left, yellow near right, pale pink far right
-        m=samp(mid,x+oL+wob,y);if(m>0.01){a=Math.min(1,m*1.25)*0.55;r+=(210-r)*a;g+=(186-g)*a;b+=(240-b)*a;}
-        m=samp(mid,x-oR-wob,y);if(m>0.01){a=Math.min(1,m*1.25)*0.42;r+=(242-r)*a;g+=(200-g)*a;b+=(236-b)*a;}
-        m=samp(pb,x+o1,y);if(m>0.01){a=m*0.62;r+=(180-r)*a;g+=(72-g)*a;b+=(214-b)*a;}
-        m=samp(pb,x-o2,y);if(m>0.01){a=m*0.7;r+=(250-r)*a;g+=(226-g)*a;b+=(96-b)*a;}
-        // where the body has just been
-        const pn=pb[i]*0.9;for(let k=0;k<nr;k++){m=ring[k][i]-pn;if(m<0.01)continue;const c=TC[nr>1?Math.round(k/(nr-1)*9):9];a=Math.min(1,m*1.3)*(0.4+0.45*k/Math.max(1,nr-1));r+=(c[0]-r)*a;g+=(c[1]-g)*a;b+=(c[2]-b)*a;}
+    for(let y=0;y<rh;y++){const gy=(y+0.5)*0.5-0.5,vy=y/rh-0.5,cy=Math.min(h-1,y>>1);for(let x=0;x<rw;x++){const gx=(x+0.5)*0.5-0.5,vx=x/rw-0.5,ci=cy*w+Math.min(w-1,x>>1),vg=1-0.26*(vx*vx+vy*vy);
+        let r=232*vg,g=230*vg,b=228*vg,m,a;
+        // soft side glows: lilac far left, magenta near left, yellow near right, pale pink far right
+        m=samp(pd,gx+oL+wob,gy);if(m>0.01){a=Math.min(1,m*1.25)*0.55;r+=(210-r)*a;g+=(186-g)*a;b+=(240-b)*a;}
+        m=samp(pd,gx-oR-wob,gy);if(m>0.01){a=Math.min(1,m*1.25)*0.42;r+=(242-r)*a;g+=(200-g)*a;b+=(236-b)*a;}
+        m=samp(pb,gx+o1,gy);if(m>0.01){a=m*0.62;r+=(180-r)*a;g+=(72-g)*a;b+=(214-b)*a;}
+        m=samp(pb,gx-o2,gy);if(m>0.01){a=m*0.7;r+=(250-r)*a;g+=(226-g)*a;b+=(96-b)*a;}
+        // the copies left behind, oldest first, each cut out with a clean edge and laid over the one before
+        if(U2[ci]>0.3)for(let k=0;k<nr;k++){a=cut(samp(ring[k],gx,gy));if(a<=0)continue;const c=TC[nr>1?Math.round(k/(nr-1)*7):7];a*=0.6+0.35*k/Math.max(1,nr-1);r+=(c[0]-r)*a;g+=(c[1]-g)*a;b+=(c[2]-b)*a;}
         // the body itself: pink-red at its edge, orange inside, lighter at the heart, wandering a little between them
-        m=pb[i];if(m>0.2){a=clamp((m-0.22)/0.4,0,1);a=a*a*(3-2*a)*0.94;const dp=pd[i],nz=0.5+0.5*Math.sin(x*0.09+tt)*Math.sin(y*0.07-tt*0.8),e=clamp((dp-0.35)/0.55,0,1)*(0.75+0.25*nz),top=clamp(1-(y/h)*2.2,0,1)*0.35;
+        a=cut(samp(ps,gx,gy));if(a>0){a*=0.95;const dp=samp(pd,gx,gy),nz=0.5+0.5*Math.sin(gx*0.09+tt)*Math.sin(gy*0.07-tt*0.8),e=clamp((dp-0.35)/0.55,0,1)*(0.75+0.25*nz),top=clamp(1-(gy/h)*2.2,0,1)*0.35;
           let cr=236+(250-236)*e,cg=62+(132-62)*e,cb=98+(46-98)*e;if(e>0.8){const k2=(e-0.8)/0.2;cr+=(253-cr)*k2*0.6;cg+=(170-cg)*k2*0.6;cb+=(92-cb)*k2*0.6;}cr+=(222-cr)*top;cg+=(58-cg)*top;cb+=(150-cb)*top;
           r+=(cr-r)*a;g+=(cg-g)*a;b+=(cb-b)*a;}
-        const o=i*4;d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=255;}}
-    this.c0.cx.putImageData(this.img,0,0);this.c1.cx.imageSmoothingEnabled=true;this.c1.cx.drawImage(this.c0,0,0,w*2,h*2);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.c1,0,0,W,H);
-    // a streak of light leaking across from the upper right, drifting
-    ctx.save();ctx.globalCompositeOperation='screen';const lx=W*(0.66+0.03*Math.sin(t*0.13)),ly=H*(0.27+0.02*Math.cos(t*0.11)),la=0.5+0.15*Math.sin(t*0.4);ctx.translate(lx,ly);ctx.rotate(-0.62);
-    ctx.scale(1,0.07);let g=ctx.createRadialGradient(0,0,0,0,0,W*0.34);g.addColorStop(0,'rgba(255,250,242,'+la+')');g.addColorStop(0.5,'rgba(255,246,236,'+la*0.35+')');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,W*0.34,0,TAU);ctx.fill();
-    ctx.scale(1,0.35);g=ctx.createRadialGradient(0,0,0,0,0,W*0.2);g.addColorStop(0,'rgba(255,255,255,'+la*0.9+')');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,W*0.2,0,TAU);ctx.fill();ctx.restore();
+        const o=(y*rw+x)*4;d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=255;}}
+    this.c0.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.c0,0,0,W,H);
     // dust and a few hairline scratches, then film grain over it all
     for(const q of this.dust){ctx.fillStyle=q.dark?'rgba(60,50,60,'+q.a+')':'rgba(255,255,255,'+(q.a+0.2)+')';ctx.beginPath();ctx.arc(q.x*W,q.y*H,q.r,0,TAU);ctx.fill();}
     ctx.lineWidth=0.8;for(const q of this.hair){const x0=q.x*W,y0=q.y*H,l=q.l*Math.min(W,H)*2;ctx.strokeStyle=q.dark?'rgba(70,40,70,0.28)':'rgba(255,255,255,0.5)';ctx.beginPath();ctx.moveTo(x0,y0);ctx.quadraticCurveTo(x0+Math.cos(q.a+q.c)*l*0.6,y0+Math.sin(q.a+q.c)*l*0.6,x0+Math.cos(q.a)*l,y0+Math.sin(q.a)*l);ctx.stroke();}
