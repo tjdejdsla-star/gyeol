@@ -182,7 +182,7 @@ body.role-sensor #exhibit{display:none}
   <div class="group"><h4>화면</h4>
     <div class="rows">
       <div class="row"><div class="l">거울 모드<small>좌우를 뒤집어 거울처럼</small></div><label class="switch"><input type="checkbox" id="swMirror"><span></span></label></div>
-      <div class="row"><div class="l">카메라 화면<small>전체: 잘리지 않게 다 보여요 · 꽉 채우기: 화면을 채우고 넘치는 곳은 잘라요</small></div><div class="seg" id="segFit"><button>전체</button><button>꽉 채우기</button></div></div>
+      <div class="row"><div class="l">카메라 화면<small>꽉 채우기: 화면을 늘 가득 채워요(가장자리는 조금 잘려요) · 전체: 카메라에 찍힌 것을 다 보여 줘요(남는 곳은 비어요)</small></div><div class="seg" id="segFit"><button>꽉 채우기</button><button>전체</button></div></div>
       <div class="row"><div class="l">자동 전환<small>일정 시간마다 다음 모드로</small></div><div class="seg" id="segAuto"><button>끄기</button><button>20초</button><button>45초</button><button>90초</button></div></div>
       <div class="row"><div class="l">그래픽 가속<small>노트북·태블릿 내장 그래픽으로 무거운 모드를 그려요</small></div><label class="switch"><input type="checkbox" id="swGpu"><span></span></label></div>
       <div class="row"><div class="l">화면 품질<small>느린 노트북·태블릿은 자동으로 가볍게</small></div><div class="seg" id="segPerf"><button>자동</button><button>선명</button><button>보통</button><button>가볍게</button></div></div>
@@ -337,9 +337,10 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'full'};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
+if(S.fitV!==2){S.fit='fill';S.fitV=2;}
 function save(){try{localStorage.setItem('gyeol.settings',JSON.stringify(S));}catch(e){}}
 const trailAlpha=()=>lerp(0.4,0.025,(S.trail-1)/9);
 const gainF=()=>0.5+S.gain*0.22;
@@ -410,7 +411,18 @@ function camError(err){
 // person mask from the pose model: it only covers people the model actually found (one mask per person, merged), and it is made for
 // whole bodies at a distance, where the selfie segmenter loses arms and legs
 const PM={mask:null,mw:0,mh:0,fresh:0,n:0,seen:-1e9};
-function takePoseMask(r){const now=performance.now(),ms=r&&r.segmentationMasks;PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=now;
+// some tablets' graphics hand back a broken mask: a solid box where the person is, or the whole picture filled. A body never fills its
+// bounding box edge to edge with every row the same width, so a shape like that for a second or so means the model's mask is broken:
+// the model is started again on the processor, and if that is broken too its mask is not used at all (the other models still are)
+function boxyShape(m,w,h){let x0=w,x1=-1,y0=h,y1=-1,on=0;for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(m[y*w+x]>0.5){on++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+  if(x1<0)return false;const bw=x1-x0+1,bh=y1-y0+1;if(bw*bh<w*h*0.04||bw<4||bh<6||on<bw*bh*0.92)return false;
+  let sw=0,sw2=0,k=0;for(let y=y0;y<=y1;y++){let a=-1,b=-1;for(let x=x0;x<=x1;x++)if(m[y*w+x]>0.5){if(a<0)a=x;b=x;}const rw=a<0?0:b-a+1;sw+=rw;sw2+=rw*rw;k++;}const mean=sw/k,sd=Math.sqrt(Math.max(0,sw2/k-mean*mean));return sd<mean*0.06;}
+const MASKCHK={seg:0,pm:0};
+function maskBroken(which){const st=which==='seg'?SEG:PM;if(!st.cpu){st.cpu=true;if(which==='seg'){try{SEG.seg&&SEG.seg.close();}catch(e){}SEG.seg=null;SEG.mask=null;SEG.state='idle';loadSeg();}else reloadPose();toast('이 기기 그래픽에서 사람 모양이 네모로 나와 다른 계산 방식으로 바꿨어요');}
+  else{st.off=true;if(which==='seg'){SEG.mask=null;}else PM.mask=null;toast(which==='seg'?'사람 분할 결과가 이상해 자세 모델로만 잡아요':'자세 모델의 사람 모양이 이상해 분할 모델로만 잡아요');}}
+async function reloadPose(){try{const {vision,fs}=await mpVision();const old=FACE.pose;FACE.pose=null;try{old&&old.close();}catch(e){}PM.mask=null;
+  FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},runningMode:'VIDEO',numPoses:15,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});}catch(e){PM.off=true;}}
+function takePoseMask(r){if(PM.off){PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=performance.now();const ms=r&&r.segmentationMasks;if(ms)for(const m of ms){try{m.close();}catch(e){}}return;}const now=performance.now(),ms=r&&r.segmentationMasks;PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=now;
   if(!ms||!ms.length){PM.fresh=now;PM.n=Math.min(PM.n,0);return;}
   try{const mw=ms[0].width,mh=ms[0].height,len=mw*mh;if(!PM.mask||PM.mask.length!==len)PM.mask=new Float32Array(len);const out=PM.mask;for(let i=0;i<len;i++)out[i]*=0.55;
     for(const m of ms){if(m.width===mw&&m.height===mh){const a=m.getAsFloat32Array();for(let i=0;i<len;i++)if(a[i]>out[i])out[i]=a[i];}try{m.close();}catch(e){}}
@@ -437,7 +449,7 @@ async function mkTask(cls,fs,opt){const url=opt.baseOptions.modelAssetPath,local
   if(local){try{return await one(local);}catch(e){}}return await one(url);}
 async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loading';
   try{const {vision,fs}=await mpVision();
-    SEG.seg=await mkTask(vision.ImageSegmenter,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',delegate:'GPU'},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
+    SEG.seg=await mkTask(vision.ImageSegmenter,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',delegate:SEG.cpu?'CPU':'GPU'},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
     let labels=[];try{labels=SEG.seg.getLabels()||[];}catch(e){}let idx=labels.findIndex(l=>/person|selfie|foreground/i.test(String(l)));if(idx<0)idx=labels.length>1?1:0;SEG.idx=idx;
     SEG.state='ready';toast('사람 분할 모델 준비됨 · 형태가 더 정확해져요');setStatus(statusEl.textContent+' · 분할');}
   catch(e){SEG.state='offline';}}
@@ -528,12 +540,12 @@ function analyze(){
     const cl=(v,m)=>v<0?0:v>m?m:v,samp=(mk,mw,mh,out)=>{const kx=mw/sw,ky=mh/sh;for(let y=0;y<h;y++){const yc=sy+(y+0.5)/h*ch;if(yc<0||yc>=sh){out.fill(0,y*w,y*w+w);continue;}const ya=cl(((sy+(y+0.25)/h*ch)*ky)|0,mh-1)*mw,yb=cl(((sy+(y+0.75)/h*ch)*ky)|0,mh-1)*mw;
       for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x,xc=sx+(xx+0.5)/w*cw;if(xc<0||xc>=sw){out[y*w+x]=0;continue;}const xa=cl(((sx+(xx+0.25)/w*cw)*kx)|0,mw-1),xb=cl(((sx+(xx+0.75)/w*cw)*kx)|0,mw-1);
         const a=mk[ya+xa],b=mk[ya+xb],c=mk[yb+xa],e2=mk[yb+xb],mx=Math.max(a,b,c,e2),mean=(a+b+c+e2)*0.25;let v=mean>mx*0.8?mean:mx*0.8;out[y*w+x]=v<0?0:v>1?1:v;}}};
-    const cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));if(segOK)samp(SEG.mask,SEG.mw,SEG.mh,cur);else cur.fill(0);
+    const cur=A.cur&&A.cur.length===n?A.cur:(A.cur=new Float32Array(n));if(segOK&&!SEG.off){samp(SEG.mask,SEG.mw,SEG.mh,cur);if(A.frames%3===0){MASKCHK.seg=boxyShape(cur,w,h)?MASKCHK.seg+1:0;if(MASKCHK.seg>=50){MASKCHK.seg=0;maskBroken('seg');}}}else cur.fill(0);
     if(MC.cat&&tnow-MC.fresh<2500){if(!A.part||A.part.length!==n)A.part=new Uint8Array(n);const pk=MC.cat,pw=MC.mw,ph=MC.mh,kx=pw/sw,ky=ph/sh;
       for(let y=0;y<h;y++){const yv=sy+(y+0.5)/h*ch;if(yv<0||yv>=sh){A.part.fill(0,y*w,y*w+w);continue;}const yo=Math.min(ph-1,(yv*ky)|0)*pw;for(let x=0;x<w;x++){const xx=S.mirror?(w-1-x):x,xv=sx+(xx+0.5)/w*cw;A.part[y*w+x]=xv<0||xv>=sw?0:pk[yo+Math.min(pw-1,(xv*kx)|0)];}}A.partT=tnow;}
     const bm=personBoxMask(sx,sy,cw,ch,w,h,tnow);
     if(pmOK||bm){// people the pose model or the person detector found: its own full-body mask, and the selfie mask only right around those people (nothing else in the room)
-      const gp=A.gp&&A.gp.length===n?A.gp:(A.gp=new Float32Array(n)),nb=A.nb&&A.nb.length===n?A.nb:(A.nb=new Uint8Array(n)),nt=A.nt&&A.nt.length===n?A.nt:(A.nt=new Uint8Array(n));if(pmOK)samp(PM.mask,PM.mw,PM.mh,gp);else gp.fill(0);
+      const gp=A.gp&&A.gp.length===n?A.gp:(A.gp=new Float32Array(n)),nb=A.nb&&A.nb.length===n?A.nb:(A.nb=new Uint8Array(n)),nt=A.nt&&A.nt.length===n?A.nt:(A.nt=new Uint8Array(n));if(pmOK&&!PM.off){samp(PM.mask,PM.mw,PM.mh,gp);if(A.frames%3===0){MASKCHK.pm=boxyShape(gp,w,h)?MASKCHK.pm+1:0;if(MASKCHK.pm>=50){MASKCHK.pm=0;maskBroken('pm');gp.fill(0);}}}else gp.fill(0);
       // each blob of the selfie mask is kept whole if it touches anyone the pose model found: people overlapping each other stay one steady
       // shape even when the pose model drops one of them for a moment; a blob touching nobody (a chair, a poster) is dropped
       const lab=A.lab&&A.lab.length===n?A.lab:(A.lab=new Int32Array(n)),q=A.lq&&A.lq.length===n?A.lq:(A.lq=new Int32Array(n));lab.fill(0);let id=0;const keep=[0];
@@ -772,7 +784,7 @@ async function loadFace(){if(FACE.state!=='idle'||EMBEDDED)return;FACE.state='lo
   try{const {vision,fs}=await mpVision();
     try{FACE.det=await mkTask(vision.FaceDetector,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',delegate:'GPU'},runningMode:'VIDEO',minDetectionConfidence:0.5});}catch(e){FACE.det=null;}
     FACE.state='ready';toast('얼굴 인식 모델 준비됨');
-    try{FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:15,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});toast('자세 인식 모델 준비됨 · 사람만 잡아요');setStatus(statusEl.textContent+' · 자세');}catch(e){}
+    try{FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:PM.cpu?'CPU':'GPU'},runningMode:'VIDEO',numPoses:15,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});toast('자세 인식 모델 준비됨 · 사람만 잡아요');setStatus(statusEl.textContent+' · 자세');}catch(e){}
     const od=v=>({baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_'+v+'/float16/1/efficientdet_'+v+'.tflite',delegate:'GPU'},runningMode:'VIDEO',scoreThreshold:0.3,maxResults:24,categoryAllowlist:['person']});
     try{FACE.obj=await mkTask(vision.ObjectDetector,fs,od('lite2'));}catch(e){try{FACE.obj=await mkTask(vision.ObjectDetector,fs,od('lite0'));}catch(e2){FACE.obj=null;}}if(FACE.obj){toast('사람 찾기 모델 준비됨 · 최대 15명');setStatus(statusEl.textContent+' · 사람');}
   }catch(e){FACE.state='offline';}}
@@ -1495,7 +1507,7 @@ const mBalloon={id:'balloon',name:'풍선',needVideo:true,desc:'손을 위로 �
 /* the live picture, wherever it comes from: the local camera, or the phone sensor's video when it is streamed to the monitor */
 function videoSrc(){if(A.remote){return RV.on&&RV.el.videoWidth?{el:RV.el,vw:RV.el.videoWidth,vh:RV.el.videoHeight,mirror:RV.mirror}:null;}const el=source.el,d2=srcDims();return el&&d2[0]?{el,vw:d2[0],vh:d2[1],mirror:S.mirror}:null;}
 function coverCrop(vw,vh){return camCrop(vw,vh,W/H);}
-function drawVideo(src){const c=coverCrop(src.vw,src.vh);ctx.save();if(src.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(src.el,c[0],c[1],c[2],c[3],0,0,W,H);}catch(e){}ctx.restore();return c;}
+function drawVideo(src){const c=coverCrop(src.vw,src.vh);if(c[0]<0||c[1]<0){ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);}ctx.save();if(src.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(src.el,c[0],c[1],c[2],c[3],0,0,W,H);}catch(e){}ctx.restore();return c;}
 function noVideo(msg){ctx.fillStyle='#101114';ctx.fillRect(0,0,W,H);ctx.font='500 '+Math.max(14,W/64)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.75)';ctx.textAlign='center';ctx.fillText(msg||'카메라 화면을 기다리는 중이에요…',W/2,H/2);ctx.textAlign='left';}
 
 /* 비눗방울: raise your arms over your head and bubbles come pouring out of your hands, rat-a-tat, in the direction the arm points; they
@@ -2277,10 +2289,10 @@ seg('#segTrail',i=>{S.trailp=i;});
 seg('#segDetect',i=>{S.detect=i===0?'motion':'presence';resetBackground();toast(S.detect==='motion'?'움직이는 것만 형태로 봐요':'가만히 있는 사람도 잡아요. 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
 seg('#segAuto',i=>{S.auto=AUTOS[i];lastSwitch=performance.now();});
 seg('#segStackDist',i=>{S.stackDist=i;});
-seg('#segFit',i=>{S.fit=i===0?'full':'fill';if(!A.remote)resetAnalysis();sendHello();if(mode){mode.init();fillBg();}toast(S.fit==='full'?'카메라 화면 전체가 보여요':'화면을 꽉 채워요 (가장자리는 잘려요)');});
+seg('#segFit',i=>{S.fit=i===0?'fill':'full';if(!A.remote)resetAnalysis();sendHello();if(mode){mode.init();fillBg();}toast(S.fit==='full'?'카메라 화면 전체가 보여요':'화면을 꽉 채워요 (가장자리는 잘려요)');});
 seg('#segPerf',i=>{S.perf=i===0?'auto':i-1;if(i===0){PERF.by={};perfSave();}applyPerfMode();});
 const swMirror=$('#swMirror');
-function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segFit',S.fit==='fill'?1:0);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
+function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segFit',S.fit==='fill'?0:1);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
   swMirror.checked=!!S.mirror;swGpu.checked=S.gpu!==false;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
 const swGpu=$('#swGpu');swGpu.addEventListener('change',()=>{S.gpu=swGpu.checked;if(S.gpu&&GL.ok===false&&!GL.gl)GL.ok=null;MODES.forEach(m=>{m.noGL=false;});save();if(mode){mode.init();fillBg();}toast(S.gpu?(GL.on()?'내장 그래픽으로 그려요':'이 기기는 그래픽 가속을 쓸 수 없어 기존 방식으로 그려요'):'그래픽 가속을 껐어요');});
@@ -2485,7 +2497,7 @@ const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 if('serviceWorker' in navigator&&location.protocol==='https:'&&!EMBEDDED){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 setTimeout(()=>{if(role!=='sensor')STACK.load();},4000);
-window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
