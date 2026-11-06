@@ -47,6 +47,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 /* floating controls */
 .ui{position:fixed;z-index:5;opacity:0;transition:opacity .3s ease;pointer-events:none}
 body.ui-on .ui{opacity:1;pointer-events:auto}
+body.no-cursor,body.no-cursor *{cursor:none!important}
 body.role-sensor .ui{display:none}
 #hud{top:calc(10px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));display:flex;align-items:center;gap:10px;height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;max-width:calc(100vw - 24px);box-shadow:0 1px 4px rgba(0,0,0,.12)}
 #hud .fps{font-family:var(--mono);font-weight:400;color:var(--label2);font-variant-numeric:tabular-nums}
@@ -122,6 +123,8 @@ textarea.ta{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15
 .join{display:flex;flex-direction:column;gap:10px}
 .join input{font:inherit;font-family:var(--mono);font-size:28px;letter-spacing:.25em;text-transform:uppercase;text-align:center;background:var(--card);color:var(--label);border:0;border-radius:12px;padding:10px 12px;width:100%}
 #sensorView{width:100%;height:auto;border-radius:12px;background:#000;display:block;aspect-ratio:4/3}
+#sensorDim{position:fixed;inset:0;z-index:200;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:rgba(255,255,255,0.42);font-size:13px;text-align:center;padding:24px}
+#sensorDim[hidden]{display:none}#sensorDim .sub{color:rgba(255,255,255,0.28);font-size:12px}
 .status{margin:0;font-size:14px;color:var(--label2);font-variant-numeric:tabular-nums}
 #toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:50;border-radius:18px;padding:9px 16px;font-size:14px;font-weight:500;opacity:0;transition:opacity .25s;pointer-events:none;max-width:calc(100vw - 32px);text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.18)}
 #toast.on{opacity:1}
@@ -180,7 +183,9 @@ body.role-sensor #exhibit{display:none}
     <div class="rows">
       <div class="row"><div class="l">거울 모드<small>좌우를 뒤집어 거울처럼</small></div><label class="switch"><input type="checkbox" id="swMirror"><span></span></label></div>
       <div class="row"><div class="l">자동 전환<small>일정 시간마다 다음 모드로</small></div><div class="seg" id="segAuto"><button>끄기</button><button>20초</button><button>45초</button><button>90초</button></div></div>
+      <div class="row"><div class="l">화면 품질<small>느린 노트북·태블릿은 자동으로 가볍게</small></div><div class="seg" id="segPerf"><button>자동</button><button>선명</button><button>보통</button><button>가볍게</button></div></div>
     </div>
+    <p class="foot"><b>자동</b>은 모드마다 실제로 끊기는지 재서, 끊기는 모드만 해상도를 낮춰요(이 기기에 기억). 왼쪽 위 fps 옆에 <b>보통</b>·<b>가볍게</b>가 보이면 낮춘 상태예요. 자동을 다시 누르면 처음부터 다시 재요.</p>
   </div>
 
   <div class="group"><h4>쌓기</h4>
@@ -256,6 +261,7 @@ body.role-sensor #exhibit{display:none}
   </div>
 </div>
 
+<div id="sensorDim" hidden><p id="sensorDimText">센서 작동 중</p><p class="sub">화면을 누르면 미리보기가 다시 보여요</p></div>
 <div id="sensor" class="overlay" hidden>
   <div class="modal">
     <p class="eyebrow">센서 모드</p>
@@ -281,6 +287,7 @@ body.role-sensor #exhibit{display:none}
         <button id="sDetect">감지: 움직임만</button>
         <button id="sBg">배경 다시 잡기</button>
         <button id="sLeave">연결 끊기</button>
+        <button id="sDimBtn">화면 끄기</button>
       </div>
       <p class="fine">폰을 책상에 세워 두고 화면이 꺼지지 않게 해 주세요. 파랑은 사람(형태), 빨강은 움직임입니다.</p>
     </div>
@@ -328,7 +335,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto'};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
 function save(){try{localStorage.setItem('gyeol.settings',JSON.stringify(S));}catch(e){}}
@@ -410,7 +417,8 @@ async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loadi
     let labels=[];try{labels=SEG.seg.getLabels()||[];}catch(e){}let idx=labels.findIndex(l=>/person|selfie|foreground/i.test(String(l)));if(idx<0)idx=labels.length>1?1:0;SEG.idx=idx;
     SEG.state='ready';toast('사람 분할 모델 준비됨 · 형태가 더 정확해져요');setStatus(statusEl.textContent+' · 분할');}
   catch(e){SEG.state='offline';}}
-function runSeg(now){if(SEG.state!=='ready'||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(now-SEG.last<40)return;SEG.last=now;
+const ML={f:-1};
+function runSeg(now){if(SEG.state!=='ready'||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(now-SEG.last<40)return;SEG.last=now;ML.f=frame;
   const ts=Math.max(SEG.ts+1,Math.round(performance.now()));SEG.ts=ts;
   try{const res=SEG.seg.segmentForVideo(video,ts);const ms=res.confidenceMasks;const m=ms&&ms[Math.min(SEG.idx,ms.length-1)];
     if(m){SEG.mw=m.width;SEG.mh=m.height;SEG.mask=m.getAsFloat32Array();SEG.fresh=now;}if(res.close)res.close();}catch(e){}}
@@ -542,14 +550,40 @@ function encodePacket(seq){
   if(col){const c8=new Uint8Array(buf,8+n*5),w=A.w,h=A.h,rgb=A.rgb;for(let y=0;y<h2;y++)for(let x=0;x<w2;x++){let r=0,g=0,b=0,k=0;for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){const xx=x*2+dx,yy=y*2+dy;if(xx<w&&yy<h){const i=(yy*w+xx)*3;r+=rgb[i];g+=rgb[i+1];b+=rgb[i+2];k++;}}const o=(y*w2+x)*3;c8[o]=r/k;c8[o+1]=g/k;c8[o+2]=b/k;}}
   return buf;
 }
+// the compact packet: only the person's shape, the movement and the flow change much, and most of each is zero, so runs of zeros are
+// sent as a count; the picture's brightness goes every other packet, the colour every fourth. About a fifth of the old size
+function rleEnc(a,n,out,o){let i=0;while(i<n){const v=a[i];if(v===0){let r=1;while(r<255&&i+r<n&&a[i+r]===0)r++;out[o++]=0;out[o++]=r;i+=r;}else{out[o++]=v;i++;}}return o;}
+function rleDec(src,o,len,out,n){const end=o+len;let i=0;while(o<end&&i<n){const v=src[o++];if(v===0){const r=src[o++];for(let k=0;k<r&&i<n;k++)out[i++]=0;}else out[i++]=v;}while(i<n)out[i++]=0;}
+const PK={};
+function encodePacket3(seq){const n=A.n,w=A.w,h=A.h,w2=Math.ceil(w/2),h2=Math.ceil(h/2),gray=seq%2===0,col=!!(A.rgb&&A.rgb.length===n*3&&seq%4===0);
+  if(!PK.c||PK.n!==n){PK.n=n;PK.c=[new Uint8Array(n),new Uint8Array(n),new Uint8Array(n),new Uint8Array(n)];PK.out=new Uint8Array(9+4*(4+2*n)+n+w2*h2*3+16);}
+  const [P8,E8,U8,V8]=PK.c,zz=v=>{v=Math.round(v*30);v=v<-120?-120:v>120?120:v;return v>=0?v*2:-v*2-1;};
+  for(let i=0;i<n;i++){const p=A.p[i]*255,e=A.e[i]*255;P8[i]=p<6?0:p;E8[i]=e<4?0:e;U8[i]=zz(A.u[i]);V8[i]=zz(A.v[i]);}
+  const out=PK.out,dv=new DataView(out.buffer);out[0]=0x47;out[1]=3;dv.setUint16(2,w);dv.setUint16(4,h);out[6]=Math.round(A.level*255);out[7]=seq&255;out[8]=(gray?1:0)|(col?2:0);let o=9;
+  for(const c of PK.c){const s0=o+4;o=rleEnc(c,n,out,s0);dv.setUint32(s0-4,o-s0);}
+  if(gray){for(let i=0;i<n;i++)out[o+i]=A.gray[i];o+=n;}
+  if(col){const rgb=A.rgb;for(let y=0;y<h2;y++)for(let x=0;x<w2;x++){let r=0,g=0,b=0,k=0;for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){const xx=x*2+dx,yy=y*2+dy;if(xx<w&&yy<h){const i=(yy*w+xx)*3;r+=rgb[i];g+=rgb[i+1];b+=rgb[i+2];k++;}}out[o++]=r/k;out[o++]=g/k;out[o++]=b/k;}}
+  return out.buffer.slice(0,o);}
+function decodePacket3(buf,dv){const w=dv.getUint16(2),h=dv.getUint16(4),n=w*h;if(!w||!h||buf.byteLength<9)return;
+  if(w!==A.w||h!==A.h){allocAnalyzer(w,h);if(mode)mode.init();}
+  A.frames++;A.level=dv.getUint8(6)/255;const fl=dv.getUint8(8),u8=new Uint8Array(buf);if(!PK.d||PK.dn!==n){PK.dn=n;PK.d=[new Uint8Array(n),new Uint8Array(n),new Uint8Array(n),new Uint8Array(n)];}
+  let o=9;for(const c of PK.d){if(o+4>buf.byteLength)return;const len=dv.getUint32(o);o+=4;if(o+len>buf.byteLength)return;rleDec(u8,o,len,c,n);o+=len;}
+  const [P8,E8,U8,V8]=PK.d,e=A.e,er=A.er,u=A.u,v=A.v,hot=A.hot,pres=A.pres,pT=remoteTarget();let hotN=0,presN=0;const uz=q=>(q&1?-((q+1)>>1):q>>1)/30;
+  for(let i=0;i<n;i++){const ee=E8[i]/255;e[i]=ee;er[i]=ee;const pp=P8[i]/255;pT[i]=pp;u[i]=uz(U8[i]);v[i]=uz(V8[i]);if(ee>0.45)hot[hotN++]=i;if(pp>0.5)pres[presN++]=i;}
+  A.hotN=hotN;A.presN=presN;
+  if(fl&1){if(o+n>buf.byteLength)return;const g=A.gray;for(let i=0;i<n;i++)g[i]=u8[o+i];o+=n;}
+  if(fl&2){const w2=Math.ceil(w/2),h2=Math.ceil(h/2);if(o+w2*h2*3<=buf.byteLength){if(!A.rgb||A.rgb.length!==n*3)A.rgb=new Uint8Array(n*3);const rgb=A.rgb;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const q=o+((y>>1)*w2+(x>>1))*3,i=(y*w+x)*3;rgb[i]=u8[q];rgb[i+1]=u8[q+1];rgb[i+2]=u8[q+2];}}}}
+// the shape arrives about 30 times a second; in between, the screen eases toward the newest one, so a TV at 60 frames moves smoothly
+function remoteTarget(){if(!A.pT||A.pT.length!==A.n){A.pT=new Float32Array(A.n);A.pT.set(A.p);}return A.pT;}
+function smoothRemote(dt){const pT=A.pT;if(!pT||pT.length!==A.n)return;const k=1-Math.exp(-dt/0.028),p=A.p,n=A.n;for(let i=0;i<n;i++)p[i]+=(pT[i]-p[i])*k;}
 function decodePacket(buf){
-  if(buf.byteLength<8) return; const dv=new DataView(buf); if(dv.getUint8(0)!==0x47) return;
+  if(buf.byteLength<8) return; const dv=new DataView(buf); if(dv.getUint8(0)!==0x47) return;if(dv.getUint8(1)===3){decodePacket3(buf,dv);return;}
   const w=dv.getUint16(2),h=dv.getUint16(4),n=w*h; if(buf.byteLength<8+n*5||!w||!h) return;
   if(w!==A.w||h!==A.h){allocAnalyzer(w,h);if(mode)mode.init();}
   A.frames++; A.level=dv.getUint8(6)/255;
   const u8=new Uint8Array(buf,8), i8=new Int8Array(buf,8+n*3); let hotN=0,presN=0;
   const g=A.gray,e=A.e,er=A.er,p=A.p,u=A.u,v=A.v,hot=A.hot,pres=A.pres;
-  for(let i=0;i<n;i++){g[i]=u8[i];const ee=u8[n+i]/255;e[i]=ee;er[i]=ee;const pp=u8[2*n+i]/255;p[i]=pp;u[i]=i8[i]/30;v[i]=i8[n+i]/30;if(ee>0.45)hot[hotN++]=i;if(pp>0.5)pres[presN++]=i;}
+  const pT=remoteTarget();for(let i=0;i<n;i++){g[i]=u8[i];const ee=u8[n+i]/255;e[i]=ee;er[i]=ee;const pp=u8[2*n+i]/255;pT[i]=pp;u[i]=i8[i]/30;v[i]=i8[n+i]/30;if(ee>0.45)hot[hotN++]=i;if(pp>0.5)pres[presN++]=i;}
   A.hotN=hotN;A.presN=presN;
   {const w2=Math.ceil(w/2),h2=Math.ceil(h/2);if(dv.getUint8(1)===2&&buf.byteLength>=8+n*5+w2*h2*3){if(!A.rgb||A.rgb.length!==n*3)A.rgb=new Uint8Array(n*3);const c8=new Uint8Array(buf,8+n*5),rgb=A.rgb;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const o=((y>>1)*w2+(x>>1))*3,i=(y*w+x)*3;rgb[i]=c8[o];rgb[i+1]=c8[o+1];rgb[i+2]=c8[o+2];}}}
 }
@@ -612,10 +646,10 @@ function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='fi
   const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star'||id==='cari',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
-  if(wantPose&&FACE.pose&&now-FACE.plast>Math.max(usePose?66:80,(FACE.pcost||8)*3)){FACE.plast=now;runPose(now);}
+  if(wantPose&&FACE.pose&&ML.f!==frame&&now-FACE.plast>Math.max(usePose?66:80,(FACE.pcost||8)*3)){FACE.plast=now;runPose(now);}
   runObj(now);}
-function runPose(now){const t0=performance.now();try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}FACE.pcost=(FACE.pcost||8)*0.7+(performance.now()-t0)*0.3;}
-function runObj(now){if(!FACE.obj||now-FACE.olast<clamp((FACE.ocost||20)*4,120,600))return;FACE.olast=now;const t0=performance.now();
+function runPose(now){if(ML.f===frame)return;ML.f=frame;const t0=performance.now();try{FACE.pres=FACE.pose.detectForVideo(video,now+0.25);FACE.ptime=now;takePoseMask(FACE.pres);}catch(e){FACE.pres=null;}FACE.pcost=(FACE.pcost||8)*0.7+(performance.now()-t0)*0.3;}
+function runObj(now){if(!FACE.obj||now-FACE.olast<clamp((FACE.ocost||20)*4,120,600)||ML.f===frame)return;FACE.olast=now;ML.f=frame;const t0=performance.now();
   try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.length)FACE.oseen=now;}catch(e){FACE.ores=null;}FACE.ocost=(FACE.ocost||20)*0.7+(performance.now()-t0)*0.3;}
 // the person detector's boxes on screen: from this camera, or relayed by the phone sensor
 function objScreen(){const now=performance.now();if(A.remote){const r=FACE.rboxes;return r&&now-r.t<700?r.B.map(b=>({x:b[0]*W,y:b[1]*H,w:b[2]*W,h:b[3]*H,score:b[4]})):null;}
@@ -828,7 +862,7 @@ function upsampleMask(m,gw,gh,s,lo,hi,rgb,cv){const sw=Math.max(1,gw*s),sh=Math.
    hands raised against the glass come through warm */
 const CANVAS_FILTER=(()=>{try{const c=document.createElement('canvas').getContext('2d');c.filter='blur(2px)';return c.filter==='blur(2px)';}catch(e){return false;}})();
 const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 유리 바로 앞까지 다가온 사람만 또렷하고 짙으며, 조금만 멀어져도 옅게 번진다',
-  init(){const n=A.n;this.M=new Float32Array(n);this.D=new Float32Array(n);this.Dn=new Float32Array(n);this.tmp=new Float32Array(n);this.cv=[null,null,null,null];this.O=mkCanvas(Math.max(2,W>>1),Math.max(2,H>>1));this.f=0;this.dInit=false;
+  init(){const n=A.n;this.M=new Float32Array(n);this.D=new Float32Array(n);this.Dn=new Float32Array(n);this.tmp=new Float32Array(n);this.cv=[null,null,null,null];this.O=mkCanvas(Math.max(2,Math.round(W*0.5*QF())),Math.max(2,Math.round(H*0.5*QF())));this.f=0;this.dInit=false;
     // the glass itself, painted once: a smooth backlit field with fine grain so the gradient never bands
     const bw=Math.max(2,Math.round(W/2)),bh=Math.max(2,Math.round(H/2)),bg=mkCanvas(bw,bh),c=bg.cx,img=c.createImageData(bw,bh),d=img.data;
     for(let y=0;y<bh;y++){const v=y/(bh-1);for(let x=0;x<bw;x++){const u=x/(bw-1),glow=Math.exp(-(((u-0.5)/0.42)**2+((v-0.62)/0.5)**2));
@@ -863,7 +897,7 @@ const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 
     box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*(Dn[i]>D[i]?0.14:0.03);
     // sharpness only in the last stretch before the glass; four depth layers blended, so blur is continuous across the body
     const S=this.tmp;for(let i=0;i<n;i++){let s=(D[i]-0.62)/0.33;s=s<0?0:s>1?1:s;S[i]=s*s*(3-2*s);}
-    const sc=isTouch?2:3,scl=W/1280,R=[1.6,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
+    const sc=Math.max(1,Math.round((isTouch?2:3)*QF())),scl=W/1280,R=[1.6,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
     for(let i=0;i<n;i++){const z=(1-S[i])*3;for(let l=0;l<4;l++){const wv=1-Math.abs(z-l);this.Wl[l][i]=wv>0?wv:0;}}
     for(let l=3;l>=0;l--){this.cv[l]=this.layer(this.Mb,this.Wl[l],sc,this.cv[l]);if(!this.cv[l].any)continue;this.blurDraw(this.cv[l],R[l]*scl,AL[l]);}
   }};
@@ -897,7 +931,7 @@ const mHalftone={id:'halftone',name:'망점',desc:'흰 바탕에 하늘색 망�
 /* 열화상: a thermal camera. People are warm, the room is cool; the hottest parts (head, hands, the core of the body) burn toward white.
    The palette is a calm one: deep navy, steel blue, teal, amber, coral, white, instead of a hard rainbow */
 const mThermal={id:'thermal',name:'열화상',desc:'열화상 카메라처럼 파란 공간 위에 사람이 무지갯빛 온도로 떠오른다. 얼굴이 가장 뜨겁게 하얗고, 목과 팔은 붉게, 옷과 다리는 노랑·연두로 나뉜다. 얼굴 생김새는 보이지 않는다',
-  init(){this.tw=Math.max(64,Math.round(W/(isTouch?5:4)));this.th=Math.max(36,Math.round(H/(isTouch?5:4)));this.out=mkCanvas(this.tw,this.th);this.img=this.out.cx.createImageData(this.tw,this.th);
+  init(){const dv=(isTouch?5:4)/Math.max(0.75,QF());this.tw=Math.max(48,Math.round(W/dv));this.th=Math.max(27,Math.round(H/dv));this.out=mkCanvas(this.tw,this.th);this.img=this.out.cx.createImageData(this.tw,this.th);
     const n=this.tw*this.th;this.T=new Float32Array(n);this.Ts=new Float32Array(n);this.tmp=new Float32Array(n);this.pb=new Float32Array(A.n);this.tmpg=new Float32Array(A.n);this.init2=false;
     // the classic rainbow: deep blue room, cyan and green at the cool edge of a body, yellow clothes, orange and red skin, a pink-white face
     const st=[[0,[6,16,84]],[0.16,[14,46,160]],[0.28,[24,94,210]],[0.37,[34,132,226]],[0.45,[38,176,186]],[0.52,[96,206,86]],[0.59,[186,224,52]],[0.66,[244,228,48]],[0.73,[255,180,40]],[0.8,[252,104,50]],[0.86,[238,48,92]],[0.92,[244,104,146]],[0.97,[252,196,204]],[1,[255,242,238]]];
@@ -1226,7 +1260,7 @@ const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 �
    curls; wherever people move, the water follows them and drags the colour into swirls and fine marbled lines. A small fluid simulation
    (advection, pressure projection, a little vorticity) on a coarse grid; colour comes from the film's thickness through a thin-film palette */
 const mFluid={id:'fluid',name:'물감',desc:'홀로그램 필름처럼 하늘·민트·연노랑·라일락 파스텔 물감이 가는 결을 띠고 천천히 흐르고 감긴다. 사람이 지나가면 그 움직임대로 물감이 밀리고 소용돌이치며 번진다',
-  init(){const R=Math.random,gw=this.gw=isTouch?120:168,gh=this.gh=Math.max(8,Math.round(gw*H/W)),n=gw*gh;['vx','vy','ux','uy','p','dv','T','T2','S','S2','cu','D','D2','fx','fy','ft'].forEach(k=>this[k]=new Float32Array(n));
+  init(){const R=Math.random,gw=this.gw=Math.round((isTouch?120:168)*Math.max(0.65,QF())),gh=this.gh=Math.max(8,Math.round(gw*H/W)),n=gw*gh;['vx','vy','ux','uy','p','dv','T','T2','S','S2','cu','D','D2','fx','fy','ft'].forEach(k=>this[k]=new Float32Array(n));
     const noise=(sc,seed)=>{const cw=Math.ceil(gw/sc)+3,chh=Math.ceil(gh/sc)+3,g=new Float32Array(cw*chh);for(let i=0;i<g.length;i++)g[i]=R();const out=new Float32Array(n);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const fx=x/sc,fy=y/sc,x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,sx=tx*tx*(3-2*tx),sy=ty*ty*(3-2*ty),i=y0*cw+x0;out[y*gw+x]=(g[i]*(1-sx)+g[i+1]*sx)*(1-sy)+(g[i+cw]*(1-sx)+g[i+cw+1]*sx)*sy;}return out;};
     const a=noise(gw/3,1),b=noise(gw/7,2),c=noise(gw/16,3),d2=noise(gw/4,4),e2=noise(gw/28,5),e3=noise(gw/12,6);for(let i=0;i<n;i++){this.T[i]=(a[i]*1.0+b[i]*0.55+c[i]*0.25)*2.1;this.S[i]=0.2+0.8*Math.min(1,Math.max(0,(d2[i]-0.2)*1.6));this.D[i]=e2[i]*0.7+e3[i]*0.5;}
     // a swirl to start from, so the film already looks stirred
@@ -1415,7 +1449,7 @@ const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 �
 
 /* 파동: a clean silhouette that tears into waveforms and block noise while moving, and settles back when still */
 const mWave={id:'wave',name:'파동',needVideo:true,desc:'배경은 지우고 실제 화면에서 사람만 오려 내어, 물에 비친 것처럼 좌우로 일렁이게 한다. 가만히 있어도 잔잔히 흔들리고, 움직일수록 크게 출렁인다',
-  init(){this.s=isTouch?2:3;this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.ph=0;this.dxr=new Float32Array(this.rh);this.dyc=new Float32Array(this.rw);},
+  init(){this.s=Math.max(1,Math.round((isTouch?2:3)*QF()));this.rw=A.w*this.s;this.rh=A.h*this.s;this.img=new ImageData(this.rw,this.rh);this.cv=mkCanvas(this.rw,this.rh);this.amp=0;this.ph=0;this.dxr=new Float32Array(this.rh);this.dyc=new Float32Array(this.rw);},
   draw(t,dt){dt=Math.min(dt||0.016,0.05);const p=A.p;
     // how much the people move (how much their shape changes between frames) swells the waves; a still person keeps a gentle sway
     if(!this.prev||this.prev.length!==A.n){this.prev=new Float32Array(A.n);this.prev.set(p);}
@@ -1425,14 +1459,14 @@ const mWave={id:'wave',name:'파동',needVideo:true,desc:'배경은 지우고 �
     const src=videoSrc();if(!src){this.drawShape(amp,ph);return;}
     // only the person, cut out of the real picture: the picture and the person's shape are both cut into thin rows and slid sideways along
     // the same long swell (with a finer ripple riding on it), like a face seen in water; the room behind is left out entirely
-    const q=Math.min(DPR,1.5),cw=Math.max(1,Math.round(W*q)),chh=Math.max(1,Math.round(H*q));
+    const q=Math.min(DPR,1.5)*QF(),cw=Math.max(1,Math.round(W*q)),chh=Math.max(1,Math.round(H*q));
     if(!this.V||this.V.width!==cw||this.V.height!==chh){this.V=mkCanvas(cw,chh);this.M2=mkCanvas(cw,chh);}
     const w=A.w,h=A.h,mw2=w*2,mh2=h*2;if(!this.MC||this.MC.width!==mw2||this.MC.height!==mh2){this.MC=mkCanvas(mw2,mh2);this.mimg=new ImageData(mw2,mh2);}
     // the person's shape at twice the grid, with a clean edge, turned the same way as the camera picture
     {const md=this.mimg.data,mx2=w-1.001,my2=h-1.001,mir=src.mirror;for(let y=0;y<mh2;y++){let gy=(y+0.5)*0.5-0.5;gy=gy<0?0:gy>my2?my2:gy;const y0=gy|0,fy=gy-y0;
       for(let x=0;x<mw2;x++){let gx=((mir?mw2-1-x:x)+0.5)*0.5-0.5;gx=gx<0?0:gx>mx2?mx2:gx;const x0=gx|0,fx=gx-x0,i=y0*w+x0,v=(p[i]*(1-fx)+p[i+1]*fx)*(1-fy)+(p[i+w]*(1-fx)+p[i+w+1]*fx)*fy;
         let al=(v-0.38)/0.24;al=al<=0?0:al>=1?1:al*al*(3-2*al);const o=(y*mw2+x)*4;md[o]=md[o+1]=md[o+2]=255;md[o+3]=al*255;}}this.MC.cx.putImageData(this.mimg,0,0);}
-    const M=0.12,z=1+2*M,A1=W*(0.024+0.07*amp),k1=TAU/(H*0.34),k2=TAU/(H*0.075),st=Math.max(2,Math.round(H/300));
+    const M=0.12,z=1+2*M,A1=W*(0.024+0.07*amp),k1=TAU/(H*0.34),k2=TAU/(H*0.075),st=Math.max(2,Math.round(H/300/QF()));
     const rows=(c2,el,x0,y0,fw,fh,full)=>{const sw=fw/z,sh=fh/z,sx0=x0+(fw-sw)/2,sy0=y0+(fh-sh)/2,mx=Math.max(0,full-sw),ks=sw/W,kh=sh/H;
       c2.setTransform(1,0,0,1,0,0);c2.globalCompositeOperation='source-over';c2.clearRect(0,0,cw,chh);c2.setTransform(q,0,0,q,0,0);if(src.mirror){c2.translate(W,0);c2.scale(-1,1);}c2.imageSmoothingEnabled=true;
       for(let y=0;y<H;y+=st){const yc=y+st*0.5,dx=A1*(Math.sin(yc*k1+ph*1.6)+0.26*Math.sin(yc*k2-ph*2.4));let sx=sx0-dx*ks;sx=sx<0?0:sx>mx?mx:sx;
@@ -1588,7 +1622,7 @@ const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
 
 /* 등고선: the people raise hills on a slowly flowing terrain; the whole screen is drawn as map contours (or wood grain) */
 const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언덕처럼 솟고, 화면 전체가 지도의 등고선처럼 그 주위를 감싸 흐른다',
-  init(){this.up=isTouch?1:2;this.gw=A.w*this.up;this.gh=A.h*this.up;this.hf=new Float32Array(this.gw*this.gh);this.pb=new Float32Array(A.n);this.mem=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
+  init(){this.up=isTouch||QF()<0.9?1:2;this.gw=A.w*this.up;this.gh=A.h*this.up;this.hf=new Float32Array(this.gw*this.gh);this.pb=new Float32Array(A.n);this.mem=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
   draw(t){const P=pal(),w=A.w,h=A.h,pb=this.pb,mem=this.mem,gw=this.gw,gh=this.gh,up=this.up,hf=this.hf;this.fc=(this.fc||0)+1;
     if(this.cache&&(this.fc&1)){paper(P.light?'#f3f0e8':P.bg);this.stroke(this.cache,P);return;}
     pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
@@ -1765,7 +1799,7 @@ const mPoem={id:'poem',name:'시',fullFrame:true,busy(){return this.state!=='idl
 
 /* 아우라: a grainy thermal aura for souvenir photos. It only blooms when someone comes close enough */
 const mAura={id:'aura',name:'아우라',desc:'가까이 다가오면 사람이 열화상처럼 주황빛 아우라로 피어난다. 인증샷용',
-  init(){this.s=isTouch?1.6:2;const w=Math.max(1,Math.round(W/this.s)),h=Math.max(1,Math.round(H/this.s));this.cv=mkCanvas(w,h);this.img=new ImageData(w,h);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.k=0;this.f=0;
+  init(){this.s=(isTouch?1.6:2)/QF();const w=Math.max(1,Math.round(W/this.s)),h=Math.max(1,Math.round(H/this.s));this.cv=mkCanvas(w,h);this.img=new ImageData(w,h);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.k=0;this.f=0;
     // colour ramp: pink ground, white haze, cyan rim, orange body, yellow core
     const stops=[[0,[234,146,204]],[0.1,[240,184,216]],[0.2,[246,228,234]],[0.3,[198,226,232]],[0.4,[124,198,218]],[0.5,[150,190,200]],[0.58,[232,152,78]],[0.75,[238,160,64]],[0.9,[242,180,74]],[1,[244,198,96]]];const lut=new Uint8ClampedArray(256*3);
     for(let i=0;i<256;i++){const v=i/255;let a=stops[0],b=stops[stops.length-1];for(let j=0;j<stops.length-1;j++)if(v>=stops[j][0]&&v<=stops[j+1][0]){a=stops[j];b=stops[j+1];break;}const f=(v-a[0])/((b[0]-a[0])||1);for(let c=0;c<3;c++)lut[i*3+c]=a[1][c]+(b[1][c]-a[1][c])*f;}this.lut=lut;},
@@ -1812,7 +1846,7 @@ function drawFrameToSmall(cv,w,h){ // the current frame, cropped like the analys
    each person's own star (or moon) stands where they stand, its points leaning after their head, hands and feet, breathing and turning
    slowly, and the stars around make room for it. Nothing of the person is shown */
 const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 파란 달이 되어 몸짓을 따라 천천히 움직이고, 주변 별과 달은 비켜 흐른다. 파랑과 노랑이 번진 젖빛 유리 너머처럼. 사람 모습은 보이지 않는다',
-  init(){const R=Math.random,lw=Math.max(32,Math.round(W/4)),lh=Math.max(18,Math.round(H/4)),mk=a=>mkCanvas(Math.max(4,Math.round(lw/a)),Math.max(4,Math.round(lh/a)));
+  init(){const R=Math.random,lw=Math.max(32,Math.round(W/4*QF())),lh=Math.max(18,Math.round(H/4*QF())),mk=a=>mkCanvas(Math.max(4,Math.round(lw/a)),Math.max(4,Math.round(lh/a)));
     this.lw=lw;this.lh=lh;this.A1=mk(1);this.A2=mk(2);this.A3=mk(4);this.A4=mk(8);this.U3=mk(4);this.U2=mk(2);this.U1=mk(1);this.P1=mk(1);this.P2=mk(2);this.P3=mk(4);this.Q2=mk(2);this.Q1=mk(1);
     this.st=this.st||{};this.f=0;this.alone=0;if(this.cnt==null)this.cnt=0;
     // the ground: big yellow stars and blue moons spread evenly, each wandering and turning very slowly
@@ -1874,7 +1908,7 @@ const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 
    with its own clean outline, stepping back in colour from orange through pink and magenta to violet and lilac, under film grain */
 const mGhost={id:'ghost',name:'잔상',desc:'실제 모습 대신 실루엣만 회색 종이 위에 주황빛으로 뜨고, 움직이면 지나온 자리마다 외곽이 또렷한 잔상이 탁탁 끊겨 남는다. 색은 분홍·자홍·보라·라일락으로 차례로 물든다',
   K:8,
-  init(){const w=A.w,h=A.h,R=Math.random;this.rw=w*2;this.rh=h*2;this.c0=mkCanvas(this.rw,this.rh);this.img=new ImageData(this.rw,this.rh);
+  init(){const w=A.w,h=A.h,R=Math.random,k=QF()>0.9?2:1.5;this.rw=Math.round(w*k);this.rh=Math.round(h*k);this.c0=mkCanvas(this.rw,this.rh);this.img=new ImageData(this.rw,this.rh);
     this.ps=new Float32Array(A.n);this.pb=new Float32Array(A.n);this.pd=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.U=new Float32Array(A.n);this.U2=new Float32Array(A.n);this.ring=[];this.f=0;
     this.dust=[];for(let i=0;i<50;i++)this.dust.push({x:R(),y:R(),r:0.4+R()*1.3,a:0.12+R()*0.3,dark:R()<0.55});this.hair=[];for(let i=0;i<7;i++)this.hair.push({x:R(),y:R(),l:0.03+R()*0.07,a:R()*TAU,c:(R()-0.5)*0.8,dark:R()<0.5});},
   grain(){if(mGhost.gt)return mGhost.gt;const S2=200,c=mkCanvas(S2,S2),im=c.cx.createImageData(S2,S2),d=im.data;for(let i=0;i<S2*S2;i++){const v=128+(Math.random()-0.5)*110;d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;}c.cx.putImageData(im,0,0);return mGhost.gt=c;},
@@ -1887,11 +1921,11 @@ const mGhost={id:'ghost',name:'잔상',desc:'실제 모습 대신 실루엣만 �
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){let v=0;for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=h)continue;for(let dx=-1;dx<=1;dx++){const xx=x+dx;if(xx<0||xx>=w)continue;const q=U[yy*w+xx];if(q>v)v=q;}}U2[y*w+x]=v;}
     const rw=this.rw,rh=this.rh,d=this.img.data,mw=w-1.001,mh=h-1.001;
     const samp=(m,gx,gy)=>{gx=gx<0?0:gx>mw?mw:gx;gy=gy<0?0:gy>mh?mh:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (m[i]*(1-fx)+m[i+1]*fx)*(1-fy)+(m[i+w]*(1-fx)+m[i+w+1]*fx)*fy;};
-    const cut=m=>{let a=(m-0.42)/0.12;return a<=0?0:a>=1?1:a*a*(3-2*a);};
+    const cwd=0.12*Math.max(1,2*w/rw),c0=0.48-cwd/2,cut=m=>{let a=(m-c0)/cwd;return a<=0?0:a>=1?1:a*a*(3-2*a);};
     // copy colours from the oldest to the newest
     const TC=[[206,184,240],[190,146,236],[180,104,226],[196,72,214],[220,60,180],[236,58,138],[244,66,98],[246,92,62]];
     const oL=w*0.045,oR=w*0.05,o1=w*0.02,o2=w*0.024,wob=Math.sin(t*0.7)*w*0.004,tt=t*0.3;
-    for(let y=0;y<rh;y++){const gy=(y+0.5)*0.5-0.5,vy=y/rh-0.5,cy=Math.min(h-1,y>>1);for(let x=0;x<rw;x++){const gx=(x+0.5)*0.5-0.5,vx=x/rw-0.5,ci=cy*w+Math.min(w-1,x>>1),vg=1-0.26*(vx*vx+vy*vy);
+    const kx=w/rw,ky=h/rh;for(let y=0;y<rh;y++){const gy=(y+0.5)*ky-0.5,vy=y/rh-0.5,cy=Math.min(h-1,(y*ky)|0);for(let x=0;x<rw;x++){const gx=(x+0.5)*kx-0.5,vx=x/rw-0.5,ci=cy*w+Math.min(w-1,(x*kx)|0),vg=1-0.26*(vx*vx+vy*vy);
         let r=232*vg,g=230*vg,b=228*vg,m,a;
         // soft side glows: lilac far left, magenta near left, yellow near right, pale pink far right
         m=samp(pd,gx+oL+wob,gy);if(m>0.01){a=Math.min(1,m*1.25)*0.55;r+=(210-r)*a;g+=(186-g)*a;b+=(240-b)*a;}
@@ -2068,7 +2102,7 @@ const KEYS='1234567890-=[]\\;\',./`qwert';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
-function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();wantVideo();fillBg();lastSwitch=performance.now();save();syncChips();
+function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor')setPerf(perfFor(mode),false);if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();wantVideo();fillBg();lastSwitch=performance.now();window.__modeF=frame;save();syncChips();
   const b=modesEl.children[S.mode];if(b&&b.scrollIntoView)try{b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}catch(e){}}
 function isOn(i){const m=MODES[i];return !!m&&!(S.off||[]).includes(m.id);}
 function nextMode(d){const N=MODES.length;let i=S.mode;for(let k=0;k<N;k++){i=((i+d)%N+N)%N;if(isOn(i)){setMode(i);return;}}}
@@ -2078,7 +2112,8 @@ function syncChips(){Array.from(modesEl.children).forEach((b,i)=>b.setAttribute(
 function clearArt(){if(mode&&mode.clear){mode.clear();toast('지웠어요');}}
 let uiTimer=0,panelOpen=false;
 function showUI(){document.body.classList.add('ui-on');clearTimeout(uiTimer);uiTimer=setTimeout(hideUI,4000);}
-function hideUI(){if(panelOpen||!intro.hidden)return;document.body.classList.remove('ui-on');}
+function hideUI(){if(panelOpen||!intro.hidden)return;document.body.classList.remove('ui-on');document.body.classList.add('no-cursor');}
+document.addEventListener('mousemove',()=>document.body.classList.remove('no-cursor'),{passive:true});
 function openPanel(o){panelOpen=o;panel.hidden=!o;panelDim.hidden=!o;$('#gear').setAttribute('aria-expanded',o?'true':'false');if(o){syncCtl();showUI();}}
 $('#gear').addEventListener('click',()=>openPanel(!panelOpen));
 $('#closePanel').addEventListener('click',()=>openPanel(false));
@@ -2093,8 +2128,9 @@ seg('#segTrail',i=>{S.trailp=i;});
 seg('#segDetect',i=>{S.detect=i===0?'motion':'presence';resetBackground();toast(S.detect==='motion'?'움직이는 것만 형태로 봐요':'가만히 있는 사람도 잡아요. 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
 seg('#segAuto',i=>{S.auto=AUTOS[i];lastSwitch=performance.now();});
 seg('#segStackDist',i=>{S.stackDist=i;});
+seg('#segPerf',i=>{S.perf=i===0?'auto':i-1;if(i===0){PERF.by={};perfSave();}applyPerfMode();});
 const swMirror=$('#swMirror');
-function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);
+function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
   swMirror.checked=!!S.mirror;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
 $('#btnKeySave').addEventListener('click',()=>{const v=$('#claudeKey').value.trim();POET.setKey(v);$('#claudeKey').value='';$('#claudeKey').placeholder=v?'저장됨 · 바꾸려면 새 키 입력':'Claude API 키 (sk-ant-…)';toast(v?'Claude 키를 저장했어요':'키가 비어 있어요');});
@@ -2207,43 +2243,76 @@ $('#btnJoinBack').addEventListener('click',()=>joinDisplay('environment'));
 $('#btnJoinDemo').addEventListener('click',()=>joinDisplay('demo'));
 $('#btnSensorHome').addEventListener('click',()=>{leaveSensor();showIntro('');});
 $('#sLeave').addEventListener('click',()=>{leaveSensor();showIntro('');});
+$('#sDimBtn').addEventListener('click',()=>dimSensor(true));
 $('#sFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'environment':'user';try{await startCamera(f);try{conn&&conn.open&&conn.send(JSON.stringify({type:'info',facing:f,mirror:S.mirror}));}catch(e){}}catch(e){sMsg(camError(e));}});
 $('#sMirror').addEventListener('click',()=>{S.mirror=!S.mirror;resetAnalysis();save();toast(S.mirror?'좌우 반전 켬':'좌우 반전 끔');});
 $('#sDetect').addEventListener('click',()=>{S.detect=S.detect==='motion'?'presence':'motion';resetBackground();save();syncCtl();toast(S.detect==='motion'?'움직이는 것만 감지해요':'정지한 사람도 잡아요 (카메라 앞을 비우고 배경 다시 잡기)');});
 $('#sBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
-function leaveSensor(){if(conn){try{conn.close();}catch(e){}conn=null;}if(peer){try{peer.destroy();}catch(e){}peer=null;}stopStream();role='solo';document.body.classList.remove('role-sensor');sensorOv.hidden=true;useDemo();setupAnalyzer();if(mode)mode.init();}
+function leaveSensor(){dimSensor(false);if(conn){try{conn.close();}catch(e){}conn=null;}if(peer){try{peer.destroy();}catch(e){}peer=null;}stopStream();role='solo';document.body.classList.remove('role-sensor');sensorOv.hidden=true;useDemo();setupAnalyzer();if(mode)mode.init();}
 function drawSensorPreview(now){const w=A.w,h=A.h;if(!w)return;const cv=sensorView;if(cv.width!==w*4||cv.height!==h*4){cv.width=w*4;cv.height=h*4;cv.style.aspectRatio=w+' / '+h;}
   const c=cv.getContext('2d');c.imageSmoothingEnabled=true;c.drawImage(A.cv,0,0,cv.width,cv.height);
   if(!sOv||sOv.width!==w||sOv.height!==h){sOv=mkCanvas(w,h);sImg=new ImageData(w,h);}
   const d=sImg.data;for(let i=0;i<w*h;i++){const p=A.p[i],e=A.e[i],o=i*4;d[o]=255;d[o+1]=50;d[o+2]=255*(p>e*1.5?1:0.1);d[o+3]=Math.max(e*1.6,p)*170;if(p>e*1.5){d[o]=40;d[o+1]=120;}}
   sOv.cx.putImageData(sImg,0,0);c.drawImage(sOv,0,0,cv.width,cv.height);
-  sFpsN++;if(now-sFpsT>1000){sFps=Math.round(sFpsN*1000/(now-sFpsT));sFpsN=0;sFpsT=now;bytesRate=bytesAcc/((now-bytesT)/1000);bytesAcc=0;bytesT=now;
-    sensorStatus.textContent=(conn&&conn.open?'연결됨':'연결 대기')+' · '+sFps+' fps · '+(bytesRate/1024).toFixed(0)+' KB/s · '+w+'×'+h+' 격자';}}
-function runPoseSensor(now){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;runObj(now);if(!FACE.pose||now-FACE.plast<Math.max(80,(FACE.pcost||8)*3))return;FACE.plast=now;runPose(now);
+  sensorStats(now,3);}
+function sensorStats(now,k){sFpsN+=k||1;if(now-sFpsT>1000){sFps=Math.round(sFpsN*1000/(now-sFpsT));sFpsN=0;sFpsT=now;bytesRate=bytesAcc/((now-bytesT)/1000);bytesAcc=0;bytesT=now;
+    const t=(conn&&conn.open?'연결됨':'연결 대기')+' · '+sFps+' fps · '+(bytesRate/1024).toFixed(0)+' KB/s · '+A.w+'×'+A.h+' 격자';sensorStatus.textContent=t;sDimText.textContent='센서 작동 중 · '+t;}}
+// the phone's own preview is only for setting up: a minute after connecting the screen goes black (the camera and the models keep
+// running), which saves battery and heat on a long day; a tap brings the preview back for another minute
+const sDimEl=$('#sensorDim'),sDimText=$('#sensorDimText'),sDim={on:false,touch:0};
+function dimSensor(on){sDim.on=on;sDimEl.hidden=!on;if(!on)sDim.touch=performance.now();}
+sDimEl.addEventListener('click',()=>dimSensor(false));
+document.addEventListener('pointerdown',()=>{if(role==='sensor')sDim.touch=performance.now();},{passive:true});
+function runPoseSensor(now){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;runObj(now);if(!FACE.pose||now-FACE.plast<Math.max(80,(FACE.pcost||8)*3)||ML.f===frame)return;FACE.plast=now;runPose(now);
   // landmarks in the shared frame (the analysis crop, mirrored like the grid), so the monitor places them exactly where the shapes are
   if(conn&&conn.open&&A.crop){const cr=A.crop,lms=FACE.pres&&FACE.pres.landmarks||[],r4=v=>Math.round(v*1e4)/1e4,od=FACE.ores&&now-FACE.otime<600&&FACE.ores.detections||[];
     const B=od.filter(o=>o.categories&&o.categories[0]&&o.categories[0].categoryName==='person').map(o=>{const bb=o.boundingBox;let x=(bb.originX-cr[0])/cr[2];const w2=bb.width/cr[2];if(S.mirror)x=1-x-w2;return [r4(x),r4((bb.originY-cr[1])/cr[3]),r4(w2),r4(bb.height/cr[3]),Math.round(o.categories[0].score*100)/100];});
     try{conn.send(JSON.stringify({type:'pose',B,L:lms.map(lm=>lm.map(q=>{let x=(q.x*cr[4]-cr[0])/cr[2];if(S.mirror)x=1-x;return [Math.round(x*1e4)/1e4,Math.round((q.y*cr[5]-cr[1])/cr[3]*1e4)/1e4,Math.round((q.visibility==null?1:q.visibility)*100)/100];}))}));}catch(e){}}}
-function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);runSeg(now);runPoseSensor(now);const ok=analyze();drawSensorPreview(now);
-  if(ok&&conn&&conn.open&&now-lastSend>=45){const dc=conn.dataChannel;if(!dc||dc.bufferedAmount<65536){try{const b=encodePacket(seq++);conn.send(b);bytesAcc+=b.byteLength;lastSend=now;}catch(e){}}}}
+function sensorTick(now){if(source.kind==='demo')drawDemo(tAcc,false);runSeg(now);runPoseSensor(now);const ok=analyze();if(!sDim.on){if(frame%3===0)drawSensorPreview(now);}else sensorStats(now);
+  if(!sDim.on&&conn&&conn.open&&now-sDim.touch>60000)dimSensor(true);
+  if(ok&&conn&&conn.open&&now-lastSend>=33){const dc=conn.dataChannel;if(!dc||dc.bufferedAmount<65536){try{const b=encodePacket3(seq++);conn.send(b);bytesAcc+=b.byteLength;lastSend=now;}catch(e){}}}}
+
+/* ---------- performance: a weak school laptop or tablet sending the picture to a TV ----------
+   three levels: full; lighter (the heavy modes draw their own pictures at 3/4 size, a sharp tablet screen at 1.25x instead of 2x);
+   lightest (heavy modes at about half size, the whole canvas at 80%, and a steady 30 frames a second if even that is too slow).
+   'auto' measures how long frames really take in each mode, lowers only the modes that stutter, and remembers them on this device */
+const PERF={lv:0,by:{},n:0,acc:0,work:0,slow:0,cap:14};
+try{PERF.by=JSON.parse(localStorage.getItem('gyeol.perf')||'{}')||{};}catch(e){}
+function perfSave(){try{localStorage.setItem('gyeol.perf',JSON.stringify(PERF.by));}catch(e){}}
+function QF(){return [1,0.75,0.55][PERF.lv]||1;}
+function perfFixed(){return S.perf==null||S.perf==='auto'?-1:clamp(S.perf|0,0,2);}
+function dprFor(lv){let d=clamp(window.devicePixelRatio||1,1,2);if(W*H*d*d>2.8e6)d=Math.max(1,Math.sqrt(2.8e6/(W*H)));if(lv>=1)d=Math.min(d,1.25);if(lv>=2)d*=0.8;return d;}
+function setPerf(lv,reinit){lv=clamp(lv|0,0,2);const changed=lv!==PERF.lv;PERF.lv=lv;const d=dprFor(lv);
+  if(Math.abs(d-DPR)>1e-3){DPR=d;canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);}
+  PERF.cap=14;PERF.n=0;PERF.acc=0;PERF.work=0;PERF.slow=0;if(changed&&reinit&&mode){mode.init();fillBg();}}
+function perfFor(m){const f=perfFixed();if(f>=0)return f;const l=m&&PERF.by[m.id];return l==null?0:l;}
+function applyPerfMode(){setPerf(perfFor(mode),true);}
+// every two seconds: if frames come slower than about 43 a second for four seconds running, this mode drops one level (never while
+// something is in progress, like a poem being written or a piece being stacked); at the lightest level it holds a steady 30
+function perfTick(iv,work){if(perfFixed()>=0||!mode||document.hidden)return;PERF.n++;PERF.acc+=iv;PERF.work+=work;if(PERF.acc<2000)return;
+  const ai=PERF.acc/PERF.n;PERF.n=0;PERF.acc=0;PERF.work=0;
+  if(ai>23){if(++PERF.slow>=2){PERF.slow=0;if(PERF.lv<2){if(!(mode.busy&&mode.busy())){setPerf(PERF.lv+1,true);PERF.by[mode.id]=PERF.lv;perfSave();}}else PERF.cap=31;}}else PERF.slow=0;}
 
 /* ---------- main loop ---------- */
 let last=0,tAcc=0,frame=0,fpsN=0,fpsT=0;
-function resize(){W=Math.max(1,window.innerWidth);H=Math.max(1,window.innerHeight);DPR=clamp(window.devicePixelRatio||1,1,2);if(W*H*DPR*DPR>2.8e6)DPR=Math.max(1,Math.sqrt(2.8e6/(W*H)));
+function resize(){W=Math.max(1,window.innerWidth);H=Math.max(1,window.innerHeight);DPR=dprFor(PERF.lv);
   canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);
   if(A.remote){A.sx=W/A.w;A.sy=H/A.h;sendHello();}else if(role!=='sensor')setupAnalyzer();
   if(mode){mode.init();fillBg();}}
 let rsT=0;window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(resize,150);});
 window.addEventListener('orientationchange',()=>{clearTimeout(rsT);rsT=setTimeout(resize,300);});
-function loop(now){requestAnimationFrame(loop);if(now-last<14)return;const dt=Math.min(0.1,(now-last)/1000)||0.016;last=now;tAcc+=dt;frame++;
+function loop(now){requestAnimationFrame(loop);if(now-last<(role==='sensor'?14:PERF.cap))return;const iv=now-last,dt=Math.min(0.1,iv/1000)||0.016;last=now;tAcc+=dt;frame++;
   if(role==='sensor'){sensorTick(now);return;}
+  const w0=performance.now();
   if(source.kind==='demo')drawDemo(tAcc,false);
   runSeg(now);
   runDetectors();
   analyze();
+  if(A.remote)smoothRemote(dt);
   if(mode)mode.draw(tAcc,dt);
-  if(frame%24===0)probeTitle();
-  fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps';fpsN=0;fpsT=now;}
+  perfTick(iv,performance.now()-w0);
+  if(frame%90===0||frame-(window.__modeF||0)===6)probeTitle();
+  fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps'+(PERF.lv===1?' · 보통':PERF.lv===2?' · 가볍게':'');fpsN=0;fpsT=now;}
   if((frame&3)===0)meterEl.style.width=Math.round(A.level*100)+'%';
   if(S.auto&&now-lastSwitch>S.auto*1000&&!(mode&&mode.busy&&mode.busy()))nextMode(1);}
 
@@ -2261,7 +2330,7 @@ syncModes();syncModeList();
 resize();useDemo();setMode(isOn(S.mode)?S.mode:0);if(!isOn(S.mode))nextMode(1);syncCtl();document.body.classList.add('ui-on');
 const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
-window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,decodePacket,hideIntro,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
