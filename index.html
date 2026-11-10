@@ -677,7 +677,7 @@ const GL={ok:null,cv:null,gl:null,P:{},T:{},
     const P={p,u:{}},n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);for(let i=0;i<n;i++){const inf=gl.getActiveUniform(p,i);P.u[inf.name.replace(/\[0\]$/,'')]=gl.getUniformLocation(p,inf.name);}return this.P[name]=P;},
   // textures: 'r8' (values 0..1), 'rgba8', 'r16f' (any value, smooth between cells), 'rgba32f' (exact data, read cell by cell)
   tex(name,w,h,fmt,filter){const gl=this.gl;let t=this.T[name];if(t&&t.w===w&&t.h===h&&t.fmt===fmt)return t;if(t){gl.deleteTexture(t.t);if(t.fb)gl.deleteFramebuffer(t.fb);}
-    const F={r8:[gl.R8,gl.RED,gl.UNSIGNED_BYTE],rgba8:[gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE],r16f:[gl.R16F,gl.RED,gl.FLOAT],rgba32f:[gl.RGBA32F,gl.RGBA,gl.FLOAT]}[fmt],tx=gl.createTexture(),fl=filter==='nearest'||fmt==='rgba32f'?gl.NEAREST:gl.LINEAR;
+    const F={r8:[gl.R8,gl.RED,gl.UNSIGNED_BYTE],rgba8:[gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE],r16f:[gl.R16F,gl.RED,gl.FLOAT],rgba32f:[gl.RGBA32F,gl.RGBA,gl.FLOAT],rgba16f:[gl.RGBA16F,gl.RGBA,gl.HALF_FLOAT]}[fmt],tx=gl.createTexture(),fl=filter==='nearest'||fmt==='rgba32f'?gl.NEAREST:gl.LINEAR;
     gl.bindTexture(gl.TEXTURE_2D,tx);gl.texImage2D(gl.TEXTURE_2D,0,F[0],w,h,0,F[1],F[2],null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,fl);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,fl);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return this.T[name]={t:tx,w,h,fmt,F};},
   // data from the processor, top row first; Float32 0..1 arrays go into 'r8' as bytes
@@ -685,9 +685,11 @@ const GL={ok:null,cv:null,gl:null,P:{},T:{},
     if(t.fmt==='r8'&&data instanceof Float32Array){if(!t.b||t.b.length!==w*h)t.b=new Uint8Array(w*h);const b=t.b;for(let i=0;i<w*h;i++){const v=data[i]*255;b[i]=v<0?0:v>255?255:v;}d=b;}
     gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,t.F[1],t.F[2],d);return t;},
   lut(name,rgb,n){if(this.T[name])return;const d=new Uint8Array(n*4);for(let i=0;i<n;i++){d[i*4]=rgb[i*3];d[i*4+1]=rgb[i*3+1];d[i*4+2]=rgb[i*3+2];d[i*4+3]=255;}this.up(name,d,n,1,'rgba8','nearest');},
-  fbo(name,w,h){const gl=this.gl,t=this.tex(name,w,h,'rgba8');if(!t.fb){t.fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,t.fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t.t,0);}return t;},
+  fbo(name,w,h,fmt){const gl=this.gl,t=this.tex(name,w,h,fmt||'rgba8');if(!t.fb){t.fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,t.fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t.t,0);if(fmt&&gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('float target not supported');}return t;},
+  // can this graphics chip draw into floating-point pictures? (needed to compute a fluid on it)
+  floats(){if(this.fl===undefined){const gl=this.gl;this.fl=!!(gl.getExtension('EXT_color_buffer_float')||gl.getExtension('EXT_color_buffer_half_float'));}return this.fl;},
   // one full-frame pass, into a texture (target) or onto the graphics canvas (null) at w x h
-  run(name,src,target,w,h,U,Tx){const gl=this.gl,P=this.prog(name,src);if(target){gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo(target,w,h).fb);}else{if(this.cv.width!==w||this.cv.height!==h){this.cv.width=w;this.cv.height=h;}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
+  run(name,src,target,w,h,U,Tx,fmt){const gl=this.gl,P=this.prog(name,src);if(target){gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo(target,w,h,fmt).fb);}else{if(this.cv.width!==w||this.cv.height!==h){this.cv.width=w;this.cv.height=h;}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
     gl.viewport(0,0,w,h);gl.useProgram(P.p);gl.bindBuffer(gl.ARRAY_BUFFER,this.vb);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);if(P.u.flip)gl.uniform1f(P.u.flip,target?0:1);
     let unit=0;for(const k in Tx||{}){const t=this.T[Tx[k]];if(!t||!P.u[k])continue;gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,t.t);gl.uniform1i(P.u[k],unit);unit++;}
     for(const k in U||{}){const l=P.u[k];if(!l)continue;const v=U[k];if(typeof v==='number')gl.uniform1f(l,v);else if(v.i!=null)gl.uniform1i(l,v.i);else if(v.length===2)gl.uniform2f(l,v[0],v[1]);else if(v.length===3)gl.uniform3f(l,v[0],v[1],v[2]);else gl.uniform4f(l,v[0],v[1],v[2],v[3]);}
@@ -696,6 +698,55 @@ const GL={ok:null,cv:null,gl:null,P:{},T:{},
   size(){const q=Math.min(DPR,1.25)*(PERF.lv>=2?0.8:1);return [Math.max(2,Math.round(W*q)),Math.max(2,Math.round(H*q))];},
   show(){ctx.imageSmoothingEnabled=true;ctx.drawImage(this.cv,0,0,W,H);}};
 const GLSRC={
+smZero:`void main(){o=vec4(0.0);}`,
+// smoke as a fluid on the graphics chip. V holds the air (x,y: speed in cells a second; z: warmth, which is what makes it rise)
+smAdvV:`uniform sampler2D V;uniform vec2 rs;uniform float dt,damp,cool,up;void main(){vec2 v=texture(V,uv).xy;v.y-=up;vec4 q=texture(V,uv-v*dt/rs);o=vec4(q.xy*damp,q.z*cool,1.0);}`,
+smCurl:`uniform sampler2D V;uniform vec2 rs;void main(){vec2 e=1.0/rs;float c=(texture(V,uv+vec2(e.x,0.0)).y-texture(V,uv-vec2(e.x,0.0)).y)-(texture(V,uv+vec2(0.0,e.y)).x-texture(V,uv-vec2(0.0,e.y)).x);o=vec4(c*0.5,0.0,0.0,1.0);}`,
+smForce:`uniform sampler2D V,C,M,MU,MV;uniform vec2 rs;uniform float dt,t,buoy,conf,asp,gm,turb;uniform vec3 s0,s1,s2;
+float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hs(i,1.0),hs(i+vec2(1.0,0.0),1.0),f.x),mix(hs(i+vec2(0.0,1.0),1.0),hs(i+vec2(1.0,1.0),1.0),f.x),f.y);}
+float pot(vec2 p){return vn(p*4.0+vec2(0.0,t*0.3))+0.5*vn(p*9.0-vec2(t*0.21,t*0.45))+0.25*vn(p*19.0+vec2(t*0.4,-t*0.3));}
+float src(vec3 s){if(s.z<=0.0)return 0.0;vec2 d=(uv-s.xy)*vec2(asp,1.0);return exp(-dot(d,d)/(s.z*s.z));}
+void main(){vec2 e=1.0/rs;vec4 q=texture(V,uv);vec2 v=q.xy;float T=q.z;
+ // keep the small whirls alive: push the air round wherever it is already turning
+ float cl=abs(texture(C,uv-vec2(e.x,0.0)).r),cr=abs(texture(C,uv+vec2(e.x,0.0)).r),ct=abs(texture(C,uv-vec2(0.0,e.y)).r),cb=abs(texture(C,uv+vec2(0.0,e.y)).r),c=texture(C,uv).r;
+ vec2 g=vec2(cr-cl,cb-ct);g/=length(g)+1e-4;v+=conf*c*vec2(g.y,-g.x)*dt;
+ v.y-=buoy*T*dt; // warm air rises
+ // the room is never quite still
+ vec2 p=vec2(uv.x*asp,uv.y);float h=0.006,n0=pot(p);vec2 cn=vec2(pot(p+vec2(0.0,h))-n0,-(pot(p+vec2(h,0.0))-n0))/h;v+=cn*turb*dt*(0.3+min(1.0,T*2.5));
+ // people are warm, and whatever moves drags the air with it
+ float m=texture(M,uv).r,bm=smoothstep(0.3,0.7,m);T+=max(0.0,0.075*bm-T)*min(1.0,dt*2.0);v*=1.0-bm*min(1.0,dt*2.2);
+ vec2 mo=vec2(texture(MU,uv).r,texture(MV,uv).r);v=mix(v,mo*gm,clamp(length(mo)*1.4,0.0,1.0)*min(1.0,dt*9.0));
+ T+=(src(s0)+src(s1)+src(s2))*7.0*dt;
+ if(uv.y>1.0-1.5*e.y)v=vec2(0.0);
+ o=vec4(v,min(T,2.0),1.0);}`,
+smDiv:`uniform sampler2D V;uniform vec2 rs;void main(){vec2 e=1.0/rs;float d=0.5*((texture(V,uv+vec2(e.x,0.0)).x-texture(V,uv-vec2(e.x,0.0)).x)+(texture(V,uv+vec2(0.0,e.y)).y-texture(V,uv-vec2(0.0,e.y)).y));o=vec4(d,0.0,0.0,1.0);}`,
+smJac:`uniform sampler2D P,Dv;uniform vec2 rs;void main(){vec2 e=1.0/rs;float p=(texture(P,uv+vec2(e.x,0.0)).r+texture(P,uv-vec2(e.x,0.0)).r+texture(P,uv+vec2(0.0,e.y)).r+texture(P,uv-vec2(0.0,e.y)).r-texture(Dv,uv).r)*0.25;o=vec4(p,0.0,0.0,1.0);}`,
+smGrad:`uniform sampler2D V,P;uniform vec2 rs;void main(){vec2 e=1.0/rs;vec4 q=texture(V,uv);q.xy-=0.5*vec2(texture(P,uv+vec2(e.x,0.0)).r-texture(P,uv-vec2(e.x,0.0)).r,texture(P,uv+vec2(0.0,e.y)).r-texture(P,uv-vec2(0.0,e.y)).r);o=q;}`,
+// the smoke itself, on a finer picture than the air, carried with a sharp (cubic) lookup so thin wisps stay thin
+smAdvD:`uniform sampler2D D,V,M;uniform vec2 rs,rd;uniform float dt,fade,t,asp,bd,br,be,sd,up;uniform vec3 s0,s1,s2;
+float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hs(i,1.0),hs(i+vec2(1.0,0.0),1.0),f.x),mix(hs(i+vec2(0.0,1.0),1.0),hs(i+vec2(1.0,1.0),1.0),f.x),f.y);}
+float src(vec3 s){if(s.z<=0.0)return 0.0;vec2 d=(uv-s.xy)*vec2(asp,1.0);float r=s.z*0.4;return exp(-dot(d,d)/(r*r));}
+float cub(vec2 q){vec2 sp=q*rd,tp=floor(sp-0.5)+0.5,f=sp-tp,w0=f*(-0.5+f*(1.0-0.5*f)),w1=1.0+f*f*(-2.5+1.5*f),w2=f*(0.5+f*(2.0-1.5*f)),w3=f*f*(-0.5+0.5*f),w12=w1+w2,o12=w2/w12,t0=(tp-1.0)/rd,t3=(tp+2.0)/rd,t12=(tp+o12)/rd;
+ float r=texture(D,vec2(t0.x,t0.y)).r*w0.x*w0.y+texture(D,vec2(t12.x,t0.y)).r*w12.x*w0.y+texture(D,vec2(t3.x,t0.y)).r*w3.x*w0.y+texture(D,vec2(t0.x,t12.y)).r*w0.x*w12.y+texture(D,vec2(t12.x,t12.y)).r*w12.x*w12.y+texture(D,vec2(t3.x,t12.y)).r*w3.x*w12.y+texture(D,vec2(t0.x,t3.y)).r*w0.x*w3.y+texture(D,vec2(t12.x,t3.y)).r*w12.x*w3.y+texture(D,vec2(t3.x,t3.y)).r*w3.x*w3.y;
+ // never brighter or darker than the four points it lies between
+ float a=texture(D,tp/rd).r,b=texture(D,(tp+vec2(1.0,0.0))/rd).r,c=texture(D,(tp+vec2(0.0,1.0))/rd).r,d=texture(D,(tp+1.0)/rd).r;return clamp(r,min(min(a,b),min(c,d)),max(max(a,b),max(c,d)));}
+void main(){vec2 v=texture(V,uv).xy;v.y-=up;float d=cub(uv-v*dt/rs)*fade;
+ // a body does not hold a shape: smoke gathers in drifting patches inside it and along its edge, and the air carries it off
+ float m=texture(M,uv).r;vec2 q=vec2(uv.x*asp,uv.y);
+ float n=vn(q*3.6+vec2(t*0.13,t*0.21))*0.58+vn(q*8.0-vec2(t*0.19,-t*0.15))*0.3+vn(q*19.0+vec2(0.0,t*0.5))*0.12;
+ float env=0.25+0.75*smoothstep(0.3,0.62,vn(q*1.3+vec2(t*0.11,-t*0.07))); // the whole figure thickens and thins, slowly
+ float low=smoothstep(1.0,0.965,uv.y),tg=smoothstep(0.34,0.66,m)*smoothstep(0.36,0.6,n)*bd*env*low;d+=max(0.0,tg-d)*min(1.0,dt*br);
+ d+=m*(1.0-m)*4.0*smoothstep(0.42,0.7,vn(q*13.0+vec2(t*0.3,-t*0.22)))*be*dt*low;
+ d+=(src(s0)+src(s1)+src(s2))*sd*dt;
+ o=vec4(max(d,0.0),0.0,0.0,1.0);}`,
+// how it is seen: thicker smoke is whiter, the side toward the light (upper left) is brighter, thin edges catch a little light
+smOut:`uniform sampler2D D;uniform vec2 rd;uniform float seed;
+void main(){vec2 e=1.0/rd;float d0=texture(D,uv).r,dl=texture(D,uv-vec2(e.x,0.0)).r,dr=texture(D,uv+vec2(e.x,0.0)).r,du=texture(D,uv-vec2(0.0,e.y)).r,db=texture(D,uv+vec2(0.0,e.y)).r,d=d0*0.5+(dl+dr+du+db)*0.125;
+ vec2 g=vec2(dr-dl,db-du);float a=1.0-exp(-d*1.15),lit=clamp(dot(g,vec2(0.55,0.83))*1.2,-1.0,1.0);
+ vec3 col=mix(vec3(0.62,0.74,1.0),vec3(0.9,0.94,1.0),a)*pow(a,1.08)*(0.94+0.1*lit);
+ vec2 c=uv-vec2(0.5,0.6);vec3 bg=vec3(0.014,0.018,0.03)*max(0.0,1.0-dot(c,c)*1.5);
+ col=bg+col+(fract(52.9829189*fract(dot(gl_FragCoord.xy+seed*7.3,vec2(0.06711056,0.00583715))))-0.5)*0.004;o=vec4(col,1.0);}`,
+
 thermalT:`uniform sampler2D P,PT;uniform highp sampler2D SG,PR;uniform int nS;uniform vec2 scr;uniform float tt,usePT;
 void main(){vec2 q=uv;float xx=q.x,yy=q.y,v=0.29+0.05*yy-0.12*max(0.0,xx-0.35)*(1.0-yy)+0.012*sin(xx*7.0+tt)*sin(yy*5.0-tt*0.8),pm=texture(P,q).r;
  if(pm>0.02){vec2 px=q*scr;float ws=0.04,ts=0.04*0.64;
@@ -2185,15 +2236,14 @@ const mLight={id:'light',name:'빛 그림',desc:'어두운 화면에서 손이 �
     // dust of light: fine grains that drift down slowly and glimmer as they go out
     const S=this.sp;for(let i=S.length-1;i>=0;i--){const s=S[i],age=(t-s.t)/s.life;if(age>=1){S.splice(i,1);continue;}s.vy+=m*0.035*dt;s.vx*=Math.pow(0.3,dt);s.vy*=Math.pow(0.6,dt);s.x+=s.vx*dt;s.y+=s.vy*dt;const f=(1-age)*(0.55+0.45*Math.sin(t*9+s.ph));ctx.fillStyle='hsla('+s.tone[0]+','+s.tone[1]+'%,88%,'+Math.max(0,f*0.85).toFixed(3)+')';ctx.beginPath();ctx.arc(s.x,s.y,s.r*(0.7+0.5*(1-age)),0,TAU);ctx.fill();}
     ctx.globalCompositeOperation='source-over';}};
-/* 연기: smoke photographed against black. Thin silk sheets of smoke rise from the upper outline of everyone standing there, gather into a
-   column, fold over themselves and curl away; the body itself is a shape of smoke, wisps drifting up through it and its outline bright.
-   Threads of incense smoke rise from below the picture all the time, so the dark is never empty.
-   How: smoke from a line is a sheet, from a point a thin tube. Each is kept as a mesh of points let go one row at a time from the
-   source and carried by slowly turning air in three dimensions (a few waves that cannot compress, calm near the source and wilder
-   higher up). The picture is the mesh seen from the front: every patch gives the same amount of light however it is stretched, so a
-   patch pulled wide is a faint veil and one turned edge-on is a bright line, which is exactly how the folds of real smoke light up */
-const mSmoke={id:'smoke',name:'연기',desc:'검은 바탕에 찍은 연기 사진처럼, 서 있는 사람의 머리와 어깨 윤곽에서 비단결 같은 얇은 연기가 피어올라 한 줄기로 모였다가 접히고 말리며 흩어진다. 접힌 가장자리는 밝은 선으로 빛나고 펴진 곳은 옅은 막이 된다. 몸은 윤곽이 밝은 연기 형상으로만 보이고, 아무도 없어도 화면 아래에서 향 연기가 줄곧 올라온다',hint:'앞에 서면 몸에서 연기가 피어올라요',
-  init(){const f=QF()>0.9?1:QF()>0.6?0.8:0.62,m=Math.min(W,H);this.M=Math.round((isTouch?24:34)*f);this.NS=6;this.LP=this.NS*this.M;this.K=Math.round(12*(f<0.7?0.84:1));this.SRC=W<H?2:3;this.L=this.LP+this.SRC*this.K;this.N=Math.round((isTouch?42:56)*(f<0.7?0.85:1));this.EV=0.1;this.sub=f>0.9?2:1;
+/* 연기: smoke photographed against black, computed as a real fluid. The air is a grid of speeds and warmth on the graphics chip: it is
+   carried along by itself, warm air rises, small whirls are kept turning, and the whole is kept from piling up or thinning out
+   (the pressure step), so the smoke rolls, mushrooms and tears the way smoke does. The smoke is a finer picture carried by that air.
+   A person does not keep an outline: smoke gathers inside and along the edge of a body in patches that come and go, warms, rises
+   off and thins away; moving parts drag the air with them, so a wave of the hand stirs it. Sticks of incense burn below the picture.
+   Where the chip cannot do this, the older drawing of sheets of threads is used instead */
+const mSmoke={id:'smoke',name:'연기',desc:'검은 바탕에 찍은 연기 사진처럼, 실제 공기의 흐름을 계산해 그리는 연기. 따뜻한 연기가 피어오르며 말리고 뭉치고 찢어지고, 사람의 몸은 형상을 유지하지 않고 연기가 군데군데 맺혔다가 위로 흩어진다. 손을 휘저으면 연기가 따라 휘돌고, 화면 아래에서는 향 연기가 줄곧 올라온다',hint:'앞에 서서 손을 휘저어 보세요',
+  init(){this.glReset=true;const f=QF()>0.9?1:QF()>0.6?0.8:0.62,m=Math.min(W,H);this.M=Math.round((isTouch?24:34)*f);this.NS=6;this.LP=this.NS*this.M;this.K=Math.round(12*(f<0.7?0.84:1));this.SRC=W<H?2:3;this.L=this.LP+this.SRC*this.K;this.N=Math.round((isTouch?42:56)*(f<0.7?0.85:1));this.EV=0.1;this.sub=f>0.9?2:1;
     const L=this.L,N=this.N;for(const k of ['X','Y','Z','CX'])this[k]=new Float32Array(L*N);this.V=new Uint8Array(L*N);this.T=new Float32Array(N).fill(-1e9);this.head=0;this.acc=0;
     this.rx=new Float32Array(L);this.ry=new Float32Array(L);this.rz=new Float32Array(L);this.on=new Uint8Array(L);this.cx=new Float32Array(L);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;this.slots=[];for(let k=0;k<this.NS;k++)this.slots.push({on:false,xl:0,xr:0});
     // the air: slow waves, each pushing across its own direction of travel
@@ -2210,7 +2260,19 @@ const mSmoke={id:'smoke',name:'연기',desc:'검은 바탕에 찍은 연기 사�
           for(let y=th+4;y>=-4;y-=8){const cx0=x0+ox+cxAt(y),ww=wAt(y);pl.lineTo(cx0+ww,y);if(y>=th+4)e2.moveTo(cx0+ww,y);else e2.lineTo(cx0+ww,y);}pl.closePath();
           x.fillStyle='rgba(150,178,235,'+(0.05*br).toFixed(3)+')';x.fill(pl);x.strokeStyle='rgba(220,234,255,'+(0.2*br).toFixed(3)+')';x.lineWidth=0.9;x.stroke(e1);x.strokeStyle='rgba(220,234,255,'+(0.12*br).toFixed(3)+')';x.stroke(e2);}}}
     this.AL=[];for(let k=0;k<30;k++)this.AL.push(0.012*Math.pow(1.16,k));},
-  draw(t,dt){const {L,N,LP,M,K,X,Y,Z,CX,V,T,rx,ry,rz,on,cx,C,AL,slots}=this,w=A.w,h=A.h,n=A.n,m=Math.min(W,H);if(this.pb.length!==n){this.pb=new Float32Array(n);this.tmp=new Float32Array(n);}const pb=this.pb,tmp=this.tmp;
+  gl(t,dt){if(this.noGL||!GL.on()||!GL.floats())return false;try{const w=A.w,h=A.h,lv=PERF.lv,low=lv>=1||isTouch,SH=lv>=2?112:low?150:190,SW=Math.max(16,Math.round(SH*W/H)),DH=lv>=2?380:low?500:640,DW=Math.max(16,Math.round(DH*W/H)),F='rgba16f',rs=[SW,SH],rd=[DW,DH],asp=W/H;
+      if(this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}this.pb.set(A.p);blur3(this.pb,this.tmp,w,h);GL.up('smM',this.pb,w,h);GL.up('smU',A.u,w,h,'r16f');GL.up('smW',A.v,w,h,'r16f');
+      const key=SW+'x'+DW+'x'+H;if(this.glKey!==key||this.glReset){this.glKey=key;this.glReset=false;this.vi=0;this.pi=0;this.di=0;for(const [nm,ww,hh] of [['smV0',SW,SH],['smV1',SW,SH],['smP0',SW,SH],['smP1',SW,SH],['smD0',DW,DH],['smD1',DW,DH],['smC',SW,SH],['smDv',SW,SH]])GL.run('smZero',GLSRC.smZero,nm,ww,hh,null,null,F);}
+      const d=Math.min(dt,1/28),V=()=>'smV'+this.vi,V2=()=>'smV'+(1-this.vi),s=this.src.map(q=>[q.x0+0.035*Math.sin(t*q.sp+q.ph),0.962,0.012*(0.8+0.3*Math.sin(t*0.7+q.ph))]);while(s.length<3)s.push([-9,0,0]);
+      GL.run('smAdvV',GLSRC.smAdvV,V2(),SW,SH,{rs,dt:d,damp:Math.exp(-d*0.3),cool:Math.exp(-d/6.5),up:SH*0.045},{V:V()},F);this.vi=1-this.vi;
+      GL.run('smCurl',GLSRC.smCurl,'smC',SW,SH,{rs},{V:V()},F);
+      GL.run('smForce',GLSRC.smForce,V2(),SW,SH,{rs,dt:d,t,buoy:SH*0.6,conf:1.5,asp,gm:SW/w*46,turb:SH*0.011,s0:s[0],s1:s[1],s2:s[2]},{V:V(),C:'smC',M:'smM',MU:'smU',MV:'smW'},F);this.vi=1-this.vi;
+      GL.run('smDiv',GLSRC.smDiv,'smDv',SW,SH,{rs},{V:V()},F);for(let k=0;k<(lv>=2?14:22);k++){GL.run('smJac',GLSRC.smJac,'smP'+(1-this.pi),SW,SH,{rs},{P:'smP'+this.pi,Dv:'smDv'},F);this.pi=1-this.pi;}
+      GL.run('smGrad',GLSRC.smGrad,V2(),SW,SH,{rs},{V:V(),P:'smP'+this.pi},F);this.vi=1-this.vi;
+      GL.run('smAdvD',GLSRC.smAdvD,'smD'+(1-this.di),DW,DH,{rs,rd,dt:d,fade:Math.exp(-d/7.5),t,asp,up:SH*0.045,bd:0.82,br:1.3,be:1.3,sd:16,s0:s[0],s1:s[1],s2:s[2]},{D:'smD'+this.di,V:V(),M:'smM'},F);this.di=1-this.di;
+      const sz=GL.size();GL.run('smOut',GLSRC.smOut,null,sz[0],sz[1],{rd,seed:(t*60%977)*0.618},{D:'smD'+this.di});GL.show();return true;}catch(e){this.noGL=true;console.warn('smoke gl',e);return false;}},
+  draw(t,dt){if(!this.gl(t,dt))this.cpu(t,dt);},
+  cpu(t,dt){const {L,N,LP,M,K,X,Y,Z,CX,V,T,rx,ry,rz,on,cx,C,AL,slots}=this,w=A.w,h=A.h,n=A.n,m=Math.min(W,H);if(this.pb.length!==n){this.pb=new Float32Array(n);this.tmp=new Float32Array(n);}const pb=this.pb,tmp=this.tmp;
     const bg=ctx.createRadialGradient(W/2,H*0.6,m*0.1,W/2,H*0.6,Math.hypot(W,H)*0.65);bg.addColorStop(0,'#070a13');bg.addColorStop(1,'#010103');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
     pb.set(A.p);blur3(pb,tmp,w,h);
     // the top of the outline, column by column of the grid; each stretch of it is one sheet of smoke
