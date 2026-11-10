@@ -4,7 +4,7 @@ const { chromium } = require('playwright'); const F = require('./lib/fake');
   const { ctx, p, errors } = await F.open(b, { viewport: { width: 960, height: 540 } }); await p.evaluate(() => { window.__gyeol.S.perf = 0; window.GLFORCE = true; });
   if (thr > 1) { const cdp = await ctx.newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: thr }); }
   const ids = await p.evaluate(() => window.__gyeol.MODES.map(m => m.id)); const rows = [];
-  for (const id of ids) { if (only && !only.includes(id)) continue; if (['poem', 'cari', 'stack', 'trail', 'wave', 'bubble', 'balloon', 'fluid'].includes(id)) continue;
+  for (const id of ids) { if (only && !only.includes(id)) continue; if (['poem', 'stack', 'trail', 'bubble', 'balloon', 'fluid'].includes(id)) continue;
     await p.evaluate(() => { window.PX = 0.3; window.PPL = () => [{ x: window.PX, sc: 0.8 }]; }); await F.mode(p, id); await p.waitForTimeout(2600);
     const r = await p.evaluate(() => new Promise(res => { const cv = document.querySelector('#stage'), c = cv.getContext('2d'), kx = cv.width / innerWidth, ky = cv.height / innerHeight;
       // a patch of the screen where the person was (mirrored: x=0.3 in the camera is 0.7 on screen) and where they will be
