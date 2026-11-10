@@ -2249,7 +2249,99 @@ const mCari={id:'cari',name:'캐리커처',needVideo:true,HOLD:2.5,busy(){return
     const s=ct?ct.cS:'none',txt=!vid?'카메라 화면을 기다리고 있어요':this.st==='work'?'찰칵 · 그리기 시작할게요':this.st==='draw'?'그리는 중…':this.st==='show'||this.st==='shelve'?(j?j.no:CARI.no)+'번째 캐리커처를 그렸어요':
       s==='far'?'조금 더 가까이 와 주세요':s==='noface'?'카메라 쪽으로 얼굴을 보여 주세요':s==='move'?'그대로 멈춰 주세요':s==='hold'?'그대로… '+Math.max(1,Math.ceil(this.HOLD-this.hold)):s==='done'?'방금 그렸어요 · 다음 친구도 서 보세요':'앞에 서서 잠깐 가만히 있으면 캐리커처를 그려 드려요';
     ctx.font='500 '+fz+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillStyle='rgba(40,32,24,0.78)';ctx.fillText(txt,L.rx+L.rw/2,L.rh-fz*1.8);ctx.textAlign='left';}};
-const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mStar,mGhost,mCari];
+/* 뜨개질: the whole screen is one forest-green stockinette fabric. Where a person stands, the very same stitches are worked in their
+   colour of yarn (same gauge, same place, like colourwork in a sweater), with a little fuzz at the edge. As they move, each stitch
+   passes smoothly from one yarn to the other, so the pattern glides through the fabric instead of appearing and vanishing.
+   Only now and then a short length of yarn comes loose behind them, hangs kinked from the knitting and drops; one thread trails from a hand */
+const mKnit={id:'knit',name:'뜨개질',desc:'짙은 초록 편물의 코가 사람이 선 자리만 분홍 털실로 물들어, 움직이면 무늬가 편물 위를 미끄러지듯 따라온다. 가끔 실 한 가닥이 풀려 구불구불 늘어졌다 떨어지고, 손끝에는 풀린 실 한 올이 흔들린다',
+  BASE:'#2f5c38',YARN:['#ee9dc6','#f4ecdb','#f3c453','#93c9ec','#f28f72','#c8aceb'],
+  shade(c,k){const h=typeof c==='string'?hex(c):c;return 'rgb('+h.map(v=>Math.round(k<=1?v*k:v+(255-v)*(k-1))).join(',')+')';},
+  // one stitch: two plump leaning ovals of plied yarn meeting in a V, lit from the upper left, long enough to tuck under the row above
+  stitch(col,cw,rh,q,seed,back){const pad=cw*0.14,c=mkCanvas(Math.ceil((cw+pad*2)*q),Math.ceil((rh*1.7+pad*2)*q)),x=c.cx,R=seeded(seed);x.scale(q,q);x.translate(pad,pad);
+    if(back){x.fillStyle=this.shade(col,0.6);x.fillRect(-cw*0.03,rh*0.2,cw*1.06,rh*1.1);}
+    const a=rh*0.76,b=cw*0.24,th=0.31,leg=sg=>{x.save();x.translate(cw*(0.5+sg*0.215),rh*0.82);x.rotate(sg*th);
+      x.fillStyle='rgba(6,12,6,0.3)';x.beginPath();x.ellipse(b*0.16,b*0.26,b*1.03,a*1.01,0,0,TAU);x.fill();
+      const g=x.createLinearGradient(-b,-a*0.3,b,a*0.3);g.addColorStop(0,this.shade(col,0.84));g.addColorStop(0.32,this.shade(col,1.14));g.addColorStop(0.6,this.shade(col,1));g.addColorStop(1,this.shade(col,0.66));
+      x.fillStyle=g;x.beginPath();x.ellipse(0,0,b,a,0,0,TAU);x.fill();x.save();x.clip();
+      // the plies of the yarn, twisting across the leg
+      x.lineCap='round';for(let i=-3;i<=3;i++){const y0=i*a*0.3+(R()-0.5)*a*0.06;x.strokeStyle=this.shade(col,0.6);x.globalAlpha=0.34;x.lineWidth=Math.max(0.5,b*0.11);x.beginPath();x.moveTo(-b*1.1,y0+a*0.2*sg);x.quadraticCurveTo(0,y0,b*1.1,y0-a*0.2*sg);x.stroke();
+        x.strokeStyle=this.shade(col,1.3);x.globalAlpha=0.2;x.lineWidth=Math.max(0.5,b*0.1);x.beginPath();x.moveTo(-b*1.1,y0+a*0.2*sg+a*0.13);x.quadraticCurveTo(0,y0+a*0.13,b*1.1,y0-a*0.2*sg+a*0.13);x.stroke();}
+      x.restore();x.globalAlpha=0.4;x.strokeStyle=this.shade(col,0.55);x.lineWidth=Math.max(0.5,b*0.06);x.beginPath();x.ellipse(0,0,b,a,0,0,TAU);x.stroke();x.globalAlpha=1;x.restore();};
+    leg(-1);leg(1);
+    x.lineWidth=Math.max(0.4,cw*0.016);x.strokeStyle=this.shade(col,1.25);x.globalAlpha=0.28;for(let i=0;i<4;i++){const px=cw*(0.15+R()*0.7),py=rh*(0.3+R()*1),an=R()*TAU,l=cw*(0.1+R()*0.16);x.beginPath();x.moveTo(px,py);x.quadraticCurveTo(px+Math.cos(an)*l*0.6+(R()-0.5)*l,py+Math.sin(an)*l*0.6,px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
+    c.pad=pad;return c;},
+  // the fuzz around the edge of a patch of yarn: fine hairs standing out in every direction
+  fuzz(col,cw,q,seed){const S2=cw*2.8,c=mkCanvas(Math.ceil(S2*q),Math.ceil(S2*q)),x=c.cx,R=seeded(seed);x.scale(q,q);x.translate(S2/2,S2/2);x.lineCap='round';x.strokeStyle=this.shade(col,1.12);
+    for(let i=0;i<54;i++){const an=R()*TAU,r0=cw*(0.2+R()*0.36),l=cw*(0.28+R()*0.56),x0=Math.cos(an)*r0,y0=Math.sin(an)*r0*0.9,bend=(R()-0.5)*l*0.8;x.globalAlpha=0.2+R()*0.32;x.lineWidth=Math.max(0.45,cw*(0.014+R()*0.014));
+      x.beginPath();x.moveTo(x0,y0);x.quadraticCurveTo(x0+Math.cos(an)*l*0.5-Math.sin(an)*bend,y0+Math.sin(an)*l*0.5+Math.cos(an)*bend,x0+Math.cos(an)*l,y0+Math.sin(an)*l);x.stroke();}
+    return c;},
+  init(){const q=this.q=Math.min(DPR,1.5),f=QF()>0.9?1:QF()>0.6?0.85:0.72,cols=this.cols=Math.round((isTouch?(W<H?30:50):72)*f),cw=this.cw=W/cols,rh=this.rh=cw*0.8;this.rows=Math.ceil(H/rh)+2;this.oy=-rh*0.9;
+    const n=cols*this.rows;this.k=new Float32Array(n);this.ci=new Uint8Array(n);this.wt=new Float32Array(n);this.tg=new Uint8Array(n);this.an=new Uint8Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
+    this.strands=[];this.tails={};this.f=0;this.alone=0;this.nextS=-1;if(this.cnt==null)this.cnt=0;
+    const key=[W,H,q,cols].join(',');if(this.key!==key){this.key=key;this.sp={};this.fz={};this.buildBase();
+      const sh=this.sh=mkCanvas(Math.ceil(cw*2*q),Math.ceil(rh*2.4*q)),x=sh.cx,g=x.createRadialGradient(sh.width/2,sh.height/2,0,sh.width/2,sh.height/2,sh.width/2);g.addColorStop(0,'rgba(4,12,6,0.42)');g.addColorStop(0.55,'rgba(4,12,6,0.22)');g.addColorStop(1,'rgba(4,12,6,0)');
+      x.save();x.translate(sh.width/2,sh.height/2);x.scale(1,sh.height/sh.width);x.translate(-sh.width/2,-sh.width/2);x.fillStyle=g;x.fillRect(0,0,sh.width,sh.width);x.restore();}},
+  // the ground: the same stitches at the same gauge in heathered green, darker toward the corners, a ribbed hem, a few loose fibres
+  buildBase(){const q=this.q,bc=this.base=mkCanvas(Math.round(W*q),Math.round(H*q)),x=bc.cx,cols=this.cols,cw=this.cw,rh=this.rh,rows=this.rows,B=hex(this.BASE);
+    const tones=[0.93,1,1.06].map(k=>B.map(v=>v*k)),sp=[];for(let v=0;v<6;v++)sp.push(this.stitch(tones[v%3],cw,rh,q,101+v*7,true));
+    x.fillStyle=this.shade(B,0.6);x.fillRect(0,0,bc.width,bc.height);x.scale(q,q);const pad=sp[0].pad,sw=cw+pad*2,shh=rh*1.7+pad*2;
+    for(let r=rows-1;r>=0;r--)for(let c=0;c<cols;c++)x.drawImage(sp[(hash2(c,r)*6)|0],c*cw-pad,this.oy+r*rh-pad,sw,shh);
+    const hemR=Math.max(0,rows-7),hemY=this.oy+hemR*rh+rh*0.3;x.fillStyle='rgba(6,20,10,0.2)';for(let c=0;c<cols;c+=2)x.fillRect(c*cw,hemY,cw,H-hemY);x.fillStyle='rgba(6,20,10,0.16)';x.fillRect(0,hemY-rh*0.25,W,rh*0.3);
+    const R=seeded(77);x.lineCap='round';x.strokeStyle=this.shade(B,1.5);for(let i=0;i<Math.round(W*H/2600);i++){const px=R()*W,py=R()*H,an=R()*TAU,l=cw*(0.2+R()*0.5);x.globalAlpha=0.08+R()*0.14;x.lineWidth=0.5+R()*0.5;x.beginPath();x.moveTo(px,py);x.quadraticCurveTo(px+Math.cos(an)*l*0.5+(R()-0.5)*l*0.6,py+Math.sin(an)*l*0.5+(R()-0.5)*l*0.6,px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
+    x.globalAlpha=1;const g=x.createRadialGradient(W*0.45,H*0.42,Math.min(W,H)*0.25,W*0.5,H*0.5,Math.hypot(W,H)*0.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,10,4,0.42)');x.fillStyle=g;x.fillRect(0,0,W,H);},
+  spr(ci,v){const k=ci*4+v;return this.sp[k]||(this.sp[k]=this.stitch(this.YARN[ci],this.cw,this.rh,this.q,31+k*13,false));},
+  fzs(ci,v){const k=ci*4+v;return this.fz[k]||(this.fz[k]=this.fuzz(this.YARN[ci],this.cw,this.q,57+k*11));},
+  // a length of yarn: a chain of points that keeps its length, falls and sways; drawn with the kinks unravelled yarn keeps
+  rope(x,y,n,ci,dx,dy){const p=new Float32Array(n*4);for(let i=0;i<n;i++){p[i*4]=p[i*4+2]=x+dx*i;p[i*4+1]=p[i*4+3]=y+dy*i;}return {p,n,ci,pin:-1,px:x,py:y,age:0,life:1e9,pinT:0,L:this.cw*0.62,ph:Math.random()*TAU};},
+  stepRope(r,t,dt){const p=r.p,n=r.n,steps=clamp(Math.round(dt*60),1,3),hh=1/60,g=H*0.55*hh*hh;
+    for(let s2=0;s2<steps;s2++){const wind=(Math.sin(t*0.9+r.ph)+0.5*Math.sin(t*2.3+r.ph*1.7))*W*0.012*hh*hh;for(let i=0;i<n;i++){const o=i*4,vx=(p[o]-p[o+2])*0.975,vy=(p[o+1]-p[o+3])*0.975;p[o+2]=p[o];p[o+3]=p[o+1];p[o]+=vx+wind*(i/n);p[o+1]+=vy+g;}
+      for(let it=0;it<4;it++){if(r.pin>=0){p[r.pin*4]=r.px;p[r.pin*4+1]=r.py;}for(let i=0;i<n-1;i++){const o=i*4,dx=p[o+4]-p[o],dy=p[o+5]-p[o+1],d=Math.hypot(dx,dy)||1e-3,k=(d-r.L)/d*0.5,ax=dx*k,ay=dy*k;const pa=i===r.pin,pb2=i+1===r.pin;
+          if(!pa){p[o]+=ax*(pb2?2:1);p[o+1]+=ay*(pb2?2:1);}if(!pb2){p[o+4]-=ax*(pa?2:1);p[o+5]-=ay*(pa?2:1);}}}}},
+  drawRope(r,al){const p=r.p,n=r.n,cw=this.cw,A2=cw*0.13,col=this.YARN[r.ci],path=new Path2D();let s=0,lx=0,ly=0,tx=0,ty=1;
+    for(let i=0;i<n-1;i++){const o=i*4,x0=p[o],y0=p[o+1],dx=p[o+4]-x0,dy=p[o+5]-y0,d=Math.hypot(dx,dy)||1e-3,nx=-dy/d,ny=dx/d;tx=dx/d;ty=dy/d;for(let j=0;j<5;j++){const u=j/5,w=Math.sin((s+u)*Math.PI+r.ph)*A2*(0.75+0.25*Math.sin((s+u)*0.8+r.ph*2))*(i===0&&r.pin===0?u:1),X=x0+dx*u+nx*w,Y=y0+dy*u+ny*w;if(i===0&&j===0)path.moveTo(X,Y);else path.lineTo(X,Y);}s+=1;}
+    lx=p[(n-1)*4];ly=p[(n-1)*4+1];path.lineTo(lx,ly);ctx.lineCap='round';ctx.lineJoin='round';ctx.globalAlpha=al*0.28;ctx.strokeStyle='#04100a';ctx.lineWidth=cw*0.28;ctx.save();ctx.translate(cw*0.06,cw*0.09);ctx.stroke(path);ctx.restore();
+    ctx.globalAlpha=al;ctx.strokeStyle=this.shade(col,0.68);ctx.lineWidth=cw*0.26;ctx.stroke(path);ctx.strokeStyle=col;ctx.lineWidth=cw*0.19;ctx.stroke(path);ctx.strokeStyle=this.shade(col,1.3);ctx.lineWidth=cw*0.055;ctx.globalAlpha=al*0.7;ctx.save();ctx.translate(-cw*0.03,-cw*0.04);ctx.stroke(path);ctx.restore();
+    // the frayed end
+    ctx.globalAlpha=al*0.6;ctx.strokeStyle=this.shade(col,1.15);ctx.lineWidth=Math.max(0.5,cw*0.03);ctx.beginPath();for(let j=-1;j<=1;j++){const an=Math.atan2(ty,tx)+j*0.5+Math.sin(r.ph*3+j)*0.2;ctx.moveTo(lx,ly);ctx.lineTo(lx+Math.cos(an)*cw*0.3,ly+Math.sin(an)*cw*0.3);}ctx.stroke();ctx.globalAlpha=1;},
+  draw(t,dt){dt=Math.min(dt||0.016,0.05);if((this.f++)%2===0)TR.update();ctx.imageSmoothingEnabled=true;ctx.drawImage(this.base,0,0,W,H);
+    const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);const cols=this.cols,rows=this.rows,cw=this.cw,rh=this.rh,oy=this.oy,K=this.k,CI=this.ci,WT=this.wt;
+    const samp=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
+    // each person has a yarn of their own colour
+    const live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=3);live.forEach(tr=>{if(tr.knitC==null)tr.knitC=(this.cnt++)%this.YARN.length;});
+    const colAt=(x,y,force)=>{let best=force?1e9:1.45,c=force?(this.lastC||0):-1;for(const tr of live){const dx=(x-(tr.x+tr.w/2))/Math.max(20,tr.w*0.5),dy=(y-(tr.y+tr.h/2))/Math.max(20,tr.h*0.5),d=dx*dx+dy*dy;if(d<best){best=d;c=tr.knitC;}}if(c>=0)this.lastC=c;return c;};
+    // every stitch follows how much of it the person covers, easing between the two yarns: at the edge of a moving body the stitches
+    // turn gradually, one after another, so the shape glides through the fabric
+    this.noT=live.length?0:(this.noT||0)+dt;const TG=this.tg,AN=this.an,noTr=this.noT>0.7,stp=dt/0.2;let any=0;
+    for(let r=0;r<rows;r++){const y=oy+r*rh+rh*0.85;for(let c=0;c<cols;c++){const i=r*cols+c,v=y<0||y>H?0:samp((c+0.5)*cw,y);if(v>0.5)TG[i]=1;else if(v<0.38)TG[i]=0;const tg=TG[i],Lf=c>0&&K[i-1]>0.5,Rt=c<cols-1&&K[i+1]>0.5;
+        if(K[i]<=0){if(!tg){WT[i]=0;continue;}let cc=Lf?CI[i-1]:Rt?CI[i+1]:r>0&&K[i-cols]>0.5?CI[i-cols]:r<rows-1&&K[i+cols]>0.5?CI[i+cols]:-1;if(cc<0){WT[i]+=dt;cc=colAt((c+0.5)*cw,y,noTr||WT[i]>0.45);if(cc<0)continue;}CI[i]=cc;AN[i]=Lf||!Rt?0:1;}
+        else if(K[i]>=1&&!tg)AN[i]=Lf||!Rt?0:1;
+        K[i]=tg?Math.min(1,K[i]+stp):Math.max(0,K[i]-stp);any++;}}
+    const S=this.strands;if(this.nextS<0)this.nextS=t+5+Math.random()*5;
+    // very rarely, a short run of stitches that is just being left comes loose as one length of yarn, still joined to the knitting beside it
+    if(t>this.nextS&&S.length<1){const r0=(Math.random()*rows)|0;scan:for(let q2=0;q2<rows;q2++){const r=(r0+q2)%rows,y=oy+r*rh+rh*0.85;if(y<rh||y>H-rh)continue;for(let c=1;c<cols-1;c++){const i=r*cols+c;if(!(K[i]>0.2&&K[i]<0.8&&!TG[i]))continue;let e=c;const ci=CI[i];while(e+1<cols-1&&e-c<6&&K[i+e-c+1]>0.15&&K[i+e-c+1]<0.85&&!TG[i+e-c+1]&&CI[i+e-c+1]===ci)e++;
+          const lk=K[i-1]>0.85&&CI[i-1]===ci,rk=K[r*cols+e+1]>0.85&&CI[r*cols+e+1]===ci;if(e-c<2||!(lk||rk)){c=e;continue;}
+          if(samp((c+0.5)*cw,y)>0.25){c=e;continue;}
+          const n=(e-c+1)*2+1,x0=c*cw+cw*0.3,x1=(e+1)*cw-cw*0.3,rp=this.rope(x0,y,n,ci,(x1-x0)/(n-1),0);for(let k2=0;k2<n;k2++){rp.p[k2*4+1]+=(k2&1?1:-1)*rh*0.2;rp.p[k2*4+3]=rp.p[k2*4+1]-rh*0.02;}
+          rp.pin=lk?0:n-1;rp.px=rp.p[rp.pin*4];rp.py=y;rp.pinT=1.1+Math.random()*0.9;rp.life=rp.pinT+1.6;S.push(rp);for(let k2=c;k2<=e;k2++)K[r*cols+k2]*=0.3;this.nextS=t+10+Math.random()*10;break scan;}}}
+    // the coloured stitches over the green ones, each exactly on its own stitch: the dark between the legs, a faint lift, the stitches
+    // from the bottom row up (each row lapping over the one below), and fuzz along the edge
+    if(!this.dark)this.dark=this.YARN.map(c=>this.shade(c,0.6));let lc=-1;const on=j=>K[j]>0.5;
+    const sh=this.sh,shw=cw*2,shh=rh*2.4;for(let r=0;r<rows;r++){const y=oy+r*rh;for(let c=0;c<cols;c++){const i=r*cols+c,k=K[i];if(k<0.03)continue;ctx.globalAlpha=k*0.45;ctx.drawImage(sh,c*cw+cw*0.5-shw/2+cw*0.1,y+rh*0.82-shh/2+cw*0.14,shw,shh);
+        const Lf=c>0&&on(i-1),Rt=c<cols-1&&on(i+1),Up=r>0&&on(i-cols),Dn=r<rows-1&&on(i+cols);if(CI[i]!==lc){lc=CI[i];ctx.fillStyle=this.dark[lc];}ctx.globalAlpha=k<0.6?0:(k-0.6)*2.5;const x0=c*cw+(Lf?-0.5:cw*0.14),x1=(c+1)*cw-(Rt?-0.5:cw*0.14),y0=y+(Up?rh*0.2:rh*0.66),y1=y+(Dn?rh*1.3:rh*1.14);ctx.fillRect(x0,y0,x1-x0,y1-y0);}}
+    const pad=cw*0.14,sw=cw+pad*2,sph=rh*1.7+pad*2;for(let r=rows-1;r>=0;r--){const y=oy+r*rh-pad;for(let c=0;c<cols;c++){const i=r*cols+c,k=K[i];if(k<0.03)continue;const sp=this.spr(CI[i],(hash2(c,r)*3)|0);if(k>=1){ctx.drawImage(sp,c*cw-pad,y,sw,sph);continue;}
+        let a1=k*1.7,a2=k*1.7-0.7;a1=a1>1?1:a1;a2=a2<0?0:a2;a1=a1*a1*(3-2*a1);a2=a2*a2*(3-2*a2);const hw=sp.width>>1,hx=hw/sp.width*sw,aL=this.an[i]?a2:a1,aR=this.an[i]?a1:a2;
+        if(aL>0.01){ctx.globalAlpha=aL;ctx.drawImage(sp,0,0,hw,sp.height,c*cw-pad,y,hx,sph);}if(aR>0.01){ctx.globalAlpha=aR;ctx.drawImage(sp,hw,0,sp.width-hw,sp.height,c*cw-pad+hx,y,sw-hx,sph);}ctx.globalAlpha=1;}}
+    const fw=cw*2.8;for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){const i=r*cols+c;if(K[i]<0.6)continue;if(c>0&&on(i-1)&&c<cols-1&&on(i+1)&&r>0&&on(i-cols)&&r<rows-1&&on(i+cols))continue;ctx.globalAlpha=(K[i]-0.6)*2.1;ctx.drawImage(this.fzs(CI[i],(hash2(r,c)*3)|0),(c+0.5)*cw-fw/2,oy+r*rh+rh*0.8-fw/2,fw,fw);}}
+    ctx.globalAlpha=1;
+    // one loose thread per person, from a hand (or the side of the body when hands are not known), trailing after them
+    const seen={},T=this.tails;let nT=0;live.forEach(tr=>{if(!T[tr.id]&&Object.keys(T).length+nT>=4)return;const L=tr.pose,ok=i=>L&&L[i]&&L[i].v>0.5,side=tr.id&1,li=side?16:15,dir=side?1:-1;let a=ok(li)?[L[li].x,L[li].y]:ok(side?15:16)?[L[side?15:16].x,L[side?15:16].y]:null;
+      if(!a){const r=clamp(Math.round((tr.y+tr.h*0.55-oy)/rh-0.85),0,rows-1),c0=clamp(Math.round((dir<0?tr.x:tr.x+tr.w)/cw),0,cols-1);for(let s2=0;s2<Math.max(2,tr.w/cw);s2++){const c=c0-dir*s2;if(c<0||c>=cols)break;if(K[r*cols+c]>0.8){a=[(c+0.5)*cw,oy+r*rh+rh*0.85];break;}}}
+      const key=tr.id;if(T[key])seen[key]=1;if(!a||samp(a[0],a[1])<0.4)return;seen[key]=1;let rp=T[key];if(!rp){for(const k2 in T){const o=T[k2];if(!seen[k2]&&o.miss>0&&Math.hypot(o.px-a[0],o.py-a[1])<W*0.25){rp=T[key]=o;delete T[k2];break;}}}if(!rp){nT++;rp=T[key]=this.rope(a[0],a[1],7+((hash2(tr.id,3)*4)|0),tr.knitC,dir*cw*0.08,this.cw*0.6);rp.pin=0;}rp.ci=tr.knitC;rp.px+=(a[0]-rp.px)*0.4;rp.py+=(a[1]-rp.py)*0.4;rp.miss=0;});
+    for(const key in T){const rp=T[key];if(!seen[key]){rp.miss=(rp.miss||0)+dt;if(rp.miss>0.8){rp.pin=-1;rp.age=0;rp.life=1.8;S.push(rp);delete T[key];continue;}}this.stepRope(rp,t,dt);this.drawRope(rp,1);}
+    for(let i=S.length-1;i>=0;i--){const rp=S[i];rp.age+=dt;if(rp.pin>=0&&rp.age>rp.pinT)rp.pin=-1;this.stepRope(rp,t,dt);let top=1e9;for(let k2=0;k2<rp.n;k2++)if(rp.p[k2*4+1]<top)top=rp.p[k2*4+1];if(rp.age>rp.life||top>H+cw*2){S.splice(i,1);continue;}this.drawRope(rp,clamp((rp.life-rp.age)/0.7,0,1));}
+    // a quiet word while nobody is there
+    this.alone=any||S.length?0:this.alone+dt;if(this.alone>2.5){const fz=Math.max(13,Math.min(22,W/64));ctx.font='500 '+fz+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(244,236,219,'+Math.min(0.85,(this.alone-2.5)*0.6)+')';ctx.fillText('앞에 서면 털실로 떠져요',W/2,H-Math.max(54,H*0.09)-(isTouch?60:0));ctx.textAlign='left';ctx.textBaseline='alphabetic';}}};
+const MODES=[mGaze,mShapes,mDots,mDotm,mColorDots,mHalftone,mPixel,mWave,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mStar,mGhost,mCari,mKnit];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -2259,7 +2351,7 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`qwert';
+const KEYS='1234567890-=[]\\;\',./`qwerty';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
 let lastSwitch=0;
