@@ -138,12 +138,20 @@ textarea.ta{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15
 #exhibit[hidden]{display:none}
 body.ui-on #exhibit{transform:translateY(48px)}
 body.role-sensor #exhibit{display:none}
+#credit{position:fixed;z-index:4;right:calc(20px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));pointer-events:none;font-family:var(--font);font-size:clamp(11px,.92vw,18px);line-height:1;letter-spacing:.01em;color:rgba(255,255,255,.66);white-space:nowrap;text-shadow:0 1px 8px rgba(0,0,0,.35);transition:opacity .3s ease,color .4s ease}
+#credit b{font-weight:600;color:rgba(255,255,255,.86)}
+#credit.lt{color:rgba(28,28,30,.56);text-shadow:none}
+#credit.lt b{color:rgba(28,28,30,.8)}
+#credit[hidden]{display:none}
+body.ui-on #credit{opacity:0}
+body.role-sensor #credit{display:none}
 #panelDim{position:fixed;inset:0;z-index:39;background:transparent}
 @media (prefers-reduced-motion:reduce){.ui,#toast,.switch span,.switch span::after{transition:none}}
 </style>
 
 <canvas id="stage"></canvas>
 <div id="exhibit"><img id="exLogo" alt="" src="data:image/png;base64,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"><div id="exTitle"></div></div>
+<div id="credit" aria-label="제작"></div>
 <video id="cam" playsinline muted autoplay></video>
 <input type="file" id="file" accept="video/*" hidden>
 
@@ -210,6 +218,10 @@ body.role-sensor #exhibit{display:none}
   <div class="group"><h4>전시 제목</h4>
     <div class="rows"><div class="row"><input id="exIn" type="text" autocomplete="off" spellcheck="false" aria-label="전시 제목" style="flex:1;min-width:0;font:inherit;font-size:15px;background:transparent;border:0;color:var(--label);padding:4px 0"></div></div>
     <p class="foot">화면 왼쪽 위에 학교 로고와 함께 늘 보입니다. 첫 단어는 굵게 표시돼요. 비우면 숨겨요.</p>
+  </div>
+  <div class="group"><h4>제작 표시</h4>
+    <div class="rows"><div class="row"><input id="crIn" type="text" autocomplete="off" spellcheck="false" aria-label="제작 표시" style="flex:1;min-width:0;font:inherit;font-size:15px;background:transparent;border:0;color:var(--label);padding:4px 0"></div></div>
+    <p class="foot">화면 오른쪽 아래에 작게 보입니다. 마지막 단어는 조금 진하게 표시돼요. 비우면 숨겨요.</p>
   </div>
   <div class="group"><h4>말씀 (말씀 모드)</h4>
     <div class="rows"><div class="row"><textarea class="ta" id="verses" rows="6" aria-label="말씀"></textarea></div></div>
@@ -337,7 +349,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반'};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
 if(S.fitV!==2){S.fit='fill';S.fitV=2;}
@@ -435,12 +447,19 @@ const SEG={state:'idle',seg:null,idx:0,mask:null,mw:0,mh:0,last:0,ts:0,fresh:0};
 // (열화상). It then takes the place of the person model, so the phone does not run both; on a phone sensor the screen says which mode is on
 const MC={state:'idle',seg:null,cat:null,mw:0,mh:0,fresh:0,last:0,cost:0,remote:''};
 function partsWanted(){return role==='sensor'?MC.remote==='thermal':!!(mode&&mode.id==='thermal');}
-async function loadMC(){if(MC.state!=='idle'||EMBEDDED)return;MC.state='loading';
-  try{const {vision,fs}=await mpVision();MC.seg=await mkTask(vision.ImageSegmenter,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',delegate:'GPU'},runningMode:'VIDEO',outputCategoryMask:true,outputConfidenceMasks:false});
+// is a body-part map believable? On some tablets' graphics the model answers with one class for the whole picture or the whole person
+// (the thermal camera then paints everybody a single red); a real map has a background and at least two kinds of part
+function mcSane(a){const N=a.length,st=Math.max(1,(N/4096)|0),hc=[0,0,0,0,0,0];let n=0,odd=0;for(let i=0;i<N;i+=st){const v=a[i];n++;if(v>5)odd++;else hc[v]++;}if(odd>n*0.002)return false;const nz=n-hc[0]-odd;if(nz<n*0.03)return true;if(nz>n*0.97)return false;let top=0;for(let k=1;k<6;k++)if(hc[k]>top)top=hc[k];return top<nz*0.985;}
+function mcBroken(slow){MC.bad=0;MC.cat=null;A.partT=0;const old=MC.seg;MC.seg=null;try{old&&old.close();}catch(e){}
+  if(!MC.cpu&&!slow){MC.cpu=true;MC.state='idle';MC.n=0;MC.cost=0;if(role!=='sensor')toast('이 기기 그래픽에서 부위 인식이 맞지 않아 다른 계산 방식으로 바꿨어요');}
+  else{MC.state='off';if(role!=='sensor')toast(slow?'이 기기에서는 부위 인식이 너무 느려 자세로 온도를 나눠요':'부위 인식이 맞지 않아 자세로 온도를 나눠요');}}
+async function loadMC(){if(MC.state!=='idle'||EMBEDDED)return;MC.state='loading';if(SEG.cpu||PM.cpu)MC.cpu=true;
+  try{const {vision,fs}=await mpVision();MC.seg=await mkTask(vision.ImageSegmenter,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',delegate:MC.cpu?'CPU':'GPU'},runningMode:'VIDEO',outputCategoryMask:true,outputConfidenceMasks:false});
     MC.state='ready';if(role!=='sensor')toast('부위 인식 모델 준비됨 · 머리카락·피부·옷을 나눠요');}catch(e){MC.state='offline';}}
 function runMC(now){if(ML.turn!=='mc'||MC.state!=='ready')return;MC.last=now;ML.f=frame;const t0=performance.now(),ts=Math.max(SEG.ts+1,Math.round(t0));SEG.ts=ts;try{const res=MC.seg.segmentForVideo(video,ts),cat=res.categoryMask;
-    if(cat){const a=cat.getAsUint8Array();if(!MC.cat||MC.cat.length!==a.length)MC.cat=new Uint8Array(a.length);MC.cat.set(a);MC.mw=cat.width;MC.mh=cat.height;MC.fresh=now;}
-    if(res.close)res.close();}catch(e){MC.state='offline';}const dt2=performance.now()-t0;if(MC.n=(MC.n||0)+1,MC.n>1)MC.cost=MC.cost?MC.cost*0.7+dt2*0.3:dt2;}
+    let bad=false;if(cat){const a=cat.getAsUint8Array();if(mcSane(a)){MC.bad=0;if(!MC.cat||MC.cat.length!==a.length)MC.cat=new Uint8Array(a.length);MC.cat.set(a);MC.mw=cat.width;MC.mh=cat.height;MC.fresh=now;}else bad=(MC.bad=(MC.bad||0)+1)>=5;}
+    if(res.close)res.close();if(bad){mcBroken(false);return;}}catch(e){MC.state='offline';}const dt2=performance.now()-t0;if(MC.n=(MC.n||0)+1,MC.n>1)MC.cost=MC.cost?MC.cost*0.7+dt2*0.3:dt2;
+  if(MC.cpu&&MC.n>4&&MC.cost>420)mcBroken(true);}
 // the recognition library and models: the copies on this site first (fast, cached for the day, no CDN needed), the public ones if not
 let MPV=null;const MP={local:false};
 function mpVision(){if(MPV)return MPV;const L=new URL('vendor/mediapipe',location.href).href,Cd='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -458,7 +477,7 @@ async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loadi
   catch(e){SEG.state='offline';}}
 const ML={f:-1,turn:''};
 function camOK(){return (source.kind==='camera'||source.kind==='file')&&video.videoWidth>0&&!EMBEDDED;}
-const POSE_MODES={detect:1,gaze:1,trail:1,poem:1,aura:1,star:1,cari:1,frost:1,thermal:1,stack:1,firework:1,balloon:1,bubble:1};
+const POSE_MODES={detect:1,gaze:1,trail:1,poem:1,aura:1,star:1,cari:1,frost:1,thermal:1,stack:1,firework:1,balloon:1,bubble:1,light:1};
 function poseNeeded(){const id=role==='sensor'?MC.remote:(mode?mode.id:'');return !id||!!POSE_MODES[id];}
 function poseIv(){const c=FACE.pcost||8;return poseNeeded()?Math.max(role==='sensor'?80:66,c*4.5):Math.max(260,c*14);}
 function objIv(){return clamp((FACE.ocost||20)*9,160,3000);}
@@ -887,6 +906,19 @@ function rigFromSilhouette(tr){ // rough joints from the person's shape when no 
   if(el){put(13,el.l,el.y);put(14,el.r,el.y);}if(wr){put(15,wr.l,wr.y);put(16,wr.r,wr.y);}
   put(23,hp.c-(hp.r-hp.l)*0.22,hp.y);put(24,hp.c+(hp.r-hp.l)*0.22,hp.y);if(kn){put(25,kn.c-(kn.r-kn.l)*0.25,kn.y);put(26,kn.c+(kn.r-kn.l)*0.25,kn.y);}if(an){put(27,an.l+(an.r-an.l)*0.2,an.y);put(28,an.r-(an.r-an.l)*0.2,an.y);}
   return L;}
+// marching squares as closed loops: one level of a grid field traced into smooth closed outlines that can be filled (crisp at any screen
+// size, unlike a stretched mask). The field is taken as empty beyond its border, so shapes cut by the edge of the picture still close
+function isoFill(field,w,h,lv,sx,sy,path){const pw=w+2,ph=h+2,N=pw*ph;let F=isoFill.F;if(!F||F.length!==N){F=isoFill.F=new Float32Array(N);isoFill.nx=new Int32Array(N*2);isoFill.px=new Float32Array(N*2);isoFill.py=new Float32Array(N*2);}
+  const nx=isoFill.nx,px=isoFill.px,py=isoFill.py;for(let y=0;y<h;y++)F.set(field.subarray(y*w,y*w+w),(y+1)*pw+1);nx.fill(-1);
+  const link=(e1,e2,qx,qy,ins)=>{const cr=(px[e2]-px[e1])*(qy-py[e1])-(py[e2]-py[e1])*(qx-px[e1]);if((cr>0)!==ins)nx[e2]=e1;else nx[e1]=e2;};
+  for(let y=0;y<ph-1;y++)for(let x=0;x<pw-1;x++){const i=y*pw+x,a=F[i],b=F[i+1],c=F[i+pw+1],d=F[i+pw],ca=(a>lv?8:0)|(b>lv?4:0)|(c>lv?2:0)|(d>lv?1:0);if(ca===0||ca===15)continue;
+    const T=i,B=i+pw,L=N+i,R=N+i+1;if((a>lv)!==(b>lv)){px[T]=x+(lv-a)/(b-a);py[T]=y;}if((d>lv)!==(c>lv)){px[B]=x+(lv-d)/(c-d);py[B]=y+1;}if((a>lv)!==(d>lv)){px[L]=x;py[L]=y+(lv-a)/(d-a);}if((b>lv)!==(c>lv)){px[R]=x+1;py[R]=y+(lv-b)/(c-b);}
+    switch(ca){case 1:link(L,B,x,y+1,true);break;case 14:link(L,B,x,y+1,false);break;case 2:link(B,R,x+1,y+1,true);break;case 13:link(B,R,x+1,y+1,false);break;case 4:link(T,R,x+1,y,true);break;case 11:link(T,R,x+1,y,false);break;
+      case 8:link(L,T,x,y,true);break;case 7:link(L,T,x,y,false);break;case 3:link(L,R,x,y+1,true);break;case 12:link(L,R,x,y+1,false);break;case 6:link(T,B,x+1,y,true);break;case 9:link(T,B,x+1,y,false);break;
+      case 5:link(L,T,x,y,false);link(B,R,x+1,y+1,false);break;case 10:link(T,R,x+1,y,false);link(L,B,x,y+1,false);break;}}
+  const X=e=>(px[e]-0.5)*sx,Y=e=>(py[e]-0.5)*sy,lp=isoFill.lp||(isoFill.lp=[]);
+  for(let e0=0;e0<N*2;e0++){if(nx[e0]<0)continue;lp.length=0;let e=e0;while(e>=0&&nx[e]>=0){lp.push(e);const n=nx[e];nx[e]=-1;e=n;if(e===e0)break;}const n=lp.length;if(n<3)continue;
+    let ax=X(lp[n-1]),ay=Y(lp[n-1]),bx=X(lp[0]),by=Y(lp[0]);path.moveTo((ax+bx)/2,(ay+by)/2);for(let k=0;k<n;k++){const cx=X(lp[k]),cy=Y(lp[k]),k2=lp[(k+1)%n],dx=X(k2),dy=Y(k2);path.quadraticCurveTo(cx,cy,(cx+dx)/2,(cy+dy)/2);}path.closePath();}}
 function isoPath(field,w,h,lv,sx,sy,path){ // marching squares: one contour level of a grid field into a path, in screen space
   for(let y=0;y<h-1;y++)for(let x=0;x<w-1;x++){const i=y*w+x,a=field[i],b=field[i+1],c=field[i+w+1],d=field[i+w];const ca=(a>lv?8:0)|(b>lv?4:0)|(c>lv?2:0)|(d>lv?1:0);if(ca===0||ca===15)continue;
     const tX=x+(lv-a)/(b-a),rY=y+(lv-b)/(c-b),bX=x+(lv-d)/(c-d),lY=y+(lv-a)/(d-a);const seg=(x1,y1,x2,y2)=>{path.moveTo((x1+0.5)*sx,(y1+0.5)*sy);path.lineTo((x2+0.5)*sx,(y2+0.5)*sy);};
@@ -2027,7 +2059,133 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
     ctx.globalAlpha=1;
     // a quiet word while nobody is there
     this.alone=any?0:this.alone+dt;if(this.alone>2.5){const fz=Math.max(13,Math.min(22,W/64));ctx.font='500 '+fz+'px '+SANS;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(244,236,219,'+Math.min(0.85,(this.alone-2.5)*0.6)+')';ctx.fillText('앞에 서면 분홍 털실로 떠져요',W/2,H-Math.max(54,H*0.09)-(isTouch?60:0));ctx.textAlign='left';ctx.textBaseline='alphabetic';}}};
-const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mGhost,mKnit];
+/* 스테인드글라스: the whole screen is a leaded window of deep blue glass, lit from behind. A person is cut into the window the way a
+   glazier would do it: a lead line follows the outline exactly, and inside it the glass is ruby at the edge, amber further in and pale
+   gold at the heart, so the figure glows. The light behind drifts, every pane shimmers, and now and then a sunbeam crosses the window */
+const mStained={id:'stained',name:'스테인드글라스',desc:'화면 전체가 납선으로 나뉜 푸른 색유리창이 된다. 사람의 윤곽을 따라 납선이 그려지고 그 안쪽 유리는 가장자리의 루비색에서 호박색, 한가운데의 밝은 금색으로 물들어 빛난다. 창 뒤의 빛이 천천히 움직이고 이따금 햇살이 창을 가로질러 지나간다',hint:'앞에 서면 유리가 금빛으로 물들어요',
+  BG:['#132a66','#1a3c86','#21509c','#172458','#2763ab','#1d3478','#34489a','#1b6a8a','#352f84','#2a74b6','#15407a','#274a8f','#1f7a86','#412f8c'],
+  RAMP:[[0,'#9d1836'],[0.26,'#d23b2c'],[0.5,'#ee8a2b'],[0.76,'#f8c549'],[1,'#fff0ba']],ACC:['#e45d86','#fff6dc','#f39ab0','#ffd98a'],
+  init(){const n=A.n;if(!this.pb||this.pb.length!==n){this.pb=new Float32Array(n);this.d=new Float32Array(n);this.gw=new Float32Array(n);this.tmp=new Float32Array(n);}
+    const N0=Math.round((isTouch?(W<H?520:640):1150)*(QF()>0.9?1:QF()>0.6?0.8:0.62)),gx=Math.max(6,Math.round(Math.sqrt(N0*W/H))),gy=Math.max(5,Math.round(N0/gx)),key=[W,H,gx,gy].join(',');if(this.key===key){for(const c of this.cells)c.u=0;return;}this.key=key;
+    const cw=W/gx,ch=H/gy,R=seeded(4242),S=[];for(let j=0;j<gy;j++)for(let i=0;i<gx;i++)S.push([(i+0.5+(R()-0.5)*0.92)*cw,(j+0.5+(R()-0.5)*0.92)*ch]);
+    const clip=(poly,ax,ay,bx,by)=>{const mx=(ax+bx)/2,my=(ay+by)/2,nx=bx-ax,ny=by-ay,out=[];for(let k=0;k<poly.length;k++){const p=poly[k],q=poly[(k+1)%poly.length],dp=(p[0]-mx)*nx+(p[1]-my)*ny,dq=(q[0]-mx)*nx+(q[1]-my)*ny;if(dp<=0)out.push(p);if((dp<0&&dq>0)||(dp>0&&dq<0)){const u=dp/(dp-dq);out.push([p[0]+(q[0]-p[0])*u,p[1]+(q[1]-p[1])*u]);}}return out;};
+    const cellOf=(i,j)=>{const s=S[j*gx+i];let poly=[[Math.max(-2,s[0]-cw*2.4),Math.max(-2,s[1]-ch*2.4)],[Math.min(W+2,s[0]+cw*2.4),Math.max(-2,s[1]-ch*2.4)],[Math.min(W+2,s[0]+cw*2.4),Math.min(H+2,s[1]+ch*2.4)],[Math.max(-2,s[0]-cw*2.4),Math.min(H+2,s[1]+ch*2.4)]];
+      for(let dj=-2;dj<=2&&poly.length>2;dj++)for(let di=-2;di<=2&&poly.length>2;di++){if(!di&&!dj)continue;const a=i+di,b=j+dj;if(a<0||b<0||a>=gx||b>=gy)continue;const o=S[b*gx+a];poly=clip(poly,s[0],s[1],o[0],o[1]);}return poly;};
+    // one round of relaxation: the pieces keep their irregular hand-cut look but lose the slivers no glazier would cut
+    for(let j=0;j<gy;j++)for(let i=0;i<gx;i++){const poly=cellOf(i,j);if(poly.length<3)continue;let cx=0,cy=0;for(const p of poly){cx+=p[0];cy+=p[1];}const s=S[j*gx+i];s[2]=s[0]+(cx/poly.length-s[0])*0.7;s[3]=s[1]+(cy/poly.length-s[1])*0.7;}for(const s of S)if(s.length>2){s[0]=s[2];s[1]=s[3];}
+    const C=this.cells=[];for(let j=0;j<gy;j++)for(let i=0;i<gx;i++){const poly=cellOf(i,j);if(poly.length<3)continue;const path=new Path2D();let cx=0,cy=0;poly.forEach((p,k)=>{if(k)path.lineTo(p[0],p[1]);else path.moveTo(p[0],p[1]);cx+=p[0];cy+=p[1];});path.closePath();cx/=poly.length;cy/=poly.length;
+        C.push({path,poly,cx,cy,bg:hex(this.BG[(R()*this.BG.length)|0]),acc:R()<0.07?hex(this.ACC[(R()*this.ACC.length)|0]):null,j:(R()-0.5)*0.34,u:0,ph:R()*TAU,sp:0.35+R()*0.7,tone:0.86+R()*0.28,sa:R()*TAU});}
+    const lut=this.lut=[];for(let k=0;k<64;k++){const u=k/63;let a=this.RAMP[0],b=this.RAMP[this.RAMP.length-1];for(let q=0;q<this.RAMP.length-1;q++)if(u>=this.RAMP[q][0]&&u<=this.RAMP[q+1][0]){a=this.RAMP[q];b=this.RAMP[q+1];break;}const f=(u-a[0])/Math.max(1e-6,b[0]-a[0]),ca=hex(a[1]),cb=hex(b[1]);lut.push([lerp(ca[0],cb[0],f),lerp(ca[1],cb[1],f),lerp(ca[2],cb[2],f)]);}
+    // everything that does not move is drawn once: the grain of the glass, the shading of each pane, the leading, the border and frame
+    const q=Math.min(DPR,2),m=Math.min(W,H),lw=this.lw=Math.max(2.2,m/250),L=this.lead=mkCanvas(Math.round(W*q),Math.round(H*q)),x=L.cx;x.scale(q,q);const R2=seeded(99);
+    // each pane: darker toward the leading, where real glass sits in shadow, and a sheen across it at its own angle
+    for(const c of C){x.save();x.clip(c.path);x.lineJoin='round';x.strokeStyle='rgba(0,0,16,0.10)';x.lineWidth=lw*7;x.stroke(c.path);x.strokeStyle='rgba(0,0,16,0.16)';x.lineWidth=lw*3.6;x.stroke(c.path);
+      const r=Math.max(cw,ch)*0.8,g=x.createLinearGradient(c.cx-Math.cos(c.sa)*r,c.cy-Math.sin(c.sa)*r,c.cx+Math.cos(c.sa)*r,c.cy+Math.sin(c.sa)*r);g.addColorStop(0,'rgba(255,255,255,0.13)');g.addColorStop(0.5,'rgba(255,255,255,0)');g.addColorStop(1,'rgba(0,0,24,0.12)');x.fillStyle=g;x.fill(c.path);x.restore();}
+    // streaks, seeds and ripples in the glass
+    x.lineCap='round';for(let k=0;k<Math.round(W*H/700);k++){const px=R2()*W,py=R2()*H,an=-0.95+R2()*0.5,l=8+R2()*54,lt=R2()<0.55;x.strokeStyle=lt?'rgba(255,255,255,'+(0.02+R2()*0.05)+')':'rgba(0,0,20,'+(0.03+R2()*0.06)+')';x.lineWidth=0.6+R2()*2.4;x.beginPath();x.moveTo(px,py);x.quadraticCurveTo(px+Math.cos(an)*l*0.5+(R2()-0.5)*6,py+Math.sin(an)*l*0.5+(R2()-0.5)*6,px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
+    for(let k=0;k<Math.round(W*H/6500);k++){const px=R2()*W,py=R2()*H,r=0.7+R2()*2.2;x.strokeStyle='rgba(255,255,255,'+(0.07+R2()*0.12)+')';x.lineWidth=0.7;x.beginPath();x.arc(px,py,r,0,TAU);x.stroke();x.fillStyle='rgba(255,255,255,0.10)';x.beginPath();x.arc(px-r*0.3,py-r*0.3,r*0.3,0,TAU);x.fill();}
+    // the leading: a dark came with a faint ridge of light along it, and a drop of solder at every joint
+    x.lineJoin='round';x.strokeStyle='#09090b';x.lineWidth=lw;for(const c of C)x.stroke(c.path);x.strokeStyle='rgba(150,158,170,0.20)';x.lineWidth=Math.max(0.6,lw*0.24);for(const c of C)x.stroke(c.path);
+    x.fillStyle='#0b0b0d';for(const c of C)for(const p of c.poly){x.beginPath();x.arc(p[0],p[1],lw*0.78,0,TAU);x.fill();}x.fillStyle='rgba(170,178,190,0.16)';for(const c of C)for(const p of c.poly){x.beginPath();x.arc(p[0]-lw*0.2,p[1]-lw*0.22,lw*0.26,0,TAU);x.fill();}
+    // the border: a band of ruby panes with small gold squares between them and a jewel in each corner, inside a dark frame
+    const bw=this.bw=Math.max(15,Math.round(m*0.04)),pane=(px,py,pw,ph,col,tone)=>{const c=hex(col);x.fillStyle='rgb('+(c[0]*tone|0)+','+(c[1]*tone|0)+','+(c[2]*tone|0)+')';x.fillRect(px,py,pw,ph);const g=x.createLinearGradient(px,py,px+pw,py+ph);g.addColorStop(0,'rgba(255,255,255,0.16)');g.addColorStop(0.5,'rgba(255,255,255,0)');g.addColorStop(1,'rgba(0,0,10,0.2)');x.fillStyle=g;x.fillRect(px,py,pw,ph);x.strokeStyle='#09090b';x.lineWidth=lw;x.strokeRect(px,py,pw,ph);x.strokeStyle='rgba(150,158,170,0.18)';x.lineWidth=Math.max(0.6,lw*0.24);x.strokeRect(px,py,pw,ph);};
+    const band=(len,put)=>{const unit=bw*3.6,nU=Math.max(1,Math.round((len-bw)/unit)),u=(len-bw)/nU;let p=0;for(let k=0;k<nU;k++){put(p,bw,'#d9a233',0.82+R2()*0.2);put(p+bw,u-bw,k%2?'#7d1a3c':'#931d33',0.8+R2()*0.25);p+=u;}put(p,bw,'#d9a233',0.82+R2()*0.2);};
+    band(W-2*bw,(p,l,col,tn)=>{pane(bw+p,0,l,bw,col,tn);pane(bw+p,H-bw,l,bw,col,tn);});band(H-2*bw,(p,l,col,tn)=>{pane(0,bw+p,bw,l,col,tn);pane(W-bw,bw+p,bw,l,col,tn);});
+    for(const [px,py] of [[0,0],[W-bw,0],[0,H-bw],[W-bw,H-bw]]){pane(px,py,bw,bw,'#1c2f6e',1);const g=x.createRadialGradient(px+bw*0.42,py+bw*0.4,bw*0.04,px+bw/2,py+bw/2,bw*0.34);g.addColorStop(0,'#bff3ee');g.addColorStop(0.5,'#3fb6b2');g.addColorStop(1,'#14666e');x.fillStyle=g;x.beginPath();x.arc(px+bw/2,py+bw/2,bw*0.32,0,TAU);x.fill();x.strokeStyle='#09090b';x.lineWidth=lw*0.8;x.stroke();}
+    x.strokeStyle='#09090b';x.lineWidth=lw*1.5;x.strokeRect(bw,bw,W-2*bw,H-2*bw);x.lineWidth=lw*2.2;x.strokeRect(0,0,W,H);
+    const g=x.createRadialGradient(W/2,H/2,m*0.32,W/2,H/2,Math.hypot(W,H)*0.6);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(2,4,18,0.42)');x.fillStyle=g;x.fillRect(0,0,W,H);},
+  draw(t,dt){const C=this.cells,w=A.w,h=A.h,n=A.n;if(this.pb.length!==n)this.init();const pb=this.pb,d=this.d,gw=this.gw,tmp=this.tmp,lut=this.lut,lw=this.lw;
+    pb.set(A.p);blur3(pb,tmp,w,h);gw.set(pb);box5(gw,tmp,w,h);box5(gw,tmp,w,h);
+    // how far inside the figure each place is: the edge of a person is ruby, the heart of them gold
+    for(let i=0;i<n;i++)d[i]=pb[i]>0.5?40:0;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;let v=d[i];if(!v)continue;if(x>0)v=Math.min(v,d[i-1]+1);else v=Math.min(v,3);if(y>0){v=Math.min(v,d[i-w]+1);if(x>0)v=Math.min(v,d[i-w-1]+1.414);if(x<w-1)v=Math.min(v,d[i-w+1]+1.414);}d[i]=v;}
+    for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){const i=y*w+x;let v=d[i];if(!v)continue;if(x<w-1)v=Math.min(v,d[i+1]+1);else v=Math.min(v,3);if(y<h-1){v=Math.min(v,d[i+w]+1);if(x<w-1)v=Math.min(v,d[i+w+1]+1.414);if(x>0)v=Math.min(v,d[i+w-1]+1.414);}d[i]=v;}
+    blur3(d,tmp,w,h);
+    const lx=W*(0.5+0.36*Math.sin(t*0.11)),ly=H*(0.4+0.24*Math.cos(t*0.083)),r2=Math.pow(Math.min(W,H)*0.62,2),ku=ez(0.22),dn=1/Math.max(3,h*0.12),isx=1/A.sx,isy=1/A.sy;let any=false;
+    ctx.fillStyle='#09090b';ctx.fillRect(0,0,W,H);
+    for(let i=0;i<C.length;i++){const c=C[i],gi=Math.min(h-1,Math.max(0,c.cy*isy|0))*w+Math.min(w-1,Math.max(0,c.cx*isx|0)),g=gw[gi];c.g=g;if(g>0.02)any=true;const tu=Math.min(1,Math.max(0,d[gi]*dn+c.j));c.u+=(tu-c.u)*ku;
+      // the light behind: a slow glow drifting across the window, each pane's own shimmer, and the figure's light spilling into the glass round it
+      const dx=c.cx-lx,dy=c.cy-ly,sh=c.sh=(0.68+0.32*Math.exp(-(dx*dx+dy*dy)/r2)+0.085*Math.sin(t*c.sp+c.ph))*c.tone,b=sh*(0.92+0.6*g),a=c.bg,k=Math.min(0.36,g*0.55);
+      ctx.fillStyle='rgb('+Math.min(255,(a[0]+(140-a[0])*k)*b|0)+','+Math.min(255,(a[1]+(196-a[1])*k)*b|0)+','+Math.min(255,(a[2]+(236-a[2])*k)*b|0)+')';ctx.fill(c.path);}
+    if(any){const sil=new Path2D();isoFill(pb,w,h,0.5,A.sx,A.sy,sil);ctx.save();ctx.clip(sil,'evenodd');
+      for(let i=0;i<C.length;i++){const c=C[i];if(c.g<=0.02)continue;const f=c.acc&&c.u>0.25?c.acc:lut[Math.min(63,c.u*63|0)],b=Math.min(1.13,c.sh*1.3+0.08);ctx.fillStyle='rgb('+Math.min(255,f[0]*b|0)+','+Math.min(255,f[1]*b|0)+','+Math.min(255,f[2]*b|0)+')';ctx.fill(c.path);}
+      // the figure's own shading, pane by pane, has to be drawn here because the panes inside the outline are cut fresh every frame
+      ctx.restore();ctx.lineJoin='round';ctx.strokeStyle='#09090b';ctx.lineWidth=lw*1.25;ctx.stroke(sil);ctx.strokeStyle='rgba(150,158,170,0.2)';ctx.lineWidth=Math.max(0.6,lw*0.26);ctx.stroke(sil);}
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.lead,0,0,W,H);
+    // light bleeding through: a warm bloom round the figure, and a sunbeam that crosses the window now and then
+    ctx.globalCompositeOperation='lighter';if(any){this.bl=upsampleMask(gw,w,h,2,0.04,0.85,[255,170,92],this.bl);ctx.globalAlpha=0.2;ctx.drawImage(this.bl,0,0,W,H);ctx.globalAlpha=1;}
+    const T=17,ph=(t%T)/T;if(ph<0.42){const u=ph/0.42,bx=-W*0.35+(W*1.7)*u,bwid=W*0.2,g=ctx.createLinearGradient(bx,0,bx+bwid,bwid*0.45),a=0.13*Math.sin(u*Math.PI);g.addColorStop(0,'rgba(255,236,190,0)');g.addColorStop(0.5,'rgba(255,236,190,'+a.toFixed(3)+')');g.addColorStop(1,'rgba(255,236,190,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
+    ctx.globalCompositeOperation='source-over';}};
+/* 모자이크 타일: a floor of small ivory stone tiles with a thin frame set into it. Where a person stands the tiles turn over one by one
+   to glazed blue: navy at the outline, lapis and azure further in, turquoise at the heart, with a gold tile here and there; a
+   glint of light slides across the glaze */
+const mMosaic={id:'mosaic',name:'모자이크 타일',desc:'상아색 돌 타일이 촘촘히 깔린 바닥에서, 사람이 선 자리의 타일이 하나씩 뒤집히며 유약 바른 푸른 타일로 바뀐다. 윤곽은 짙은 남색, 안쪽은 청금석·하늘색·청록으로 깊어지고 군데군데 금 타일이 섞여 반짝인다',hint:'앞에 서면 타일이 뒤집혀요',
+  STONE:['#e9e2d0','#e2d9c3','#efe9da','#d9cfb8','#e6dccb','#dcd6c6','#f2eee2','#d6ccb6','#e4dfd2'],SH:['#18214f','#2747a0','#3470c0','#2f97ad','#69c6bf'],GOLD:'#d8a737',GROUT:'#6f675a',
+  tile(col,ts,q,seed,glaze){const R=seeded(seed),c=mkCanvas(Math.ceil(ts*q),Math.ceil(ts*q)),x=c.cx;x.scale(q,q);const g0=ts*0.06,j=()=>g0+R()*ts*0.075,P=[[j(),j()],[ts-j(),j()],[ts-j(),ts-j()],[j(),ts-j()]],rr=ts*0.1;
+    x.beginPath();for(let k=0;k<4;k++){const a=P[k],b=P[(k+1)%4],p=P[(k+3)%4],la=Math.hypot(a[0]-p[0],a[1]-p[1]),lb=Math.hypot(b[0]-a[0],b[1]-a[1]);const sx=a[0]+(p[0]-a[0])*rr/la,sy=a[1]+(p[1]-a[1])*rr/la,ex=a[0]+(b[0]-a[0])*rr/lb,ey=a[1]+(b[1]-a[1])*rr/lb;if(k)x.lineTo(sx,sy);else x.moveTo(sx,sy);x.quadraticCurveTo(a[0],a[1],ex,ey);}x.closePath();
+    const h=hex(col),tn=0.9+R()*0.2;x.fillStyle='rgb('+Math.min(255,h[0]*tn|0)+','+Math.min(255,h[1]*tn|0)+','+Math.min(255,h[2]*tn|0)+')';x.fill();x.save();x.clip();
+    const g=x.createLinearGradient(0,0,ts,ts);g.addColorStop(0,'rgba(255,255,255,'+(glaze?0.34:0.2)+')');g.addColorStop(0.45,'rgba(255,255,255,0)');g.addColorStop(1,'rgba(0,0,0,'+(glaze?0.26:0.14)+')');x.fillStyle=g;x.fillRect(0,0,ts,ts);
+    for(let k=0;k<(glaze?5:9);k++){x.fillStyle=R()<0.5?'rgba(255,255,255,'+(0.05+R()*0.1)+')':'rgba(60,50,40,'+(0.04+R()*0.08)+')';const r=0.4+R()*ts*0.05;x.beginPath();x.arc(R()*ts,R()*ts,r,0,TAU);x.fill();}
+    if(glaze){x.fillStyle='rgba(255,255,255,0.3)';x.beginPath();x.ellipse(ts*0.34,ts*0.3,ts*0.16,ts*0.07,-0.6,0,TAU);x.fill();}x.restore();x.strokeStyle='rgba(30,22,14,0.3)';x.lineWidth=Math.max(0.5,ts*0.03);x.stroke();return c;},
+  init(){const f=QF()>0.9?1:QF()>0.6?0.86:0.72,cols=Math.round((isTouch?(W<H?36:62):92)*f),ts=W/cols,rows=Math.ceil(H/ts)+1,oy=-(rows*ts-H)/2,q=Math.min(DPR,2),n=cols*rows,key=[W,H,cols,q].join(',');
+    if(!this.pb||this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.d=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}
+    if(this.key===key){this.on.fill(0);this.tg.fill(0);this.dp.fill(0);return;}this.key=key;Object.assign(this,{cols,rows,ts,oy,q});this.on=new Float32Array(n);this.tg=new Uint8Array(n);this.dp=new Float32Array(n);
+    const R=seeded(77);this.spd=new Float32Array(n);this.var=new Uint8Array(n);this.gold=new Uint8Array(n);for(let i=0;i<n;i++){this.spd[i]=0.7+R()*0.8;this.var[i]=(R()*3)|0;this.gold[i]=R()<0.055?1:0;}
+    this.spr=this.SH.map((c,k)=>[0,1,2].map(v=>this.tile(c,ts,q,500+k*10+v,true)));this.gspr=[0,1,2].map(v=>this.tile(this.GOLD,ts,q,900+v,true));
+    // the floor is laid once: stone tiles, each a little different, a navy line and a terracotta line framing the room (set in from the edge, so the title and the credit sit on plain stone)
+    const B=this.bgc=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx;x.scale(q,q);x.fillStyle=this.GROUT;x.fillRect(0,0,W,H);const st=this.STONE.map((c,k)=>[0,1,2,3].map(v=>this.tile(c,ts,q,100+k*10+v,false))),ln1=[0,1,2].map(v=>this.tile('#2a3566',ts,q,300+v,false)),ln2=[0,1,2].map(v=>this.tile('#b9694a',ts,q,320+v,false));
+    const r0=Math.ceil(-oy/ts),r1=rows-1-r0;for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const e=Math.min(c,cols-1-c,r-r0,r1-r);let s=st[(R()*st.length)|0][(R()*4)|0];if(e===5)s=ln1[(R()*3)|0];else if(e===7)s=ln2[(R()*3)|0];x.drawImage(s,c*ts,oy+r*ts,ts,ts);}
+    const g=x.createRadialGradient(W/2,H/2,Math.min(W,H)*0.35,W/2,H/2,Math.hypot(W,H)*0.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(40,28,12,0.12)');x.fillStyle=g;x.fillRect(0,0,W,H);},
+  draw(t,dt){const {cols,rows,ts,oy,q,on,tg,dp,spd}=this,w=A.w,h=A.h,n=A.n;if(this.pb.length!==n)this.init();const pb=this.pb,d=this.d,tmp=this.tmp;ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bgc,0,0,W,H);
+    pb.set(A.p);blur3(pb,tmp,w,h);for(let i=0;i<n;i++)d[i]=pb[i]>0.5?40:0;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;let v=d[i];if(!v)continue;if(x>0)v=Math.min(v,d[i-1]+1);if(y>0){v=Math.min(v,d[i-w]+1);if(x>0)v=Math.min(v,d[i-w-1]+1.414);if(x<w-1)v=Math.min(v,d[i-w+1]+1.414);}d[i]=v;}
+    for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){const i=y*w+x;let v=d[i];if(!v)continue;if(x<w-1)v=Math.min(v,d[i+1]+1);if(y<h-1){v=Math.min(v,d[i+w]+1);if(x<w-1)v=Math.min(v,d[i+w+1]+1.414);if(x>0)v=Math.min(v,d[i+w-1]+1.414);}d[i]=v;}
+    const step=dt/0.2,kd=ez(0.3),dn=1/Math.max(3,h*0.115),isx=1/A.sx,isy=1/A.sy,gt=t*0.9;ctx.fillStyle=this.GROUT;
+    for(let r=0;r<rows;r++){const py=oy+r*ts,gy=Math.min(h-1,Math.max(0,(py+ts/2)*isy|0))*w;for(let c=0;c<cols;c++){const i=r*cols+c,gi=gy+Math.min(w-1,(c+0.5)*ts*isx|0),v=pb[gi];if(v>0.55)tg[i]=1;else if(v<0.4)tg[i]=0;
+        let o=on[i];if(tg[i]){if(o<1)o=Math.min(1,o+step*spd[i]);}else if(o>0)o=Math.max(0,o-step*spd[i]);on[i]=o;if(o<=0){dp[i]=0;continue;}
+        const px=c*ts,dv=Math.min(1,d[gi]*dn);dp[i]+=(dv-dp[i])*(dp[i]?kd:1);const sx=Math.abs(Math.cos(o*Math.PI));ctx.fillRect(px,py,ts,ts);
+        if(o<0.5){ctx.drawImage(this.bgc,px*q,py*q,ts*q,ts*q,px+ts*(1-sx)/2,py,ts*sx,ts);continue;}
+        const s=this.gold[i]&&dp[i]>0.22?this.gspr[this.var[i]]:this.spr[Math.min(4,dp[i]<0.14?0:1+(dp[i]*3.99|0))][this.var[i]];ctx.drawImage(s,px+ts*(1-sx)/2,py,ts*sx,ts);
+        // a band of light sliding over the glaze, and gold that keeps catching it
+        if(o>=1){let gl=Math.sin((px+py*0.6)*0.011-gt);gl=gl>0.86?(gl-0.86)/0.14*0.3:0;if(this.gold[i])gl+=0.16+0.16*Math.sin(t*2.1+i);if(gl>0.02){ctx.fillStyle='rgba(255,255,255,'+gl.toFixed(3)+')';ctx.fillRect(px+ts*0.08,py+ts*0.08,ts*0.84,ts*0.84);ctx.fillStyle=this.GROUT;}}}}}};
+/* 빛 그림: a dark room and a long exposure. Each hand is a light, and what it draws stays in the air for a few seconds as a ribbon of
+   fine bright threads, gold or pearl, twisting gently round a white core and thinning to nothing at the far end, with a little
+   dust of light falling from the tip. Quiet colours on purpose: it should look like a photograph, not a neon sign */
+const mLight={id:'light',name:'빛 그림',desc:'어두운 화면에서 손이 붓이 된다. 손이 지나간 자리에 금빛·진주빛의 가는 빛 실이 리본처럼 꼬이며 몇 초 동안 남고, 끝으로 갈수록 가늘어지며 사라진다. 손끝에서는 고운 빛가루가 떨어진다',hint:'손을 움직여 빛으로 그림을 그려 보세요',
+  LIFE:4.6,TONE:[[40,88,74],[208,62,80],[18,80,76],[262,40,82]],init(){this.tr=[];this.sp=[];this.sil=null;this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.ti=0;},
+  heads(){const out=[],P=poseScreen();if(P&&P.length){for(const L of P)for(const k of [15,16]){const q=L[k];if(q&&q.v>0.35&&q.x>-W*0.05&&q.x<W*1.05&&q.y>-H*0.05&&q.y<H*1.05)out.push({x:q.x,y:q.y});}if(out.length)return out;}
+    // without the pose model: the place where each person is moving most
+    const w=A.w,h=A.h,e=A.e;for(const tk of TR.tracks){const x0=Math.max(0,tk.x/A.sx|0),x1=Math.min(w-1,(tk.x+tk.w)/A.sx|0),y0=Math.max(0,tk.y/A.sy|0),y1=Math.min(h-1,(tk.y+tk.h)/A.sy|0);let s=0,sx=0,sy=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const v=e[y*w+x];if(v>0.25){const v2=v*v;s+=v2;sx+=v2*x;sy+=v2*y;}}if(s>1.2)out.push({x:(sx/s+0.5)*A.sx,y:(sy/s+0.5)*A.sy});}return out;},
+  draw(t,dt){const m=Math.min(W,H),w=A.w,h=A.h;if(this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}
+    const bg=ctx.createRadialGradient(W/2,H*0.55,m*0.1,W/2,H*0.55,Math.hypot(W,H)*0.62);bg.addColorStop(0,'#0b0d17');bg.addColorStop(1,'#030308');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    // the people themselves, barely there: a dim shape so you can find your own hands
+    this.pb.set(A.p);blur3(this.pb,this.tmp,w,h);this.sil=upsampleMask(this.pb,w,h,3,0.3,0.7,[58,66,96],this.sil);ctx.imageSmoothingEnabled=true;ctx.globalAlpha=0.26;ctx.drawImage(this.sil,0,0,W,H);ctx.globalAlpha=1;
+    // match each hand to the line it was drawing; a hand that appears somewhere new starts a new line
+    const H0=this.heads(),tr=this.tr,R=m*0.3,ke=ez(0.5),minD=m*0.007;for(const a of tr)a.hit=false;
+    for(const p of H0){let best=null,bd=R;for(const a of tr){if(a.hit||a.dead)continue;const dd=Math.hypot(a.tx-p.x,a.ty-p.y);if(dd<bd){bd=dd;best=a;}}
+      if(!best){best={x:p.x,y:p.y,pts:[],tone:this.TONE[this.ti++%this.TONE.length],ph:Math.random()*TAU,dead:false,miss:0};tr.push(best);}best.tx=p.x;best.ty=p.y;best.hit=true;best.miss=0;}
+    for(const a of tr){if(a.dead)continue;if(!a.hit){a.miss+=dt;if(a.miss>0.5)a.dead=true;continue;}a.x+=(a.tx-a.x)*ke;a.y+=(a.ty-a.y)*ke;const l=a.pts[a.pts.length-1];
+      if(!l||Math.hypot(a.x-l.x,a.y-l.y)>minD){const sp=l?Math.hypot(a.x-l.x,a.y-l.y)/Math.max(0.016,t-l.t):0;a.pts.push({x:a.x,y:a.y,t,nx:0,ny:0});
+        if(sp>m*0.2&&this.sp.length<160&&Math.random()<0.6){const an=Math.random()*TAU,v=m*(0.004+Math.random()*0.03);this.sp.push({x:a.x+(Math.random()-0.5)*m*0.012,y:a.y+(Math.random()-0.5)*m*0.012,vx:Math.cos(an)*v,vy:Math.sin(an)*v,t,life:1.1+Math.random()*1.5,tone:a.tone,ph:Math.random()*TAU,r:m*(0.0009+Math.random()*0.0017)});}}}
+    const LIFE=this.LIFE;for(let i=tr.length-1;i>=0;i--){const a=tr[i];while(a.pts.length&&t-a.pts[0].t>LIFE)a.pts.shift();if(a.dead&&a.pts.length<2)tr.splice(i,1);}
+    // age and taper of each piece of each line, and which way is across it (the threads of the ribbon are laid to either side)
+    const bw=m*0.0085;for(const a of tr){const P=a.pts,n=P.length;for(let k=0;k<n;k++){const p=P[k],p0=P[k-1]||p,p2=P[k+1]||(a.dead?p:{x:a.x,y:a.y}),dx=p2.x-p0.x,dy=p2.y-p0.y,l=Math.hypot(dx,dy)||1,age=(t-p.t)/LIFE;p.nx=-dy/l;p.ny=dx/l;p.f=(age<0.5?1:Math.max(0,1-(age-0.5)/0.5))*Math.min(1,(k+0.2)/6,a.dead?(n-k)/6:1);}}
+    // the glow: on a small dark sheet where overlapping pieces take the brighter of the two instead of adding up (so the joints do not
+    // bead), softened as the sheet is stretched over the picture
+    const gs=0.25,gw=Math.max(2,Math.round(W*gs)),gh=Math.max(2,Math.round(H*gs));if(!this.gc||this.gc.width!==gw||this.gc.height!==gh)this.gc=mkCanvas(gw,gh);const gx=this.gc.cx;gx.setTransform(1,0,0,1,0,0);gx.globalCompositeOperation='source-over';gx.fillStyle='#000';gx.fillRect(0,0,gw,gh);gx.setTransform(gs,0,0,gs,0,0);gx.globalCompositeOperation='lighten';gx.lineCap='round';
+    for(const [wm,al] of [[12,0.035],[8,0.065],[5,0.11],[2.8,0.19]])for(const a of tr){const P=a.pts,n=P.length,tn=a.tone;for(let k=1;k<n;k++){const p0=P[k-1],p1=P[k];if(p1.f<=0.02)continue;gx.strokeStyle='hsl('+tn[0]+','+tn[1]+'%,'+(tn[2]*0.8*al*p1.f*p1.f).toFixed(1)+'%)';gx.lineWidth=bw*wm*(0.35+0.65*p1.f);gx.beginPath();gx.moveTo(p0.x,p0.y);gx.lineTo(p1.x,p1.y);gx.stroke();}if(!a.dead&&n){const p1=P[n-1];gx.beginPath();gx.moveTo(p1.x,p1.y);gx.lineTo(a.x,a.y);gx.stroke();}}
+    ctx.globalCompositeOperation='lighter';ctx.drawImage(this.gc,0,0,W,H);
+    // the ribbon: fine threads that wander from side to side of the line and cross one another, and a white core down the middle
+    ctx.lineCap='butt';const TH=[[1,0,0.2,0.5],[-0.8,1.7,0.16,0.42],[0.55,3.1,0.14,0.36],[-0.4,4.4,0.14,0.3],[0,0,0.52,0.92]];
+    for(const a of tr){const P=a.pts,n=P.length,tn=a.tone;if(n<2)continue;const t0=P[0].t,head=a.dead?null:{x:a.x,y:a.y,nx:P[n-1].nx,ny:P[n-1].ny,f:P[n-1].f,t};
+      for(const [amp,ph,wd,al] of TH){const core=!amp,off=p=>amp?amp*bw*2.1*p.f*Math.sin((p.t-t0)*2.3+ph+a.ph+t*0.5):0;let px=0,py=0,qx=0,qy=0;
+        for(let k=0;k<=n;k++){const p=k<n?P[k]:head;if(!p)break;const o=off(p),x=p.x+p.nx*o,y=p.y+p.ny*o;if(k===0){px=qx=x;py=qy=y;continue;}const mx=(qx+x)/2,my=(qy+y)/2,f=p.f;if(f>0.02){ctx.strokeStyle=core?'hsla('+tn[0]+',60%,95%,'+(al*f).toFixed(3)+')':'hsla('+((tn[0]+10*Math.sin((p.t-t0)*0.9+ph))|0)+','+tn[1]+'%,'+tn[2]+'%,'+(al*f).toFixed(3)+')';ctx.lineWidth=Math.max(0.6,bw*wd*(0.4+0.6*f));ctx.beginPath();ctx.moveTo(px,py);ctx.quadraticCurveTo(qx,qy,mx,my);if(k===n||(k===n-1&&!head))ctx.lineTo(x,y);ctx.stroke();}px=mx;py=my;qx=x;qy=y;}}}
+    // the light at each hand: small and white, with a breath of the line's colour round it
+    for(const a of tr){if(a.dead||!a.pts.length)continue;const tn=a.tone,r=bw*6*(1+0.08*Math.sin(t*7+a.ph)),g=ctx.createRadialGradient(a.x,a.y,0,a.x,a.y,r);g.addColorStop(0,'rgba(255,255,255,0.95)');g.addColorStop(0.12,'hsla('+tn[0]+','+tn[1]+'%,86%,0.6)');g.addColorStop(0.45,'hsla('+tn[0]+','+tn[1]+'%,'+tn[2]+'%,0.1)');g.addColorStop(1,'hsla('+tn[0]+','+tn[1]+'%,'+tn[2]+'%,0)');ctx.fillStyle=g;ctx.fillRect(a.x-r,a.y-r,r*2,r*2);}
+    // dust of light: fine grains that drift down slowly and glimmer as they go out
+    const S=this.sp;for(let i=S.length-1;i>=0;i--){const s=S[i],age=(t-s.t)/s.life;if(age>=1){S.splice(i,1);continue;}s.vy+=m*0.035*dt;s.vx*=Math.pow(0.3,dt);s.vy*=Math.pow(0.6,dt);s.x+=s.vx*dt;s.y+=s.vy*dt;const f=(1-age)*(0.55+0.45*Math.sin(t*9+s.ph));ctx.fillStyle='hsla('+s.tone[0]+','+s.tone[1]+'%,88%,'+Math.max(0,f*0.85).toFixed(3)+')';ctx.beginPath();ctx.arc(s.x,s.y,s.r*(0.7+0.5*(1-age)),0,TAU);ctx.fill();}
+    ctx.globalCompositeOperation='source-over';}};
+const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mLight];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -2081,15 +2239,19 @@ const exIn=$('#exIn'),versesEl=$('#verses');
 function syncTitle(){const t=String(S.title==null?DEF.title:S.title).trim();exEl.hidden=!t;exTitleEl.textContent='';if(!t)return;const i=t.indexOf(' '),b=document.createElement('b');b.textContent=i>0?t.slice(0,i):t;exTitleEl.appendChild(b);
   if(i>0){exTitleEl.appendChild(document.createTextNode(' '));const r=document.createElement('i');r.textContent=t.slice(i+1);exTitleEl.appendChild(r);}}
 exIn.value=S.title==null?DEF.title:S.title;exIn.addEventListener('input',()=>{S.title=exIn.value;save();syncTitle();});syncTitle();
+const crEl=$('#credit'),crIn=$('#crIn');
+function syncCredit(){const t=String(S.credit==null?DEF.credit:S.credit).trim();crEl.hidden=!t;crEl.textContent='';if(!t)return;const i=t.lastIndexOf(' '),b=document.createElement('b');b.textContent=i>0?t.slice(i+1):t;if(i>0)crEl.appendChild(document.createTextNode(t.slice(0,i+1)));crEl.appendChild(b);}
+crIn.value=S.credit==null?DEF.credit:S.credit;crIn.addEventListener('input',()=>{S.credit=crIn.value;save();syncCredit();});syncCredit();
 versesEl.value=String(S.verses||'').trim()===VERSES_OLD_DEF.trim()?'':(S.verses||'');versesEl.placeholder='더 넣고 싶은 구절을 한 줄에 하나씩 (선택)';versesEl.addEventListener('change',()=>{const v=versesEl.value.trim();S.verses=v;save();if(mode===mWord)mode.build();});
 const probe=mkCanvas(12,4);
-function probeTitle(){if(exEl.hidden)return;const r=exEl.getBoundingClientRect();if(r.width<2)return;try{probe.cx.drawImage(canvas,r.left*DPR,r.top*DPR,r.width*DPR,r.height*DPR,0,0,12,4);const d=probe.cx.getImageData(0,0,12,4).data;let l=0;for(let i=0;i<d.length;i+=4)l+=d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11;l/=(d.length/4)*255;
-  if(l>0.62)exEl.classList.add('lt');else if(l<0.5)exEl.classList.remove('lt');}catch(e){}}
+function probeEl(el){if(el.hidden)return;const r=el.getBoundingClientRect();if(r.width<2)return;try{probe.cx.drawImage(canvas,r.left*DPR,r.top*DPR,r.width*DPR,r.height*DPR,0,0,12,4);const d=probe.cx.getImageData(0,0,12,4).data;let l=0;for(let i=0;i<d.length;i+=4)l+=d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11;l/=(d.length/4)*255;
+  if(l>0.57)el.classList.add('lt');else if(l<0.47)el.classList.remove('lt');}catch(e){}}
+function probeTitle(){probeEl(exEl);probeEl(crEl);}
 $('#btnBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
 $('#btnFull').addEventListener('click',toggleFull);$('#btnFullBar').addEventListener('click',toggleFull);
 $('#btnClear').addEventListener('click',clearArt);$('#btnClear2').addEventListener('click',()=>{clearArt();openPanel(false);});
 $('#btnFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'environment':'user';try{await startCamera(f);toast(f==='user'?'전면 카메라':'후면 카메라');}catch(e){toast(camError(e));}syncCtl();});
-$('#btnSource').addEventListener('click',()=>{openPanel(false);showIntro('');});
+$('#btnSource').addEventListener('click',()=>{openPanel(false);setHash('');showIntro('');});
 function toggleFull(){const d=document.documentElement;if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return;}
   const req=d.requestFullscreen||d.webkitRequestFullscreen;if(req){try{const p=req.call(d);if(p&&p.catch)p.catch(()=>toast('전체화면을 열 수 없어요. iPhone은 홈 화면에 추가해 주세요.'));}catch(e){toast('전체화면을 열 수 없어요.');}}else toast('이 브라우저는 전체화면 API가 없어요. iPhone은 Safari 공유 → 홈 화면에 추가로 열어 주세요.');}
 let wl=null;async function keepAwake(){try{if('wakeLock' in navigator)wl=await navigator.wakeLock.request('screen');}catch(e){}}
@@ -2098,7 +2260,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 /* intro */
 function showIntro(msg){intro.hidden=false;introMsg.hidden=!msg;introMsg.textContent=msg||'';document.body.classList.add('ui-on');}
 function hideIntro(){intro.hidden=true;showUI();}
-$('#btnSolo').addEventListener('click',async()=>{try{await startCamera('user');hideIntro();syncCtl();}catch(e){showIntro(camError(e));}});
+$('#btnSolo').addEventListener('click',async()=>{try{await startCamera('user');hideIntro();if(!EMBEDDED)setHash('#solo');syncCtl();}catch(e){showIntro(camError(e));}});
 $('#btnCamBack').addEventListener('click',async()=>{try{await startCamera('environment');hideIntro();syncCtl();}catch(e){showIntro(camError(e));}});
 $('#btnFile').addEventListener('click',()=>$('#file').click());
 $('#file').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f){useFile(f);hideIntro();syncCtl();}});
@@ -2136,28 +2298,39 @@ function loadScript(urls,check){if(check())return Promise.resolve();const key=ur
   loaded[key]=urls.reduce((p,u)=>p.catch(()=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=u;s.async=true;s.onload=()=>check()?res():rej(new Error('bad'));s.onerror=()=>rej(new Error('fail'));document.head.appendChild(s);})),Promise.reject());
   return loaded[key];}
 const link=$('#link'),codeText=$('#codeText'),linkMsg=$('#linkMsg'),linkErr=$('#linkErr'),qrBox=$('#qr');
+// which set-up this tab is in is kept in the address (#display, #s=CODE, #solo), so a reload or a browser that restarts the page
+// comes back to the same set-up by itself
+function setHash(h){try{history.replaceState(null,'',location.pathname+location.search+(h||''));}catch(e){}}
+function keepCode(){try{const o=JSON.parse(localStorage.getItem('gyeol.dcode')||'null');if(o&&/^[A-Z0-9]{4}$/.test(o.c)&&Date.now()-o.t<12*3600e3)return o.c;}catch(e){}return '';}
 function genCode(){const ch='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<4;i++)s+=ch[(Math.random()*ch.length)|0];return s;}
 function sensorURL(){return location.href.split('#')[0]+'#s='+code;}
 function renderQR(){qrBox.innerHTML='';if(window.qrcode){try{const q=window.qrcode(0,'M');q.addData(sensorURL());q.make();qrBox.innerHTML=q.createSvgTag({cellSize:4,margin:1,scalable:true});return;}catch(e){}}
   const p=document.createElement('p');p.textContent=location.protocol==='file:'?'file:// 로 열려 있어 QR 대신 코드로 연결하세요':'QR을 만들지 못했어요. 코드로 연결하세요';qrBox.appendChild(p);}
-function enterDisplay(){role='display';hideIntro();useDemo();link.hidden=false;linkErr.hidden=true;codeText.textContent='····';
+function enterDisplay(){role='display';if(!EMBEDDED)setHash('#display');hideIntro();useDemo();link.hidden=false;linkErr.hidden=true;codeText.textContent='····';
   if(location.protocol==='file:')linkMsg.innerHTML='지금은 file:// 로 열려 있어요. 폰에서 열 수 있도록 <b>https:// 주소로 호스팅</b>한 뒤 사용하는 것을 권해요. 테스트는 코드 입력으로 가능합니다.';
   Promise.all([loadScript(CDN.peer,()=>!!window.Peer),loadScript(CDN.qr,()=>!!window.qrcode).catch(()=>{})]).then(createHostPeer).catch(()=>{linkErr.hidden=false;linkErr.textContent='연결 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요. (단독 모드는 인터넷 없이도 됩니다)';});}
-function createHostPeer(){if(peer){try{peer.destroy();}catch(e){}}code=genCode();peer=new window.Peer('gyeol-'+code,{debug:0});
-  peer.on('open',()=>{codeText.textContent=code;renderQR();linkErr.hidden=true;});
+let hostTry=0,lostT=0;
+function createHostPeer(fresh){if(peer){try{peer.destroy();}catch(e){}}code=(fresh!==true&&keepCode())||genCode();peer=new window.Peer('gyeol-'+code,{debug:0});const me=peer;
+  peer.on('open',()=>{hostTry=0;codeText.textContent=code;renderQR();linkErr.hidden=true;try{localStorage.setItem('gyeol.dcode',JSON.stringify({c:code,t:Date.now()}));}catch(e){}});
   peer.on('call',call=>{try{if(RV.call)try{RV.call.close();}catch(e){}RV.call=call;call.answer();call.on('stream',st=>{RV.el.srcObject=st;RV.el.play().catch(()=>{});RV.on=true;});call.on('close',()=>{if(RV.call===call){RV.on=false;RV.call=null;}});call.on('error',()=>{RV.on=false;});}catch(e){}});
-  peer.on('connection',c=>{if(conn&&conn.open){try{c.close();}catch(e){}return;}conn=c;
+  peer.on('connection',c=>{const old=conn;conn=c;if(old&&old!==c){try{old.close();}catch(e){}}
     c.on('open',()=>{onSensorConnected();sendHello();wantVideo();});
     c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info'){setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));RV.mirror=m.mirror!=null?!!m.mirror:m.facing==='user';}else if(m.type==='pose'&&Array.isArray(m.L)){FACE.rpose={L:m.L,t:performance.now()};if(Array.isArray(m.B))FACE.rboxes={B:m.B,t:performance.now()};}}catch(e){}}
       else if(d instanceof ArrayBuffer)decodePacket(d);else if(d&&d.buffer instanceof ArrayBuffer)decodePacket(d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength));else if(typeof Blob!=='undefined'&&d instanceof Blob)d.arrayBuffer().then(decodePacket);});
     c.on('close',()=>onSensorLost(c));c.on('error',()=>onSensorLost(c));});
-  peer.on('error',err=>{if(err&&err.type==='unavailable-id'){createHostPeer();return;}linkErr.hidden=false;linkErr.textContent='중계 서버 오류: '+((err&&err.type)||'unknown')+'. 인터넷 연결을 확인하고 새로고침해 주세요.';});
-  peer.on('disconnected',()=>{try{peer.reconnect();}catch(e){}});}
+  peer.on('error',err=>{if(me!==peer)return;const ty=(err&&err.type)||'unknown';
+    // the same code is kept across reloads; just after a reload the server may still hold it for a moment, so try it a few times first
+    if(ty==='unavailable-id'){hostTry++;setTimeout(()=>{if(me===peer&&role==='display')createHostPeer(hostTry>20);},1500);return;}
+    if(ty==='peer-unavailable')return;linkErr.hidden=false;linkErr.textContent='중계 서버 오류: '+ty+'. 인터넷이 돌아오면 자동으로 다시 연결해요.';
+    if(ty==='network'||ty==='server-error'||ty==='socket-error'||ty==='socket-closed')setTimeout(()=>{if(me===peer&&role==='display'&&peer.destroyed)createHostPeer();},4000);});
+  peer.on('disconnected',()=>{setTimeout(()=>{if(me===peer&&!peer.destroyed){try{peer.reconnect();}catch(e){}}},1500);});}
 function sendHello(){if(conn&&conn.open){try{conn.send(JSON.stringify({type:'hello',aspect:W/H,cells:isTouch?6000:9000,fit:S.fit==='fill'?'fill':'full'}));}catch(e){}}}
-function onSensorConnected(){stopStream();source={el:null,kind:'remote'};A.remote=true;resetAnalysis();link.hidden=true;setStatus('센서 연결됨');toast('센서가 연결되었어요');keepAwake();showUI();}
-function onSensorLost(c){if(c!==conn)return;conn=null;if(role!=='display')return;A.remote=false;useDemo();link.hidden=false;linkMsg.textContent='센서 연결이 끊겼어요. 같은 코드로 다시 연결할 수 있어요.';toast('센서 연결 끊김 · 데모로 전환');}
+function onSensorConnected(){clearTimeout(lostT);stopStream();source={el:null,kind:'remote'};A.remote=true;resetAnalysis();link.hidden=true;setStatus('센서 연결됨');toast('센서가 연결되었어요');keepAwake();showUI();}
+function onSensorLost(c){if(c!==conn)return;conn=null;if(role!=='display')return;toast('센서 연결이 끊겼어요 · 다시 연결되기를 기다리는 중');
+  // the sensor redials by itself, so the picture is left alone for a few seconds before falling back to the demo and the code
+  clearTimeout(lostT);lostT=setTimeout(()=>{if(conn||role!=='display')return;A.remote=false;useDemo();link.hidden=false;linkMsg.textContent='센서 연결이 끊겼어요. 센서가 켜져 있으면 자동으로 다시 연결되고, 같은 코드로 다시 연결할 수도 있어요.';},7000);}
 $('#btnDisplay').addEventListener('click',enterDisplay);
-$('#btnLocalCam').addEventListener('click',async()=>{try{await startCamera('user');link.hidden=true;syncCtl();}catch(e){linkErr.hidden=false;linkErr.textContent=camError(e);}});
+$('#btnLocalCam').addEventListener('click',async()=>{try{await startCamera('user');link.hidden=true;setHash('#solo');syncCtl();}catch(e){linkErr.hidden=false;linkErr.textContent=camError(e);}});
 $('#btnLinkDemo').addEventListener('click',()=>{link.hidden=true;showUI();});
 
 /* sensor role */
@@ -2169,16 +2342,27 @@ async function joinDisplay(kind){const c=(codeInput.value||'').trim().toUpperCas
   try{if(kind==='demo'){useDemo();}else{await startCamera(kind);}}catch(e){sMsg(camError(e));return;}
   sensorJoin.hidden=true;sensorLive.hidden=false;sensorStatus.textContent='연결 중… ('+c+')';syncCtl();keepAwake();
   try{await loadScript(CDN.peer,()=>!!window.Peer);}catch(e){sMsg('연결 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.');sensorJoin.hidden=false;sensorLive.hidden=true;return;}
-  if(peer){try{peer.destroy();}catch(e){}}
-  peer=new window.Peer({debug:0});
-  peer.on('open',()=>{const cn=peer.connect('gyeol-'+c,{serialization:'raw',reliable:false});conn=cn;
-    cn.on('open',()=>{sensorStatus.textContent='연결됨 · 데이터 전송 중';sMsg('');try{cn.send(JSON.stringify({type:'info',facing:S.facing,mirror:S.mirror}));}catch(e){}});
+  if(peer){try{peer.destroy();}catch(e){}}peer=null;conn=null;sWasOn=false;sWant={c,kind};if(!EMBEDDED){setHash('#s='+c);try{localStorage.setItem('gyeol.sjoin',JSON.stringify({c,kind,t:Date.now()}));}catch(e){}}sDial();}
+// the sensor keeps its link alive by itself: if the screen reloads, the network drops or the code is not up yet, it dials again every
+// few seconds until the screen answers, so nobody has to touch the phone during the exhibition
+let sWant=null,sRedialT=0,sWasOn=false;
+function sRedial(ms){clearTimeout(sRedialT);if(role==='sensor'&&sWant)sRedialT=setTimeout(sDial,ms||3000);}
+function sDial(){if(role!=='sensor'||!sWant)return;clearTimeout(sRedialT);const c=sWant.c;if(conn&&conn.open)return;
+  if(!peer||peer.destroyed){peer=new window.Peer({debug:0});const me=peer;peer.on('open',()=>{if(me===peer)sConnect();});peer.on('disconnected',()=>{if(me===peer)sRedial(1500);});
+    peer.on('error',err=>{if(me!==peer)return;const ty=(err&&err.type)||'';if(conn&&!conn.open)conn=null;
+      if(ty==='peer-unavailable'){sensorStatus.textContent=sWasOn?'화면과 다시 연결하는 중… ('+c+')':'화면을 찾는 중… ('+c+')';sMsg(sWasOn?'화면 쪽이 다시 열리면 자동으로 이어져요.':'코드 '+c+' 화면이 아직 안 보여요. 화면 쪽 코드와 인터넷 연결을 확인해 주세요. 찾으면 자동으로 연결돼요.');}
+      else{sensorStatus.textContent='중계 서버에 다시 연결하는 중…';sMsg('인터넷 연결을 확인해 주세요. 돌아오면 자동으로 이어져요.');if(ty==='network'||ty==='server-error'||ty==='socket-error'||ty==='socket-closed'||ty==='browser-incompatible'){try{me.destroy();}catch(e){}}}
+      sRedial(3000);});return;}
+  if(peer.disconnected){try{peer.reconnect();}catch(e){}sRedial(2500);return;}
+  sConnect();}
+function sConnect(){if(role!=='sensor'||!sWant||!peer||peer.destroyed||peer.disconnected)return;if(conn&&conn.open)return;if(conn){try{conn.close();}catch(e){}}const c=sWant.c,cn=peer.connect('gyeol-'+c,{serialization:'raw',reliable:false});conn=cn;
+    setTimeout(()=>{if(conn===cn&&!cn.open){try{cn.close();}catch(e){}conn=null;sRedial(500);}},9000);
+    cn.on('open',()=>{sWasOn=true;sensorStatus.textContent='연결됨 · 데이터 전송 중';sMsg('');try{cn.send(JSON.stringify({type:'info',facing:S.facing,mirror:S.mirror}));}catch(e){}});
     cn.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='hello'&&m.aspect){const fit=m.fit==='fill'?'fill':'full';if(fit!==S.fit){S.fit=fit;resetAnalysis();}const g=gridFor(m.aspect,m.cells||6000);if(g[0]!==A.w||g[1]!==A.h){allocAnalyzer(g[0],g[1]);resetAnalysis();}}
       else if(m.type==='mode'){MC.remote=String(m.id||'');}
       else if(m.type==='video'){if(m.on&&!vcall&&stream){try{vcall=peer.call('gyeol-'+c,stream);vcall.on('close',()=>{vcall=null;});}catch(e){vcall=null;}}else if(!m.on&&vcall){try{vcall.close();}catch(e){}vcall=null;}}}catch(e){}}});
-    cn.on('close',()=>{if(conn===cn){conn=null;sensorStatus.textContent='화면과 연결이 끊겼어요';sMsg('화면 쪽이 닫혔거나 네트워크가 끊겼어요. 다시 연결해 주세요.');sensorJoin.hidden=false;}});
-    cn.on('error',()=>{sMsg('연결 오류가 났어요. 코드를 확인하고 다시 시도해 주세요.');});});
-  peer.on('error',err=>{const t=(err&&err.type)||'';if(t==='peer-unavailable')sMsg('코드 '+c+' 화면을 찾지 못했어요. 화면 쪽에 표시된 코드와 인터넷 연결을 확인해 주세요.');else sMsg('중계 서버 오류: '+t+'. 인터넷 연결을 확인해 주세요.');sensorJoin.hidden=false;});}
+    cn.on('close',()=>{if(conn===cn){conn=null;if(vcall){try{vcall.close();}catch(e){}vcall=null;}sensorStatus.textContent='화면과 다시 연결하는 중… ('+c+')';sMsg('화면 쪽이 닫혔거나 네트워크가 끊겼어요. 자동으로 다시 연결해요.');sRedial(1200);}});
+    cn.on('error',()=>{if(conn===cn){conn=null;sRedial(2000);}});}
 $('#btnSensor').addEventListener('click',()=>enterSensor(''));
 $('#btnJoin').addEventListener('click',()=>joinDisplay('user'));
 $('#btnJoinBack').addEventListener('click',()=>joinDisplay('environment'));
@@ -2190,7 +2374,7 @@ $('#sFlip').addEventListener('click',async()=>{const f=S.facing==='user'?'enviro
 $('#sMirror').addEventListener('click',()=>{S.mirror=!S.mirror;resetAnalysis();save();toast(S.mirror?'좌우 반전 켬':'좌우 반전 끔');});
 $('#sDetect').addEventListener('click',()=>{S.detect=S.detect==='motion'?'presence':'motion';resetBackground();save();syncCtl();toast(S.detect==='motion'?'움직이는 것만 감지해요':'정지한 사람도 잡아요 (카메라 앞을 비우고 배경 다시 잡기)');});
 $('#sBg').addEventListener('click',()=>{resetBackground();toast('배경을 다시 잡았어요');});
-function leaveSensor(){dimSensor(false);if(conn){try{conn.close();}catch(e){}conn=null;}if(peer){try{peer.destroy();}catch(e){}peer=null;}stopStream();role='solo';document.body.classList.remove('role-sensor');sensorOv.hidden=true;useDemo();setupAnalyzer();if(mode)mode.init();}
+function leaveSensor(){sWant=null;sWasOn=false;clearTimeout(sRedialT);setHash('');try{localStorage.removeItem('gyeol.sjoin');}catch(e){}dimSensor(false);if(conn){try{conn.close();}catch(e){}conn=null;}if(peer){try{peer.destroy();}catch(e){}peer=null;}stopStream();role='solo';document.body.classList.remove('role-sensor');sensorOv.hidden=true;useDemo();setupAnalyzer();if(mode)mode.init();}
 function drawSensorPreview(now){const w=A.w,h=A.h;if(!w)return;const cv=sensorView;if(cv.width!==w*4||cv.height!==h*4){cv.width=w*4;cv.height=h*4;cv.style.aspectRatio=w+' / '+h;}
   const c=cv.getContext('2d');c.imageSmoothingEnabled=true;c.drawImage(A.cv,0,0,cv.width,cv.height);
   if(!sOv||sOv.width!==w||sOv.height!==h){sOv=mkCanvas(w,h);sImg=new ImageData(w,h);}
@@ -2271,7 +2455,12 @@ $('#btnAllOn').addEventListener('click',()=>{S.off=[];save();syncModes();syncMod
 S.off=(S.off||[]).filter(id=>MODES.some(m=>m.id===id));if(MODES.every((m,i)=>!isOn(i)))S.off=[];
 syncModes();syncModeList();
 resize();useDemo();setMode(isOn(S.mode)?S.mode:0);if(!isOn(S.mode))nextMode(1);syncCtl();document.body.classList.add('ui-on');
-const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);if(hm&&!EMBEDDED)enterSensor(hm[1].toUpperCase());else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
+const hm=location.hash.match(/#s=([A-Za-z0-9]{4})/);
+if(hm&&!EMBEDDED){const hc=hm[1].toUpperCase();enterSensor(hc);let sj=null;try{sj=JSON.parse(localStorage.getItem('gyeol.sjoin')||'null');}catch(e){}
+  // this phone was already serving this screen (the page was reloaded): pick the camera back up and redial without being asked
+  if(sj&&sj.c===hc&&Date.now()-sj.t<12*3600e3&&/^(user|environment|demo)$/.test(sj.kind))joinDisplay(sj.kind);}
+else if(location.hash==='#display'&&!EMBEDDED)enterDisplay();
+else if(location.hash==='#solo'&&!EMBEDDED){startCamera(S.facing==='environment'?'environment':'user').then(()=>{hideIntro();syncCtl();}).catch(()=>{setHash('');});}
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 if('serviceWorker' in navigator&&location.protocol==='https:'&&!EMBEDDED){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 setTimeout(()=>{if(role!=='sensor')STACK.load();},4000);
