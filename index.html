@@ -1021,7 +1021,7 @@ const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 
     const people=PEOPLE.list;let gNear=0.2;if(!people.length&&A.presN>12){let y0=h,y1=0;for(let i=0;i<n;i++)if(p[i]>0.5){const y=(i/w)|0;if(y<y0)y0=y;if(y>y1)y1=y;}gNear=clamp(((y1-y0)/h-0.2)/0.75,0,1);}
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!people.length){Dn[i]=gNear;continue;}const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let sw=0,sv=0;
       for(const q of people){const cx=q.bx+q.bw/2,cy=q.by+q.bh/2,sx=Math.max(20,q.bw*0.6),sy=Math.max(20,q.bh*0.6),g=Math.exp(-(((px-cx)/sx)**2+((py-cy)/sy)**2)*0.5)+1e-6;sw+=g;sv+=g*q.near;}Dn[i]=sv/sw;}
-    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*ez(Dn[i]>D[i]?0.2:0.06);
+    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*ez(Dn[i]>D[i]?0.3:0.1);
     // sharpness only in the last stretch before the glass; four depth layers blended, so blur is continuous across the body
     const S=this.tmp;for(let i=0;i<n;i++){let s=(D[i]-0.62)/0.33;s=s<0?0:s>1?1:s;S[i]=s*s*(3-2*s);}
     const sc=Math.max(1,Math.round((isTouch?2:3)*QF())),scl=W/1280,R=[1.6,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
@@ -1150,7 +1150,7 @@ const mWord={id:'word',name:'말씀',desc:'화면 가득 흐르는 성경 구절
     this.L=this.cum[N];this.off=[];this.sp=[];const pick=Math.floor(Math.random()*vs.length);for(let r=0;r<this.rows;r++){const v=vs[(pick+r*Math.max(1,Math.floor(vs.length/this.rows)))%vs.length];this.off.push(this.cum[v]+hash2(r,3)*fs*6);this.sp.push(fs*(1.15+0.3*hash2(r,11)));}},
   draw(t,dt){const P=pal();ctx.fillStyle=P.bg;ctx.fillRect(0,0,W,H);if(!this.atlas)return;dt=dt||0.016;
     const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
-    const st=this.step,ns=this.ns,fs=this.fs,lh=this.lh,D=this.D,O=this.O,T=this.T,mg=fs*0.5,kIn=1-Math.pow(0.72,dt*60),kOut=1-Math.pow(0.9,dt*60);
+    const st=this.step,ns=this.ns,fs=this.fs,lh=this.lh,D=this.D,O=this.O,T=this.T,mg=fs*0.5,kIn=1-Math.pow(0.72,dt*60),kOut=1-Math.pow(0.82,dt*60);
     const samp=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
     if((this.f=(this.f||0)+1)%20===1)this.tb=exEl.hidden?null:exEl.getBoundingClientRect();const tb=this.tb;
     const at=this.atlas,cwp=this.cwp,chp=this.chp,acols=this.acols,cum=this.cum,gi=this.gi,kd=this.kd,adv=this.adv,N=this.N,L=this.L;
@@ -1702,19 +1702,19 @@ const mSketch={id:'sketch',name:'스케치',desc:'윤곽을 따라가는 연필�
   init(){const tw=Math.max(1,Math.round(W*DPR)),th=Math.max(1,Math.round(H*DPR));this.cv=mkCanvas(tw,th);this.clear();this.f=0;this.edges=[];},
   clear(){const c=this.cv.cx;c.setTransform(DPR,0,0,DPR,0,0);c.fillStyle='#f3f1ec';c.fillRect(0,0,W,H);},
   draw(t){const c=this.cv.cx,w=A.w,h=A.h,p=A.p;this.f++;c.setTransform(DPR,0,0,DPR,0,0);
-    c.fillStyle='rgba(243,241,236,'+lerp(0.22,0.07,(S.trail-1)/9)+')';c.fillRect(0,0,W,H);c.lineCap='round';
+    c.fillStyle='rgba(243,241,236,'+ez(lerp(0.26,0.1,(S.trail-1)/9))+')';c.fillRect(0,0,W,H);c.lineCap='round';
     if(A.presN===0){ctx.drawImage(this.cv,0,0,W,H);return;}
     // 1) outline: edge cells with the outline direction from the mask gradient
     const edges=this.edges;edges.length=0;
     for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;const v=p[i];if(v<0.3||v>0.75)continue;const gx=p[i+1]-p[i-1],gy=p[i+w]-p[i-w];const gm=Math.hypot(gx,gy);if(gm<0.15)continue;edges.push(x,y,gx/gm,gy/gm);}
-    const ne=edges.length/4,strokes=Math.min(ne,isTouch?70:140);
+    const ne=edges.length/4,strokes=Math.min(ne,Math.round((isTouch?70:140)*Math.min(FR,3)));
     for(let k=0;k<strokes;k++){const j=((Math.random()*ne)|0)*4;const x=(edges[j]+0.5)*A.sx,y=(edges[j+1]+0.5)*A.sy,nx=edges[j+2],ny=edges[j+3];
       // tangent to the edge, a slightly overshooting stroke drawn 1-2 times like a searching pencil line
       const tx=-ny,ty=nx,len=A.sx*(3+Math.random()*5),pass=1+(Math.random()<0.4?1:0);
       for(let q=0;q<pass;q++){const off=(Math.random()-0.5)*A.sx*0.6;const jx=nx*off,jy=ny*off;const x1=x-tx*len*0.5+jx,y1=y-ty*len*0.5+jy,x2=x+tx*len*0.5+jx,y2=y+ty*len*0.5+jy;
         const bend=(Math.random()-0.5)*len*0.12;c.strokeStyle='rgba(24,24,26,'+(0.5+Math.random()*0.4)+')';c.lineWidth=0.9+Math.random()*1.4;c.beginPath();c.moveTo(x1,y1);c.quadraticCurveTo((x1+x2)/2+nx*bend,(y1+y2)/2+ny*bend,x2,y2);c.stroke();}}
     // 2) hatching inside: denser and darker near the edge (where the mask is softer), lighter in the middle
-    const n=isTouch?70:150,base=-1.05,L=A.sx*(isTouch?5:7);
+    const n=Math.round((isTouch?70:150)*Math.min(FR,3)),base=-1.05,L=A.sx*(isTouch?5:7);
     for(let k=0;k<n;k++){const ci=A.pres[(Math.random()*A.presN)|0];const v=p[ci];const near=1-Math.min(1,(v-0.5)/0.45);if(Math.random()>0.35+near*0.65)continue;
       const x=((ci%w)+Math.random())*A.sx,y=(((ci/w)|0)+Math.random())*A.sy,e=A.e[ci];
       let ang=base+(Math.random()-0.5)*0.3;if(e>0.2&&Math.random()<0.5)ang=Math.atan2(A.v[ci],A.u[ci])+(Math.random()-0.5)*0.3;
@@ -2034,8 +2034,8 @@ const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 
     const seen={};let k=0;PEOPLE.list.forEach(q=>{if(k>=15)return;const tr=q.tr,L=tr?(tr.pose||rigFromSilhouette(tr)):null,g=this.geo(q,L);if(!g)return;k++;seen[q.key]=1;
       let s=this.st[q.key];if(!s)s=this.st[q.key]={moon:(this.cnt++)%2===1,c:g.c.slice(),R:g.R,rel:g.tips.map(v=>v.slice()),lean:g.lean,a:0,ph:Math.random()*TAU};
       const e=Math.min(1,dt*13),ec=Math.min(1,dt*16);s.c[0]+=(g.c[0]-s.c[0])*ec;s.c[1]+=(g.c[1]-s.c[1])*ec;s.R+=(g.R-s.R)*e;s.lean+=(g.lean-s.lean)*Math.min(1,dt*4);
-      for(let i=0;i<5;i++){s.rel[i][0]+=(g.tips[i][0]-s.rel[i][0])*e;s.rel[i][1]+=(g.tips[i][1]-s.rel[i][1])*e;}s.a=Math.min(1,s.a+dt*1.8);s.seen=now;});
-    for(const key in this.st){if(seen[key])continue;const s=this.st[key];s.a-=dt*1.1;if(s.a<=0)delete this.st[key];}
+      for(let i=0;i<5;i++){s.rel[i][0]+=(g.tips[i][0]-s.rel[i][0])*e;s.rel[i][1]+=(g.tips[i][1]-s.rel[i][1])*e;}s.a=Math.min(1,s.a+dt*3);s.seen=now;});
+    for(const key in this.st){if(seen[key])continue;const s=this.st[key];s.a-=dt*2.6;if(s.a<=0)delete this.st[key];}
     this.alone=k?0:this.alone+dt;},
   drawGround(x,t,dt){x.setTransform(this.lw/W,0,0,this.lh/H,0,0);let g=x.createLinearGradient(0,0,W,H);g.addColorStop(0,'#cddff3');g.addColorStop(0.5,'#eef0d4');g.addColorStop(1,'#f5eaa6');x.fillStyle=g;x.fillRect(0,0,W,H);
     const pc=[];for(const k in this.st){const s=this.st[k];if(s.a>0.05)pc.push([s.c[0],s.c[1],s.R*s.a]);}const M=Math.min(W,H),ek=Math.min(1,dt*1.2);
@@ -2259,7 +2259,7 @@ const mCari={id:'cari',name:'캐리커처',needVideo:true,HOLD:2.5,busy(){return
 /* 뜨개질: the whole screen is one forest-green stockinette fabric, finely knitted. Where a person stands, the very same stitches are
    worked in pink yarn (same gauge, same place, like colourwork in a sweater), with a little fuzz at the edge. Two colours only. As people
    move, each stitch passes from one yarn to the other, one leg after the other, so the shape glides through the fabric */
-const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 코가 사람이 선 자리만 분홍 털실로 바뀐다. 바탕과 같은 크기의 코라서 스웨터에 넣어 뜬 무늬처럼 보이고, 움직이면 무늬가 편물 위를 미끄러지듯 따라온다. 둘레에는 같은 코로 뜬 크고 작은 별 무늬가 여기저기 반짝이듯 나타났다 사라진다',
+const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 코가 사람이 선 자리만 분홍 털실로 바뀐다. 바탕과 같은 크기의 코라서 스웨터에 넣어 뜬 무늬처럼 보이고, 움직이면 무늬가 편물 위를 미끄러지듯 따라온다. 둘레에는 같은 코로 뜬 작은 십자 별이 여기저기서 커졌다 작아졌다 하며 반짝인다',
   BASE:'#2f5c38',YARN:['#ee9dc6'],
   shade(c,k){const h=typeof c==='string'?hex(c):c;return 'rgb('+h.map(v=>Math.round(k<=1?v*k:v+(255-v)*(k-1))).join(',')+')';},
   // one stitch: two plump leaning ovals of plied yarn meeting in a V, lit from the upper left, long enough to tuck under the row above
@@ -2294,23 +2294,19 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
     const hemR=Math.max(0,rows-7),hemY=this.oy+hemR*rh+rh*0.3;x.fillStyle='rgba(6,20,10,0.2)';for(let c=0;c<cols;c+=2)x.fillRect(c*cw,hemY,cw,H-hemY);x.fillStyle='rgba(6,20,10,0.16)';x.fillRect(0,hemY-rh*0.25,W,rh*0.3);
     const R=seeded(77);x.lineCap='round';x.strokeStyle=this.shade(B,1.5);for(let i=0;i<Math.round(W*H/2600);i++){const px=R()*W,py=R()*H,an=R()*TAU,l=cw*(0.2+R()*0.5);x.globalAlpha=0.08+R()*0.14;x.lineWidth=0.5+R()*0.5;x.beginPath();x.moveTo(px,py);x.quadraticCurveTo(px+Math.cos(an)*l*0.5+(R()-0.5)*l*0.6,py+Math.sin(an)*l*0.5+(R()-0.5)*l*0.6,px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
     x.globalAlpha=1;const g=x.createRadialGradient(W*0.45,H*0.42,Math.min(W,H)*0.25,W*0.5,H*0.5,Math.hypot(W,H)*0.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,10,4,0.42)');x.fillStyle=g;x.fillRect(0,0,W,H);},
-  // stars are knitted the same way as people: the very stitches of the fabric turn pink in the shape of a small star, the way star
-  // motifs are worked into a winter sweater. Five sizes, from a three-stitch sparkle to an eleven-stitch star
-  STARS:[['.#.','###','.#.'],['..#..','#.#.#','..#..','#####','..#..','#.#.#','..#..'],
-    ['...#...','...#...','.#.#.#.','...#...','#######','...#...','.#.#.#.','...#...','...#...'],
-    ['....#....','....#....','....#....','..#.#.#..','....#....','#########','....#....','..#.#.#..','....#....','....#....','....#....']],
-  // they come and go all over the fabric, many at a time, each on its own clock: a star is knitted outward from its middle, stays a
-  // while, and is taken back in from its tips. Slim rays one stitch wide (a little longer up and down, as stitches are wider than tall).
-  // Never on a person or touching another star
-  twinkle(dt,samp,SM){const cols=this.cols,rows=this.rows,cw=this.cw,rh=this.rh,oy=this.oy,St=this.stars,N=clamp(Math.round(cols*rows/950),5,12),Wt=[0.26,0.34,0.26,0.14];SM.fill(0);
-    while(St.length<N)St.push({on:false,wait:0.5+Math.random()*(St.length<3?2:9),c:0,r:0,k:0,g:0,age:0,life:0});
-    for(const o of St){if(!o.on){o.wait-=dt;if(o.wait>0)continue;let u=Math.random(),k=0;while(k<3&&u>Wt[k]){u-=Wt[k];k++;}const Pk=this.STARS[k],hr=(Pk.length-1)/2,hc=(Pk[0].length-1)/2;let ok=false,c=0,r=0;
-        for(let tr=0;tr<6&&!ok;tr++){c=Math.round(hc+1+Math.random()*(cols-2*hc-3));r=Math.round(hr+2+Math.random()*(rows-2*hr-6));const x=(c+0.5)*cw,y=oy+r*rh+rh*0.85,ex=(hc+1)*cw,ey=(hr+1)*rh;
-          ok=!(x<W*0.36&&y<H*0.16)&&samp(x,y)<0.08&&samp(x-ex,y)<0.08&&samp(x+ex,y)<0.08&&samp(x,y-ey)<0.08&&samp(x,y+ey)<0.08;if(ok)for(const p of St){if(!p.on)continue;const Pp=this.STARS[p.k];if(Math.abs(p.c-c)<(Pp[0].length+Pk[0].length)/2+2&&Math.abs(p.r-r)<(Pp.length+Pk.length)/2+2){ok=false;break;}}}
-        if(!ok){o.wait=0.3;continue;}o.on=true;o.c=c;o.r=r;o.k=k;o.g=0;o.age=0;o.out=false;o.life=4+Math.random()*5+k*0.8;}
-      const P2=this.STARS[o.k],hr=(P2.length-1)/2,hc=(P2[0].length-1)/2,gm=hr+1.5;o.age+=dt;if(!o.out&&(o.age>o.life||samp((o.c+0.5)*cw,oy+o.r*rh+rh*0.85)>0.3))o.out=true;o.g+=(o.out?-1:1)*dt*gm/(1.1+o.k*0.35);if(o.g>gm)o.g=gm;
-      if(o.out&&o.g<=0){o.on=false;o.wait=2+Math.random()*6;continue;}
-      for(let a=0;a<P2.length;a++)for(let b=0;b<P2[0].length;b++){if(P2[a][b]!=='#'||Math.hypot(a-hr,b-hc)>o.g)continue;const rr=o.r+a-hr,cc=o.c+b-hc;if(rr>=0&&rr<rows&&cc>=0&&cc<cols)SM[rr*cols+cc]=1;}}},
+  // stars are knitted the same way as people: the very stitches of the fabric turn pink in a small cross, three stitches across,
+  // which slowly swells to five stitches and sinks back to three, again and again: that is its twinkle. A few at a time, each on its
+  // own clock, knitted outward from the middle stitch and at the end taken back in. Never on a person or beside another star
+  twinkle(dt,samp,SM){const cols=this.cols,rows=this.rows,cw=this.cw,rh=this.rh,oy=this.oy,St=this.stars,N=clamp(Math.round(cols*rows/800),6,14);SM.fill(0);
+    while(St.length<N)St.push({on:false,wait:0.4+Math.random()*(St.length<4?2:8),c:0,r:0,g:0,age:0,life:0,ph:0,sp:1});
+    for(const o of St){if(!o.on){o.wait-=dt;if(o.wait>0)continue;let ok=false,c=0,r=0;
+        for(let tr=0;tr<6&&!ok;tr++){c=Math.round(3+Math.random()*(cols-7));r=Math.round(4+Math.random()*(rows-10));const x=(c+0.5)*cw,y=oy+r*rh+rh*0.85,ex=3.5*cw,ey=3.5*rh;
+          ok=!(x<W*0.36&&y<H*0.16)&&samp(x,y)<0.08&&samp(x-ex,y)<0.08&&samp(x+ex,y)<0.08&&samp(x,y-ey)<0.08&&samp(x,y+ey)<0.08;if(ok)for(const p of St)if(p.on&&Math.abs(p.c-c)<8&&Math.abs(p.r-r)<8){ok=false;break;}}
+        if(!ok){o.wait=0.3;continue;}o.on=true;o.c=c;o.r=r;o.g=0;o.age=0;o.out=false;o.life=6+Math.random()*8;o.ph=Math.random()*TAU;o.sp=1.1+Math.random()*0.9;}
+      o.age+=dt;if(!o.out&&(o.age>o.life||samp((o.c+0.5)*cw,oy+o.r*rh+rh*0.85)>0.3))o.out=true;
+      // the reach of the cross, in stitches from the middle: 1 is three across, 2 is five across
+      const want=o.out?-0.3:1.5+0.75*Math.sin(o.age*o.sp+o.ph);o.g+=clamp(want-o.g,-dt*1.6,dt*1.6);if(o.out&&o.g<=0){o.on=false;o.wait=1.5+Math.random()*5;continue;}
+      for(let a=-2;a<=2;a++){if(Math.abs(a)>o.g)continue;let rr=o.r+a,cc=o.c;if(rr>=0&&rr<rows)SM[rr*cols+cc]=1;rr=o.r;cc=o.c+a;if(cc>=0&&cc<cols)SM[rr*cols+cc]=1;}}},
   spr(ci,v){const k=ci*4+v;return this.sp[k]||(this.sp[k]=this.stitch(this.YARN[ci],this.cw,this.rh,this.q,31+k*13,false));},
   fzs(ci,v){const k=ci*4+v;return this.fz[k]||(this.fz[k]=this.fuzz(this.YARN[ci],this.cw,this.q,57+k*11));},
   draw(t,dt){dt=Math.min(dt||0.016,0.05);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.base,0,0,W,H);
