@@ -2282,7 +2282,7 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
       x.beginPath();x.moveTo(x0,y0);x.quadraticCurveTo(x0+Math.cos(an)*l*0.5-Math.sin(an)*bend,y0+Math.sin(an)*l*0.5+Math.cos(an)*bend,x0+Math.cos(an)*l,y0+Math.sin(an)*l);x.stroke();}
     return c;},
   init(){const q=this.q=Math.min(DPR,1.5),f=QF()>0.9?1:QF()>0.6?0.85:0.72,cols=this.cols=Math.round((isTouch?(W<H?48:80):112)*f),cw=this.cw=W/cols,rh=this.rh=cw*0.8;this.rows=Math.ceil(H/rh)+2;this.oy=-rh*0.9;
-    const n=cols*this.rows;this.k=new Float32Array(n);this.tg=new Uint8Array(n);this.an=new Uint8Array(n);this.sm=new Uint8Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
+    const n=cols*this.rows;this.k=new Float32Array(n);this.tg=new Uint8Array(n);this.an=new Uint8Array(n);this.sm=new Uint8Array(n);this.sl=new Uint8Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
     this.alone=0;this.stars=[];
     const key=[W,H,q,cols].join(',');if(this.key!==key){this.key=key;this.sp={};this.fz={};this.buildBase();
 }},
@@ -2302,14 +2302,14 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
   // they come and go all over the fabric, many at a time, each on its own clock: a star is knitted outward from its middle, stays a
   // while, and is taken back in from its tips. Slim rays one stitch wide (a little longer up and down, as stitches are wider than tall).
   // Never on a person or touching another star
-  twinkle(dt,samp,SM){const cols=this.cols,rows=this.rows,cw=this.cw,rh=this.rh,oy=this.oy,St=this.stars,N=clamp(Math.round(cols*rows/520),8,22),Wt=[0.3,0.34,0.24,0.12];SM.fill(0);
-    while(St.length<N)St.push({on:false,wait:Math.random()*(St.length<4?0.8:5),c:0,r:0,k:0,g:0,age:0,life:0});
+  twinkle(dt,samp,SM){const cols=this.cols,rows=this.rows,cw=this.cw,rh=this.rh,oy=this.oy,St=this.stars,N=clamp(Math.round(cols*rows/950),5,12),Wt=[0.26,0.34,0.26,0.14];SM.fill(0);
+    while(St.length<N)St.push({on:false,wait:0.5+Math.random()*(St.length<3?2:9),c:0,r:0,k:0,g:0,age:0,life:0});
     for(const o of St){if(!o.on){o.wait-=dt;if(o.wait>0)continue;let u=Math.random(),k=0;while(k<3&&u>Wt[k]){u-=Wt[k];k++;}const Pk=this.STARS[k],hr=(Pk.length-1)/2,hc=(Pk[0].length-1)/2;let ok=false,c=0,r=0;
         for(let tr=0;tr<6&&!ok;tr++){c=Math.round(hc+1+Math.random()*(cols-2*hc-3));r=Math.round(hr+2+Math.random()*(rows-2*hr-6));const x=(c+0.5)*cw,y=oy+r*rh+rh*0.85,ex=(hc+1)*cw,ey=(hr+1)*rh;
           ok=!(x<W*0.36&&y<H*0.16)&&samp(x,y)<0.08&&samp(x-ex,y)<0.08&&samp(x+ex,y)<0.08&&samp(x,y-ey)<0.08&&samp(x,y+ey)<0.08;if(ok)for(const p of St){if(!p.on)continue;const Pp=this.STARS[p.k];if(Math.abs(p.c-c)<(Pp[0].length+Pk[0].length)/2+2&&Math.abs(p.r-r)<(Pp.length+Pk.length)/2+2){ok=false;break;}}}
-        if(!ok){o.wait=0.3;continue;}o.on=true;o.c=c;o.r=r;o.k=k;o.g=0;o.age=0;o.out=false;o.life=1.6+Math.random()*4.2+k*0.5;}
-      const P2=this.STARS[o.k],hr=(P2.length-1)/2,hc=(P2[0].length-1)/2,gm=hr+1.5;o.age+=dt;if(!o.out&&(o.age>o.life||samp((o.c+0.5)*cw,oy+o.r*rh+rh*0.85)>0.3))o.out=true;o.g+=(o.out?-1:1)*dt*gm/0.34;if(o.g>gm)o.g=gm;
-      if(o.out&&o.g<=0){o.on=false;o.wait=0.5+Math.random()*3.5;continue;}
+        if(!ok){o.wait=0.3;continue;}o.on=true;o.c=c;o.r=r;o.k=k;o.g=0;o.age=0;o.out=false;o.life=4+Math.random()*5+k*0.8;}
+      const P2=this.STARS[o.k],hr=(P2.length-1)/2,hc=(P2[0].length-1)/2,gm=hr+1.5;o.age+=dt;if(!o.out&&(o.age>o.life||samp((o.c+0.5)*cw,oy+o.r*rh+rh*0.85)>0.3))o.out=true;o.g+=(o.out?-1:1)*dt*gm/(1.1+o.k*0.35);if(o.g>gm)o.g=gm;
+      if(o.out&&o.g<=0){o.on=false;o.wait=2+Math.random()*6;continue;}
       for(let a=0;a<P2.length;a++)for(let b=0;b<P2[0].length;b++){if(P2[a][b]!=='#'||Math.hypot(a-hr,b-hc)>o.g)continue;const rr=o.r+a-hr,cc=o.c+b-hc;if(rr>=0&&rr<rows&&cc>=0&&cc<cols)SM[rr*cols+cc]=1;}}},
   spr(ci,v){const k=ci*4+v;return this.sp[k]||(this.sp[k]=this.stitch(this.YARN[ci],this.cw,this.rh,this.q,31+k*13,false));},
   fzs(ci,v){const k=ci*4+v;return this.fz[k]||(this.fz[k]=this.fuzz(this.YARN[ci],this.cw,this.q,57+k*11));},
@@ -2318,10 +2318,10 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
     const samp=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
     // each stitch is one yarn or the other; while it changes, the new colour takes one leg and then the other, starting on the side the
     // pink knitting is on, so the shape glides through the fabric instead of appearing and vanishing
-    const SM=this.sm;this.twinkle(dt,samp,SM);const stp=dt/0.14;let any=0;
-    for(let r=0;r<rows;r++){const y=oy+r*rh+rh*0.85;for(let c=0;c<cols;c++){const i=r*cols+c,v=y<0||y>H?0:samp((c+0.5)*cw,y);if(v>0.5)TG[i]=1;else if(v<0.38)TG[i]=0;const tg=TG[i]|SM[i];if(TG[i])any++;
+    const SM=this.sm,SL=this.sl;this.twinkle(dt,samp,SM);const stp=dt/0.14,stpS=dt/0.5;let any=0;
+    for(let r=0;r<rows;r++){const y=oy+r*rh+rh*0.85;for(let c=0;c<cols;c++){const i=r*cols+c,v=y<0||y>H?0:samp((c+0.5)*cw,y);if(v>0.5)TG[i]=1;else if(v<0.38)TG[i]=0;const tg=TG[i]|SM[i];if(TG[i]){any++;SL[i]=0;}else if(SM[i])SL[i]=1;
         if(K[i]<=0){if(!tg)continue;AN[i]=c>0&&K[i-1]>0.5||!(c<cols-1&&K[i+1]>0.5)?0:1;}else if(K[i]>=1&&!tg)AN[i]=c>0&&K[i-1]>0.5||!(c<cols-1&&K[i+1]>0.5)?0:1;
-        K[i]=tg?Math.min(1,K[i]+stp):Math.max(0,K[i]-stp);}}
+        const sp2=SL[i]?stpS:stp;K[i]=tg?Math.min(1,K[i]+sp2):Math.max(0,K[i]-sp2);}}
     // the pink stitches over the green ones, each exactly on its own stitch: the dark between the legs, the stitches from the bottom row
     // up (each row lapping over the one below), and fuzz along the edge
     if(!this.dark)this.dark=this.shade(this.YARN[0],0.6);ctx.fillStyle=this.dark;const on=j=>K[j]>0.5;
