@@ -477,7 +477,7 @@ async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loadi
   catch(e){SEG.state='offline';}}
 const ML={f:-1,turn:''};
 function camOK(){return (source.kind==='camera'||source.kind==='file')&&video.videoWidth>0&&!EMBEDDED;}
-const POSE_MODES={detect:1,poem:1,aura:1,thermal:1,stack:1,balloon:1,bubble:1,croquis:1};
+const POSE_MODES={detect:1,poem:1,aura:1,thermal:1,stack:1,balloon:1,bubble:1,croquis:1,smoke:1};
 function poseNeeded(){const id=role==='sensor'?MC.remote:(mode?mode.id:'');return !id||!!POSE_MODES[id];}
 function poseIv(){const c=FACE.pcost||8;return poseNeeded()?Math.max(role==='sensor'?80:66,c*4.5):Math.max(260,c*14);}
 function objIv(){return clamp((FACE.ocost||20)*9,160,3000);}
@@ -737,40 +737,48 @@ smZero:`void main(){o=vec4(0.0);}`,
 // smoke as a fluid on the graphics chip. V holds the air (x,y: speed in cells a second; z: warmth, which is what makes it rise).
 // Carrying step: the air carries itself; a little of each cell's speed is shared with its neighbours (thickness of the air), which
 // keeps the flow smooth and slow like smoke in a still room rather than curly like ink in water
-smAdvV:`uniform sampler2D V;uniform vec2 rs;uniform float dt,damp,cool,up,visc;void main(){vec2 e=1.0/rs,v=texture(V,uv).xy;v.y-=up;vec2 q=uv-v*dt/rs;vec4 c=texture(V,q);
- vec2 av=(texture(V,q+vec2(e.x,0.0)).xy+texture(V,q-vec2(e.x,0.0)).xy+texture(V,q+vec2(0.0,e.y)).xy+texture(V,q-vec2(0.0,e.y)).xy)*0.25;o=vec4(mix(c.xy,av,visc)*damp,c.z*cool,1.0);}`,
-smForce:`uniform sampler2D V,M,MU,MV;uniform vec2 rs;uniform float dt,t,buoy,asp,gm,turb,ls;
+smAdvV:`uniform sampler2D V;uniform vec2 rs;uniform float dt,damp,cool,up,visc,stir;void main(){vec2 e=1.0/rs,v=texture(V,uv).xy;v.y-=up;vec2 q=uv-v*dt/rs;vec4 c=texture(V,q);
+ vec2 av=(texture(V,q+vec2(e.x,0.0)).xy+texture(V,q-vec2(e.x,0.0)).xy+texture(V,q+vec2(0.0,e.y)).xy+texture(V,q-vec2(0.0,e.y)).xy)*0.25;o=vec4(mix(c.xy,av,visc)*damp,c.z*cool,c.w*stir);}`,
+smCurl:`uniform sampler2D V;uniform vec2 rs;void main(){vec2 e=1.0/rs;float c=(texture(V,uv+vec2(e.x,0.0)).y-texture(V,uv-vec2(e.x,0.0)).y)-(texture(V,uv+vec2(0.0,e.y)).x-texture(V,uv-vec2(0.0,e.y)).x);o=vec4(c*0.5,0.0,0.0,1.0);}`,
+smForce:`uniform sampler2D V,M,MU,MV,C,E,K;uniform vec2 rs;uniform float dt,t,buoy,asp,gm,turb,ls;
 float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hs(i,1.0),hs(i+vec2(1.0,0.0),1.0),f.x),mix(hs(i+vec2(0.0,1.0),1.0),hs(i+vec2(1.0,1.0),1.0),f.x),f.y);}
 float pot(vec2 p){p+=vec2(ls*17.3,ls*5.1);return vn(p*2.6+vec2(0.0,t*0.2))+0.5*vn(p*5.5-vec2(t*0.16,t*0.3))+0.22*vn(p*12.0+vec2(t*0.3,-t*0.22));}
 void main(){vec2 e=1.0/rs;vec4 q=texture(V,uv);vec2 v=q.xy;float T=q.z;
  v.y-=buoy*T*dt; // warm air rises
  // the room is never quite still: slow wide eddies, different for each depth of smoke, stronger where the air is warm
- vec2 p=vec2(uv.x*asp,uv.y);float h=0.008,n0=pot(p);vec2 cn=vec2(pot(p+vec2(0.0,h))-n0,-(pot(p+vec2(h,0.0))-n0))/h;v+=cn*turb*dt*(0.12+min(1.0,T*6.0));
- // a body is a little warm, so what it is made of keeps leaking upward; inside it the air is held nearly still, so the smoke
- // there keeps the body's form; and whatever moves drags the air with it
- float m=texture(M,uv).r,bm=smoothstep(0.3,0.7,m);T+=max(0.0,0.034*bm-T)*min(1.0,dt*2.0);v*=1.0-bm*min(1.0,dt*2.6);
- vec2 mo=vec2(texture(MU,uv).r,texture(MV,uv).r);v=mix(v,mo*gm,clamp(length(mo)*1.4,0.0,1.0)*min(1.0,dt*9.0));
+ vec2 p=vec2(uv.x*asp,uv.y);float h=0.008,n0=pot(p);vec2 cn=vec2(pot(p+vec2(0.0,h))-n0,-(pot(p+vec2(h,0.0))-n0))/h;v+=cn*turb*dt*(0.2+min(1.0,T*9.0));
+ // behind a limb that swings, the air rolls up and keeps rolling: air that something has just stirred (and only that, so smoke
+ // that is merely rising stays smooth) is pushed round a little more wherever it is already turning
+ float c0=texture(C,uv).r,cl=abs(texture(C,uv-vec2(e.x,0.0)).r),cr=abs(texture(C,uv+vec2(e.x,0.0)).r),ct=abs(texture(C,uv-vec2(0.0,e.y)).r),cb=abs(texture(C,uv+vec2(0.0,e.y)).r);
+ vec2 g=vec2(cr-cl,cb-ct);g/=length(g)+1e-4;float st=q.w;v+=5.0*c0*vec2(g.y,-g.x)*dt*min(1.0,st);
+ // a body is a little warm (most along its bones), so what it is made of keeps leaking upward. Inside a body that is standing
+ // still the air is held nearly still, so the smoke there keeps the body's form; a part that moves lets go of its air
+ float m=texture(M,uv).r,bm=smoothstep(0.3,0.7,m),ee=smoothstep(0.15,0.5,texture(E,uv).r),kk=texture(K,uv).r;T+=max(0.0,0.085*bm*(0.82+0.36*kk)-T)*min(1.0,dt*2.0);v*=1.0-bm*(1.0-0.85*ee)*min(1.0,dt*1.7);
+ // and whatever moves drags the air with it
+ vec2 mo=vec2(texture(MU,uv).r,texture(MV,uv).r);float mv=clamp(length(mo)*1.4,0.0,1.0);v=mix(v,mo*gm,mv*min(1.0,dt*13.0));st=min(1.5,st+smoothstep(0.3,0.75,mv)*dt*6.0);
  if(uv.y>1.0-1.5*e.y)v=vec2(0.0);
- o=vec4(v,min(T,2.0),1.0);}`,
+ o=vec4(v,min(T,2.0),st);}`,
 smDiv:`uniform sampler2D V;uniform vec2 rs;void main(){vec2 e=1.0/rs;float d=0.5*((texture(V,uv+vec2(e.x,0.0)).x-texture(V,uv-vec2(e.x,0.0)).x)+(texture(V,uv+vec2(0.0,e.y)).y-texture(V,uv-vec2(0.0,e.y)).y));o=vec4(d,0.0,0.0,1.0);}`,
 smJac:`uniform sampler2D P,Dv;uniform vec2 rs;void main(){vec2 e=1.0/rs;float p=(texture(P,uv+vec2(e.x,0.0)).r+texture(P,uv-vec2(e.x,0.0)).r+texture(P,uv+vec2(0.0,e.y)).r+texture(P,uv-vec2(0.0,e.y)).r-texture(Dv,uv).r)*0.25;o=vec4(p,0.0,0.0,1.0);}`,
 smGrad:`uniform sampler2D V,P;uniform vec2 rs;void main(){vec2 e=1.0/rs;vec4 q=texture(V,uv);q.xy-=0.5*vec2(texture(P,uv+vec2(e.x,0.0)).r-texture(P,uv-vec2(e.x,0.0)).r,texture(P,uv+vec2(0.0,e.y)).r-texture(P,uv-vec2(0.0,e.y)).r);o=q;}`,
 // the smoke itself, finer than the air, in two depths (r: nearer, g: further), each carried by its own air with a sharp (cubic)
 // lookup so thin wisps stay thin. A person is made of it: it condenses wherever a body is, denser in drifting patches, never
 // evenly, and nowhere else; what leaves the body is on its own
-smAdvD:`uniform sampler2D D,Va,Vb,M;uniform vec2 rs,rd;uniform float dt,fade,t,asp,bd,br,be,up;
+smAdvD:`uniform sampler2D D,Va,Vb,M,K,G;uniform vec2 rs,rd;uniform float dt,fade,t,asp,bd,br,be,up;
 float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hs(i,1.0),hs(i+vec2(1.0,0.0),1.0),f.x),mix(hs(i+vec2(0.0,1.0),1.0),hs(i+vec2(1.0,1.0),1.0),f.x),f.y);}
 vec2 cub(vec2 q){vec2 sp=q*rd,tp=floor(sp-0.5)+0.5,f=sp-tp,w0=f*(-0.5+f*(1.0-0.5*f)),w1=1.0+f*f*(-2.5+1.5*f),w2=f*(0.5+f*(2.0-1.5*f)),w3=f*f*(-0.5+0.5*f),w12=w1+w2,o12=w2/w12,t0=(tp-1.0)/rd,t3=(tp+2.0)/rd,t12=(tp+o12)/rd;
  vec2 r=texture(D,vec2(t0.x,t0.y)).rg*w0.x*w0.y+texture(D,vec2(t12.x,t0.y)).rg*w12.x*w0.y+texture(D,vec2(t3.x,t0.y)).rg*w3.x*w0.y+texture(D,vec2(t0.x,t12.y)).rg*w0.x*w12.y+texture(D,vec2(t12.x,t12.y)).rg*w12.x*w12.y+texture(D,vec2(t3.x,t12.y)).rg*w3.x*w12.y+texture(D,vec2(t0.x,t3.y)).rg*w0.x*w3.y+texture(D,vec2(t12.x,t3.y)).rg*w12.x*w3.y+texture(D,vec2(t3.x,t3.y)).rg*w3.x*w3.y;
  vec2 a=texture(D,tp/rd).rg,b=texture(D,(tp+vec2(1.0,0.0))/rd).rg,c=texture(D,(tp+vec2(0.0,1.0))/rd).rg,d=texture(D,(tp+1.0)/rd).rg;return clamp(r,min(min(a,b),min(c,d)),max(max(a,b),max(c,d)));}
-float form(float d,vec2 q,float body,float edge,float low){
+float form(float d,vec2 q,float body,float edge,float low,float kk,float gg){
  float n=vn(q*3.4+vec2(t*0.1,t*0.34))*0.46+vn(q*7.6-vec2(t*0.15,-t*0.5))*0.28+vn(q*17.0+vec2(0.0,t*0.8))*0.16+vn(vec2(q.x*46.0,q.y*20.0)+vec2(t*0.2,t*1.1))*0.1;
  float env=0.55+0.45*smoothstep(0.3,0.65,vn(q*1.2+vec2(t*0.09,-t*0.06)));
- float tg=body*(0.16+0.84*smoothstep(0.3,0.68,n))*bd*env*low;d+=max(0.0,tg-d)*min(1.0,dt*br);
- return d+edge*smoothstep(0.4,0.7,vn(q*12.0+vec2(t*0.3,-t*0.25)))*be*dt*low;}
+ // a thin veil over the whole figure, and a dense heart along the head, the trunk and each limb, so the body reads as a body
+ float veil=body*(0.08+0.36*smoothstep(0.3,0.68,n)),core=body*kk*(0.34+0.9*smoothstep(0.28,0.7,n));
+ float tg=max(veil,core)*bd*env*low*mix(0.38,1.0,gg);d+=max(0.0,tg-d)*min(1.0,dt*br);
+ return d+edge*smoothstep(0.4,0.7,vn(q*12.0+vec2(t*0.3,-t*0.25)))*be*dt*low*(0.4+0.6*gg);}
 void main(){vec2 va=texture(Va,uv).xy,vb=texture(Vb,uv).xy;va.y-=up;vb.y-=up;float dr=cub(uv-va*dt/rs).r*fade,dg=cub(uv-vb*dt/rs).g*fade;
  float m=texture(M,uv).r,body=smoothstep(0.4,0.6,m),edge=m*(1.0-m)*4.0,low=smoothstep(1.0,0.97,uv.y);vec2 q=vec2(uv.x*asp,uv.y);
- dr=form(dr,q,body,edge,low);dg=form(dg,q+vec2(31.7,12.3),body,edge,low);
+ float kk=texture(K,uv).r,gg=texture(G,uv).r;dr=form(dr,q,body,edge,low,kk,gg);dg=form(dg,q+vec2(31.7,12.3),body,edge,low,kk,gg);
  o=vec4(max(dr,0.0),max(dg,0.0),0.0,1.0);}`,
 // a quarter-size copy of the smoke, each point the average of sixteen
 smDown:`uniform sampler2D D;uniform vec2 rd;void main(){vec2 e=1.0/rd;o=(texture(D,uv+e*vec2(-1.0,-1.0))+texture(D,uv+e*vec2(1.0,-1.0))+texture(D,uv+e*vec2(-1.0,1.0))+texture(D,uv+e*vec2(1.0,1.0)))*0.25;}`,
@@ -778,20 +786,24 @@ smDown:`uniform sampler2D D;uniform vec2 rd;void main(){vec2 e=1.0/rd;o=(texture
 // smoke starts as clear threads and ends as a soft haze before it is gone, as it does in air
 smHaze:`uniform sampler2D H,B,Va,Vb;uniform vec2 rs,rh;uniform float dt,fade,feed,up,spread;void main(){vec2 v=(texture(Va,uv).xy+texture(Vb,uv).xy)*0.5;v.y-=up;vec2 q=uv-v*dt/rs,e=1.0/rh;
  float c=texture(H,q).r,nb=(texture(H,q+vec2(e.x,0.0)).r+texture(H,q-vec2(e.x,0.0)).r+texture(H,q+vec2(0.0,e.y)).r+texture(H,q-vec2(0.0,e.y)).r)*0.25;vec4 b=texture(B,uv);o=vec4(mix(c,nb,spread)*fade+(b.r+b.g)*feed,0.0,0.0,1.0);}`,
-// how it is seen. Light comes from the upper left: smoke with more smoke between it and the lamp is in shadow, which is what
-// gives a cloud its body; light also scatters about inside, so dense smoke has a soft glow round it. Thin smoke is bluish, thick
-// smoke white. The further depth is a little out of focus
-smOut:`uniform sampler2D D,B,H;uniform float seed;
+// how it is seen. The lamp is up and to the left: from every point the picture is walked toward it through the smoke, and the
+// more smoke lies in the way the deeper that point is in shadow (warm white where the light gets in, a cool dark blue where it
+// does not), which is what gives a cloud its body. A second, weaker light stands behind on the right and only catches the thin
+// edges turned toward it. Light also scatters about inside, so dense smoke has a faint glow round it. The further depth is a
+// little out of focus
+smOut:`uniform sampler2D D,B,H;uniform float seed,asp;
+float dn(vec2 p){vec4 s=texture(B,p);return (s.r+s.g)*0.6+texture(H,p).r*0.35;}
 void main(){vec4 d=texture(D,uv),b=texture(B,uv);float hz=texture(H,uv).r,f=d.r,bk=mix(d.g,b.g,0.4);
  float tau=f*1.05+bk*0.7+hz*0.6,a=1.0-exp(-tau);
- vec2 L=vec2(-0.02,-0.03);vec4 s1=texture(B,uv+L),s2=texture(B,uv+L*2.5);float sh=(s1.r+s1.g)*0.55+(s2.r+s2.g)*0.45+texture(H,uv+L*2.0).r*0.4,here=(b.r+b.g)*0.9+hz*0.4;
- float lit=mix(0.52,1.0,exp(-max(0.0,sh)*0.85))*(1.0+0.35*clamp(here-sh,-1.0,1.0));
- float glow=(b.r+b.g)*0.09+hz*0.05;
- vec3 thin=vec3(0.55,0.69,1.0),thick=vec3(1.0,0.97,0.93);
- vec3 col=mix(thin,thick,smoothstep(0.05,0.85,a))*a*lit+thin*glow*(1.0-a)*0.6;
- col*=mix(1.1,0.84,clamp(uv.x*0.55+uv.y*0.5,0.0,1.0));
+ vec2 L=vec2(-0.0125/asp*1.78,-0.02);float od=0.0,st=1.0;for(int i=0;i<6;i++){od+=dn(uv+L*st)*st*0.075;st*=1.5;}
+ float sun=exp(-od*1.05);
+ vec2 e=vec2(0.007/asp*1.78,0.007),g=vec2(dn(uv+vec2(e.x,0.0))-dn(uv-vec2(e.x,0.0)),dn(uv+vec2(0.0,e.y))-dn(uv-vec2(0.0,e.y)));
+ float rim=clamp(length(g)*2.6,0.0,1.0)*clamp(dot(g/(length(g)+1e-4),vec2(-0.76,0.65))*0.6+0.45,0.0,1.0)*(1.0-a)*min(1.0,tau*2.6);
+ vec3 lit=vec3(1.0,0.965,0.915),shade=vec3(0.31,0.37,0.5),tint=mix(vec3(0.7,0.81,1.0),vec3(1.0),smoothstep(0.05,0.8,a));
+ vec3 col=mix(shade,lit,sun)*tint*a+vec3(0.84,0.92,1.0)*rim*0.6+vec3(0.55,0.69,1.0)*((b.r+b.g)*0.07+hz*0.04)*(1.0-a)*0.6;
  vec2 c=uv-vec2(0.5,0.6);vec3 bg=vec3(0.012,0.015,0.026)*max(0.0,1.0-dot(c,c)*1.5);
  col=bg+col+(fract(52.9829189*fract(dot(gl_FragCoord.xy+seed*7.3,vec2(0.06711056,0.00583715))))-0.5)*0.004;o=vec4(col,1.0);}`,
+
 
 
 thermalT:`uniform sampler2D P,PT;uniform highp sampler2D SG,PR;uniform int nS;uniform vec2 scr;uniform float tt,usePT;
@@ -2136,12 +2148,17 @@ const mMosaic={id:'mosaic',name:'모자이크 타일',desc:'상아색 돌 타일
         if(o>=1){let gl=Math.sin((px+py*0.6)*0.011-gt);gl=gl>0.86?(gl-0.86)/0.14*0.3:0;if(this.gold[i])gl+=0.16+0.16*Math.sin(t*2.1+i);if(gl>0.02){ctx.fillStyle='rgba(255,255,255,'+gl.toFixed(3)+')';ctx.fillRect(px+ts*0.08,py+ts*0.08,ts*0.84,ts*0.84);ctx.fillStyle=this.GROUT;}}}}}};
 /* 연기: people made of smoke, against black, computed as a real fluid. The air is a grid of speeds and warmth on the graphics chip
    (it carries itself, warm air rises, and a pressure step keeps it from piling up or thinning out), kept twice over for two depths
-   of smoke that move differently, which is most of what makes it look like a volume instead of a flat stain. Smoke condenses only
-   where a body is, unevenly, and the air inside a body is held nearly still so it keeps the body's form; what leaks from the edges
-   rises as sharp wisps, and as it ages it is handed over to a coarse soft picture that spreads, so it ends as haze and is gone in
-   a few seconds. Light comes from one side and smoke shadows smoke. Where nobody is, there is nothing.
+   of smoke that move differently, which is most of what makes it look like a volume instead of a flat stain.
+   Smoke condenses only where a body is: a thin veil over the whole figure and a dense heart along the head, the trunk and each
+   limb (from the skeleton), so the figure reads as a body down to its hands. The air inside a body that stands still is held
+   nearly still so it keeps its form; what leaks from the edges rises as sharp wisps, and as it ages it is handed over to a coarse
+   soft picture that spreads, so it ends as haze and is gone in a few seconds.
+   Movement: a part that moves lets go of its air and drags it along, the air it has stirred keeps rolling behind it for a second
+   or two, and the part itself thins out; once the body is still again it fills back in from the feet upward.
+   Light: a lamp up and to the left. Smoke shadows smoke (a raised arm shades the chest), thin edges toward a second light behind
+   catch a rim. Where nobody is, there is nothing.
    Where the chip cannot do this, the older drawing of sheets of threads is used instead */
-const mSmoke={id:'smoke',name:'연기',desc:'사람이 연기로 이루어져 있다. 검은 바탕에서, 몸이 있는 자리에만 연기가 맺혀 사람의 형체를 이루고, 가장자리에서 풀려 위로 오르며 옅은 연무가 되어 사라진다. 움직이면 연기가 뒤로 끌리고 휘돌며, 사람이 없는 곳에는 연기도 없다',hint:'앞에 서면 연기로 된 사람이 됩니다',
+const mSmoke={id:'smoke',name:'연기',desc:'사람이 연기로 이루어져 있다. 검은 바탕에서, 몸이 있는 자리에만 연기가 맺히는데 머리·몸통·팔·다리의 뼈대를 따라 가장 짙어서 손끝까지 형체가 읽힌다. 왼쪽 위에서 빛이 비쳐 연기가 연기에 그늘을 드리운다. 움직이면 그 부분이 옅어지며 뒤로 소용돌이가 끌리고, 멈추면 발끝부터 다시 차오른다. 사람이 없는 곳에는 연기도 없다',hint:'앞에 서면 연기로 된 사람이 됩니다',
   init(){this.glReset=true;const f=QF()>0.9?1:QF()>0.6?0.8:0.62,m=Math.min(W,H);this.M=Math.round((isTouch?24:34)*f);this.NS=6;this.LP=this.NS*this.M;this.K=Math.round(12*(f<0.7?0.84:1));this.SRC=W<H?2:3;this.L=this.LP+this.SRC*this.K;this.N=Math.round((isTouch?42:56)*(f<0.7?0.85:1));this.EV=0.1;this.sub=f>0.9?2:1;
     const L=this.L,N=this.N;for(const k of ['X','Y','Z','CX'])this[k]=new Float32Array(L*N);this.V=new Uint8Array(L*N);this.T=new Float32Array(N).fill(-1e9);this.head=0;this.acc=0;
     this.rx=new Float32Array(L);this.ry=new Float32Array(L);this.rz=new Float32Array(L);this.on=new Uint8Array(L);this.cx=new Float32Array(L);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;this.slots=[];for(let k=0;k<this.NS;k++)this.slots.push({on:false,xl:0,xr:0});
@@ -2159,21 +2176,37 @@ const mSmoke={id:'smoke',name:'연기',desc:'사람이 연기로 이루어져 �
           for(let y=th+4;y>=-4;y-=8){const cx0=x0+ox+cxAt(y),ww=wAt(y);pl.lineTo(cx0+ww,y);if(y>=th+4)e2.moveTo(cx0+ww,y);else e2.lineTo(cx0+ww,y);}pl.closePath();
           x.fillStyle='rgba(150,178,235,'+(0.05*br).toFixed(3)+')';x.fill(pl);x.strokeStyle='rgba(220,234,255,'+(0.2*br).toFixed(3)+')';x.lineWidth=0.9;x.stroke(e1);x.strokeStyle='rgba(220,234,255,'+(0.12*br).toFixed(3)+')';x.stroke(e2);}}}
     this.AL=[];for(let k=0;k<30;k++)this.AL.push(0.012*Math.pow(1.16,k));},
+  // what the chip is told about the people besides their outline (two small maps, one value for each place on the grid):
+  // K, where their bones run: 1 down the middle of the head, the trunk and each limb, falling away to the sides. The smoke gathers
+  //    thickest there. (People the pose model does not see get an even value, and come out as a plain cloud.)
+  // G, how far each place has filled: it empties quickly wherever the body moves, and fills again once the body has been still for
+  //    a moment, the lowest places first and the highest last, so a figure that stops rises out of its own feet
+  body(dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,isx=1/A.sx,isy=1/A.sy;if(!this.K||this.K.length!==n){this.K=new Float32Array(n);this.Kt=new Float32Array(n);this.G=new Float32Array(n);this.stl=new Float32Array(n);this.cov=new Uint8Array(n);}
+    const K=this.K,Kt=this.Kt,G=this.G,stl=this.stl,cov=this.cov,e=A.e;if((this.bf=(this.bf||0)+1)%2===0)TR.update();Kt.fill(0);cov.fill(0);
+    for(const tr of TR.tracks){if(TR.f-tr.seen>2)continue;const pp=mCroquis.partsOf(tr);if(!pp)continue;
+      const ex=tr.w*0.12+A.sx*2,ey=tr.h*0.12+A.sy*2,x0=clamp(((tr.x-ex)*isx)|0,0,w-1),x1=clamp(((tr.x+tr.w+ex)*isx)|0,0,w-1),y0=clamp(((tr.y-ey)*isy)|0,0,h-1),y1=clamp(((tr.y+tr.h+ey)*isy)|0,0,h-1);
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(pb[i]<=0.2)continue;cov[i]=1;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let best=Kt[i];
+        for(const q of pp.S){const ax=q[1],ay=q[2],dx=q[3]-ax,dy=q[4]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const e1=px-ax-dx*u,e2=py-ay-dy*u,rc=q[5]*(q[0]===0?0.9:q[0]===1?0.7:0.75),v=Math.exp(-(e1*e1+e2*e2)/(rc*rc)*1.15);if(v>best)best=v;}Kt[i]=best;}}
+    const kk=ez(0.45),up=1-Math.exp(-dt/0.28),dn=1-Math.exp(-dt/0.1);
+    for(let x=0;x<w;x++){let bot=-1;for(let y=h-1;y>=0;y--){const i=y*w+x,on=pb[i]>0.5;if(on&&bot<0)bot=y;if(!on&&pb[i]<0.2)bot=bot>=0&&y<bot-2?-1:bot; // (a new body higher up the column starts its own count)
+        const kt=cov[i]?Kt[i]:(pb[i]>0.3?0.7:0);K[i]+=(kt-K[i])*kk;
+        if(on){if(e[i]<0.45)stl[i]=Math.min(4,stl[i]+dt);else stl[i]=Math.max(0,stl[i]-dt*(e[i]>0.7?6:2));if(bot<0)bot=y;const tg=stl[i]>(bot-y)/h*1.7+0.12?1:0;G[i]+=(tg-G[i])*(tg>G[i]?up:dn);}else{stl[i]=0;G[i]+=(0-G[i])*dn;}}}},
   gl(t,dt){if(this.noGL||!GL.on()||!GL.floats())return false;try{const w=A.w,h=A.h,lv=PERF.lv,low=lv>=1||isTouch,two=lv===0,SH=lv>=2?112:low?144:176,SW=Math.max(16,Math.round(SH*W/H)),DH=lv>=2?380:low?500:640,DW=Math.max(16,Math.round(DH*W/H)),BW=Math.max(8,DW>>2),BH=Math.max(8,DH>>2),HW=Math.max(8,Math.round(DW/3)),HH=Math.max(8,Math.round(DH/3)),F='rgba16f',rs=[SW,SH],rd=[DW,DH],asp=W/H;
-      if(this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}this.pb.set(A.p);blur3(this.pb,this.tmp,w,h);GL.up('smM',this.pb,w,h);GL.up('smU',A.u,w,h,'r16f');GL.up('smW',A.v,w,h,'r16f');
-      const key=SW+'x'+DW+'x'+H+two;if(this.glKey!==key||this.glReset){this.glKey=key;this.glReset=false;this.vi=[0,0];this.pi=[0,0];this.di=0;this.hi=0;for(const [nm,ww,hh] of [['smVa0',SW,SH],['smVa1',SW,SH],['smVb0',SW,SH],['smVb1',SW,SH],['smPa0',SW,SH],['smPa1',SW,SH],['smPb0',SW,SH],['smPb1',SW,SH],['smD0',DW,DH],['smD1',DW,DH],['smDv',SW,SH],['smB',BW,BH],['smH0',HW,HH],['smH1',HW,HH]])GL.run('smZero',GLSRC.smZero,nm,ww,hh,null,null,F);}
+      if(this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}this.pb.set(A.p);blur3(this.pb,this.tmp,w,h);GL.up('smM',this.pb,w,h);GL.up('smU',A.u,w,h,'r16f');GL.up('smW',A.v,w,h,'r16f');this.body(dt);GL.up('smK',this.K,w,h);GL.up('smG',this.G,w,h);GL.up('smE',A.e,w,h);
+      const key=SW+'x'+DW+'x'+H+two;if(this.glKey!==key||this.glReset){this.glKey=key;this.glReset=false;this.vi=[0,0];this.pi=[0,0];this.di=0;this.hi=0;for(const [nm,ww,hh] of [['smVa0',SW,SH],['smVa1',SW,SH],['smVb0',SW,SH],['smVb1',SW,SH],['smPa0',SW,SH],['smPa1',SW,SH],['smPb0',SW,SH],['smPb1',SW,SH],['smD0',DW,DH],['smD1',DW,DH],['smDv',SW,SH],['smC',SW,SH],['smB',BW,BH],['smH0',HW,HH],['smH1',HW,HH]])GL.run('smZero',GLSRC.smZero,nm,ww,hh,null,null,F);}
       const d=Math.min(dt,1/28),up=SH*0.03;
       // the air, once for each depth of smoke (one air for both on slower machines)
       for(let L=0;L<(two?2:1);L++){const c='ab'[L],V=()=>'smV'+c+this.vi[L],V2=()=>'smV'+c+(1-this.vi[L]);
-        GL.run('smAdvV',GLSRC.smAdvV,V2(),SW,SH,{rs,dt:d,damp:Math.exp(-d*0.45),cool:Math.exp(-d/3.2),up,visc:0.12},{V:V()},F);this.vi[L]=1-this.vi[L];
-        GL.run('smForce',GLSRC.smForce,V2(),SW,SH,{rs,dt:d,t,buoy:SH*0.5,asp,gm:SW/w*46,turb:SH*0.012,ls:L},{V:V(),M:'smM',MU:'smU',MV:'smW'},F);this.vi[L]=1-this.vi[L];
+        GL.run('smAdvV',GLSRC.smAdvV,V2(),SW,SH,{rs,dt:d,damp:Math.exp(-d*0.45),cool:Math.exp(-d/3.2),up,visc:0.12,stir:Math.exp(-d/1.3)},{V:V()},F);this.vi[L]=1-this.vi[L];
+        GL.run('smCurl',GLSRC.smCurl,'smC',SW,SH,{rs},{V:V()},F);
+        GL.run('smForce',GLSRC.smForce,V2(),SW,SH,{rs,dt:d,t,buoy:SH*0.5,asp,gm:SW/w*46,turb:SH*0.017,ls:L},{V:V(),M:'smM',MU:'smU',MV:'smW',C:'smC',E:'smE',K:'smK'},F);this.vi[L]=1-this.vi[L];
         GL.run('smDiv',GLSRC.smDiv,'smDv',SW,SH,{rs},{V:V()},F);for(let k=0;k<(lv>=2?12:18);k++){GL.run('smJac',GLSRC.smJac,'smP'+c+(1-this.pi[L]),SW,SH,{rs},{P:'smP'+c+this.pi[L],Dv:'smDv'},F);this.pi[L]=1-this.pi[L];}
         GL.run('smGrad',GLSRC.smGrad,V2(),SW,SH,{rs},{V:V(),P:'smP'+c+this.pi[L]},F);this.vi[L]=1-this.vi[L];}
-      const Va='smVa'+this.vi[0],Vb=two?'smVb'+this.vi[1]:Va,fd=Math.exp(-d/1.7);
-      GL.run('smAdvD',GLSRC.smAdvD,'smD'+(1-this.di),DW,DH,{rs,rd,dt:d,fade:fd,t,asp,up,bd:0.85,br:3.0,be:1.1},{D:'smD'+this.di,Va,Vb,M:'smM'},F);this.di=1-this.di;
+      const Va='smVa'+this.vi[0],Vb=two?'smVb'+this.vi[1]:Va,fd=Math.exp(-d/2.1);
+      GL.run('smAdvD',GLSRC.smAdvD,'smD'+(1-this.di),DW,DH,{rs,rd,dt:d,fade:fd,t,asp,up,bd:0.85,br:3.0,be:1.1},{D:'smD'+this.di,Va,Vb,M:'smM',K:'smK',G:'smG'},F);this.di=1-this.di;
       GL.run('smDown',GLSRC.smDown,'smB',BW,BH,{rd},{D:'smD'+this.di},F);
       GL.run('smHaze',GLSRC.smHaze,'smH'+(1-this.hi),HW,HH,{rs,rh:[HW,HH],dt:d,fade:Math.exp(-d/2.8),feed:(1-fd)*0.42,up,spread:Math.min(0.5,d*24)},{H:'smH'+this.hi,B:'smB',Va,Vb},F);this.hi=1-this.hi;
-      const sz=GL.size();GL.run('smOut',GLSRC.smOut,null,sz[0],sz[1],{seed:(t*60%977)*0.618},{D:'smD'+this.di,B:'smB',H:'smH'+this.hi});GL.show();return true;}catch(e){this.noGL=true;console.warn('smoke gl',e);return false;}},
+      const sz=GL.size();GL.run('smOut',GLSRC.smOut,null,sz[0],sz[1],{seed:(t*60%977)*0.618,asp},{D:'smD'+this.di,B:'smB',H:'smH'+this.hi});GL.show();return true;}catch(e){this.noGL=true;console.warn('smoke gl',e);return false;}},
   draw(t,dt){if(!this.gl(t,dt))this.cpu(t,dt);},
   cpu(t,dt){const {L,N,LP,M,K,X,Y,Z,CX,V,T,rx,ry,rz,on,cx,C,AL,slots}=this,w=A.w,h=A.h,n=A.n,m=Math.min(W,H);if(this.pb.length!==n){this.pb=new Float32Array(n);this.tmp=new Float32Array(n);}const pb=this.pb,tmp=this.tmp;
     const bg=ctx.createRadialGradient(W/2,H*0.6,m*0.1,W/2,H*0.6,Math.hypot(W,H)*0.65);bg.addColorStop(0,'#070a13');bg.addColorStop(1,'#010103');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
