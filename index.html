@@ -2330,54 +2330,71 @@ const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 �
     const rest=reg(-8,m*0.17,null,0);for(let i=0;i<n;i++){if(pb[i]>0.35&&!lab[i])lab[i]=rest;const l=lab[i];if(l&&pb[i]>0.5){const p=parts[l],x=i%w,y=(i/w)|0;if(x<p.x0)p.x0=x;if(x>p.x1)p.x1=x;if(y<p.y0)p.y0=y;if(y>p.y1)p.y1=y;p.n++;}}
     const pbAt=(X,Y)=>{const gx=X*isx-0.5,gy=Y*isy-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
     // strokes are gathered by how dark and how thick they are, and painted together afterwards
-    const PT=[0,1,2].map(()=>[new Path2D(),new Path2D(),new Path2D()]);let bx0=1e9,by0=1e9,bx1=-1e9,by1=-1e9,any=false,lwSum=0,lwN=0;const bb=(x,y)=>{if(x<bx0)bx0=x;if(x>bx1)bx1=x;if(y<by0)by0=y;if(y>by1)by1=y;};
+    const RB=[new Path2D(),new Path2D(),new Path2D()],CR=[null,new Path2D(),new Path2D()],N1=new Float32Array(64);for(let i=0;i<64;i++)N1[i]=R();const vn=x=>{const i=Math.floor(x),f=x-i,u=f*f*(3-2*f);return N1[i&63]*(1-u)+N1[(i+1)&63]*u;};
+    // a line as a ribbon whose half-width is given at every point (so it can swell, thin and come to nothing), with blunt rounded ends
+    const band=(p,X,Y,HW)=>{const n=X.length,LX=new Float32Array(n),LY=new Float32Array(n),RX=new Float32Array(n),RY=new Float32Array(n);let t0x=0,t0y=0,t1x=0,t1y=0,mx=0;
+      for(let i=0;i<n;i++){const i0=i>0?i-1:0,i1=i<n-1?i+1:n-1;let ax=X[i1]-X[i0],ay=Y[i1]-Y[i0];const l=Math.hypot(ax,ay)||1;ax/=l;ay/=l;if(i===0){t0x=ax;t0y=ay;}if(i===n-1){t1x=ax;t1y=ay;}const hw=HW[i];if(hw>mx)mx=hw;LX[i]=X[i]-ay*hw;LY[i]=Y[i]+ax*hw;RX[i]=X[i]+ay*hw;RY[i]=Y[i]-ax*hw;}
+      if(mx<=0.05)return;const h0=HW[0]*1.1,h1=HW[n-1]*1.1;p.moveTo(LX[0],LY[0]);for(let i=1;i<n-1;i++)p.quadraticCurveTo(LX[i],LY[i],(LX[i]+LX[i+1])/2,(LY[i]+LY[i+1])/2);p.lineTo(LX[n-1],LY[n-1]);
+      p.quadraticCurveTo(X[n-1]+t1x*h1,Y[n-1]+t1y*h1,RX[n-1],RY[n-1]);for(let i=n-2;i>0;i--)p.quadraticCurveTo(RX[i],RY[i],(RX[i]+RX[i-1])/2,(RY[i]+RY[i-1])/2);p.lineTo(RX[0],RY[0]);p.quadraticCurveTo(X[0]-t0x*h0,Y[0]-t0y*h0,LX[0],LY[0]);p.closePath();};
+    // one run of the pencil, from its points and the pressure at each: a wide soft band of graphite everywhere, and a dense core only
+    // where the pencil bore down (so a turn is dark and full, and the fast middle of a stroke thin, pale and grainy)
+    let LW0=1;const rib=(X,Y,Pr,d)=>{const n=X.length,G=new Float32Array(n),C=new Float32Array(n);for(let i=0;i<n;i++){const pr=Math.min(1.3,Pr[i]),jt=0.93+0.14*R();G[i]=LW0*0.5*(0.34+0.74*pr)*jt*Math.min(1,pr*6);C[i]=LW0*0.5*Math.max(0,(d===2?1.0:0.8)*pr-(d===2?0.34:0.42))*jt;}band(RB[d],X,Y,G);if(d)band(CR[d],X,Y,C);};
+    let bx0=1e9,by0=1e9,bx1=-1e9,by1=-1e9,any=false,lwSum=0,lwN=0;const bb=(x,y)=>{if(x<bx0)bx0=x;if(x>bx1)bx1=x;if(y<by0)by0=y;if(y>by1)by1=y;};
     const T=this.takes,stamp=this.nD,seen=new Set(),G=this.G||(this.G={hold:0}),tk=key=>{let k=T.get(key);if(!k){k={hold:0,ver:-1};T.set(key,k);}k.stamp=stamp;return k;};
     for(let pi=1;pi<parts.length;pi++){const p=parts[pi];if(p.n<2)continue;const who='b'+(p.key>>3),bk=tk(who);
       // the lean of the hand for this person, kept for a while; each part leans a little off it, also kept for a few drawings
       if(!seen.has('g')){seen.add('g');if(--G.hold<=0){G.hold=8+((R()*10)|0);G.ang=0.72+R()*0.5;if(R()<0.12)G.ang=Math.PI-G.ang;G.ver=(G.ver|0)+1;}}
       if(!seen.has(who)){seen.add(who);if(--bk.hold<=0||bk.gv!==G.ver){bk.gv=G.ver;bk.hold=6+((R()*9)|0);bk.off=(R()-0.5)*0.2;bk.ver=(bk.ver|0)+1;}bk.ang=G.ang+bk.off;}
       const k=tk(p.key);if(--k.hold<=0||k.ver!==bk.ver){k.ver=bk.ver;k.hold=3+((R()*5)|0);k.d=(R()-0.5)*0.46;k.zig=R()<0.86;k.spk=0.9+R()*0.26;k.bow=(R()<0.5?-1:1)*(0.01+R()*0.028);k.tng=R()<0.42;k.ta=(R()<0.5?-1:1)*(0.13+R()*0.2);k.tf=R();}
-      const sp0=clamp(p.sz*0.115,m*0.0115,m*0.026)*k.spk*this.dens,lw=sp0*0.42,th0=bk.ang+k.d+(R()-0.5)*0.07;lwSum+=lw;lwN++;
+      const sp0=clamp(p.sz*0.115,m*0.0115,m*0.026)*k.spk*this.dens,lw=sp0*0.46,th0=bk.ang+k.d+(R()-0.5)*0.07;lwSum+=lw;lwN++;LW0=lw;
       // one going-over of the part: lines across it at a lean, the stretch of each that lies in the part, and which stretches follow on from which
-      const hatch=(th,sp,f0,f1)=>{const hx=Math.cos(th),hy=-Math.sin(th),nx=Math.sin(th),ny=Math.cos(th);let cmin=1e9,cmax=-1e9,smin=1e9,smax=-1e9;
+      const hatch=(th,spc,f0,f1)=>{const hx=Math.cos(th),hy=-Math.sin(th),nx=Math.sin(th),ny=Math.cos(th);let cmin=1e9,cmax=-1e9,smin=1e9,smax=-1e9;
         for(const X of [p.x0*A.sx,(p.x1+1)*A.sx])for(const Y of [p.y0*A.sy,(p.y1+1)*A.sy]){const c=nx*X+ny*Y,s=hx*X+hy*Y;if(c<cmin)cmin=c;if(c>cmax)cmax=c;if(s<smin)smin=s;if(s>smax)smax=s;}
-        const iv=[],chains=[],open=[],cA=cmin+(cmax-cmin)*f0,cB=cmin+(cmax-cmin)*f1;let line=0;
-        for(let c=cA+sp*(0.15+0.5*R());c<cB;c+=sp*(0.62+0.76*R())*(R()<0.05?1.8:1)){iv.length=0;line++;let inS=false,a0=0,pv=0;
+        // where the part is narrow the strokes are short, and a hand makes them closer together, so the zigzag stays tight instead of opening into a Z
+        const Lm=p.n*A.sx*A.sy/Math.max(sp0,cmax-cmin),sp=spc*clamp(Lm/(sp0*3.4),0.55,1),iv=[],chains=[],open=[],cA=cmin+(cmax-cmin)*f0,cB=cmin+(cmax-cmin)*f1,oa=R()*50,ob=R()*50;let line=0;
+        for(let c=cA+sp*(0.15+0.5*R());c<cB;c+=sp*(0.8+0.4*R())*(R()<0.04?1.7:1)){iv.length=0;line++;let inS=false,a0=0,pv=0;
           for(let s=smin-step;;s+=step){const end=s>smax+step;let v=0;if(!end){const X=nx*c+hx*s,Y=ny*c+hy*s;if(X>=0&&Y>=0&&X<W&&Y<H&&lab[((Y*isy)|0)*w+((X*isx)|0)]===pi)v=pbAt(X,Y);}
             if(!inS&&v>0.5){inS=true;a0=s-step*(v-0.5)/Math.max(1e-3,v-pv);}else if(inS&&v<=0.5){inS=false;iv.push(a0,s-step*(0.5-v)/Math.max(1e-3,pv-v));}pv=v;if(end)break;}
           for(let i=0;i<iv.length;i+=2){let a=iv[i],b=iv[i+1];while(i+2<iv.length&&iv[i+2]-b<sp*0.6){b=iv[i+3];i+=2;}if(b-a<sp*0.4&&p.n>12)continue;
-            // where a stroke ends: past the edge of the figure a little, or short of it; where another part begins it runs on or stops short by about as much
-            const oe=(s,dir)=>pbAt(nx*c+hx*(s+dir*step*2),ny*c+hy*(s+dir*step*2))<=0.5?(R()<0.06?0.8+R()*0.9:-0.3+0.8*R())*sp0:(-0.4+0.95*R())*sp0;
-            const a2=a-oe(a,-1),b2=b+oe(b,1),mid=(a2+b2)/2,half=Math.max(sp*0.22,(b2-a2)/2),t2=th+(R()-0.5)*0.11,ux=Math.cos(t2),uy=-Math.sin(t2),cx=nx*c+hx*mid,cy=ny*c+hy*mid,q={x0:cx-ux*half,y0:cy-uy*half,x1:cx+ux*half,y1:cy+uy*half};
+            // where a stroke ends: a little past the edge of the figure or a little short of it. Neighbouring strokes end alike (the hand
+            // keeps a rhythm), drifting in and out along the edge, with now and then one that flies further
+            const lim=Math.min(sp0,(b-a)*0.3),oe=(o,far)=>far&&R()<0.04?(0.7+R()*0.7)*sp0:(1.1*(vn(c/(sp0*5)+o)-0.36)+0.3*(R()-0.5))*lim;
+            const a2=a-oe(oa,pbAt(nx*c+hx*(a-step*2),ny*c+hy*(a-step*2))<=0.5),b2=b+oe(ob,pbAt(nx*c+hx*(b+step*2),ny*c+hy*(b+step*2))<=0.5),mid=(a2+b2)/2,half=Math.max(sp*0.22,(b2-a2)/2),t2=th+(R()-0.5)*0.05,ux=Math.cos(t2),uy=-Math.sin(t2),cx=nx*c+hx*mid,cy=ny*c+hy*mid,q={x0:cx-ux*half,y0:cy-uy*half,x1:cx+ux*half,y1:cy+uy*half};
             let best=null,bo=sp*0.25;for(const o of open){if(o.line===line||c-o.c>sp*2.6)continue;const v=Math.min(b,o.b)-Math.max(a,o.a);if(v>bo){bo=v;best=o;}}
             if(best){best.ch.push(q);best.a=a;best.b=b;best.c=c;best.line=line;}else{const ch=[q];chains.push(ch);open.push({ch,a,b,c,line});}}}
         return chains;};
-      // to and fro without lifting: up one stroke, round the end, down the next. No two turns are alike: at some the pencil swings
-      // round in a small curve, at some it stops dead and comes straight back from the same point, now and then it overshoots into
-      // a little loop or lifts off; and every few strokes the hand bears down harder or lets up
-      const zig=(ch,dk)=>{const N=ch.length;let up=R()<0.5,pth=null,left=0,px=0,py=0,tx=0,ty=0,has=false;
+      // to and fro without lifting. What is kept is the journey of the pencil's point and how hard it presses at each moment: it comes
+      // down firmly, runs light and fast along a stroke, slows and bears down as it turns, and leaves the paper with a flick. At a turn
+      // it mostly stops and comes back from almost the same point (a narrow turn, a little rounded or quite sharp, never a half circle)
+      const zig=(ch,dk)=>{const N=ch.length;let up=R()<0.5,X=[],Y=[],Pr=[],left=0,d=2,pm=0.6,px=0,py=0,tx=0,ty=0,has=false;
+        const flush=taper=>{const n=X.length;if(n>1){if(taper){const T=[0.04,0.3,0.6,0.85],kk=Math.min(4,n-1);for(let i=0;i<kk;i++)Pr[n-1-i]*=T[i];}rib(X,Y,Pr,d);}X=[];Y=[];Pr=[];};
         for(let j=0;j<N;j++){const q=ch[j];let sx=up?q.x0:q.x1,sy=up?q.y0:q.y1;const ex=up?q.x1:q.x0,ey=up?q.y1:q.y0;
-          if(left<=0){const r=R(),d=dk!=null?dk:r<0.1?0:r<0.4?1:2;pth=PT[d][(R()*3)|0];left=2+((R()*6)|0);if(has)pth.moveTo(px,py);}
-          if(!has)pth.moveTo(sx,sy);else{const gx=sx-px,gy=sy-py,gap=Math.hypot(gx,gy),r=R();
-            if(gap>sp0*3.2||r<0.05)pth.moveTo(sx,sy);
-            else{const rho=r<0.36?R()*0.12:r<0.8?0.3+R()*0.5:r<0.94?0.8+R()*0.35:-(0.18+R()*0.25);
-              if(Math.abs(rho)<0.04){sx=px;sy=py;}else{const qx=px+gx*rho,qy=py+gy*rho,kk=Math.abs(rho)*gap*(0.5+0.35*R())+(rho<0?sp0*(0.35+0.3*R()):0);pth.bezierCurveTo(px+tx*kk,py+ty*kk,qx+tx*kk,qy+ty*kk,qx,qy);sx=qx;sy=qy;}}}
-          const dx=ex-sx,dy=ey-sy,L=Math.hypot(dx,dy)||1,bw=k.bow+(R()-0.5)*0.02;pth.quadraticCurveTo((sx+ex)/2-dy*bw,(sy+ey)/2+dx*bw,ex,ey);bb(sx,sy);bb(ex,ey);px=ex;py=ey;tx=dx/L;ty=dy/L;has=true;up=!up;left--;}};
+          if(left<=0){const lp=Pr.length?Pr[Pr.length-1]:1;if(has){flush(false);X.push(px);Y.push(py);Pr.push(lp);}const r=R();d=dk!=null?dk:r<0.12?0:r<0.42?1:2;pm=d===0?0.36+0.2*R():d===1?0.46+0.26*R():0.58+0.3*R();left=2+((R()*6)|0);}
+          if(!has){X.push(sx);Y.push(sy);Pr.push(1);}else{const gx=sx-px,gy=sy-py,gap=Math.hypot(gx,gy),r=R();
+            if(gap>sp0*3.2||r<0.05){flush(true);X.push(sx);Y.push(sy);Pr.push(1);}
+            else{const rho=r<0.5?R()*0.1:r<0.92?0.1+R()*0.3:0.4+R()*0.3,pt=1.02+0.22*R();
+              if(rho<0.04){sx=px;sy=py;Pr[Pr.length-1]=pt;}
+              else{const qx=px+gx*rho,qy=py+gy*rho,g2=rho*gap,k1=g2*(0.35+0.5*R()),k2=g2*(0.35+0.5*R());for(let i=1;i<=4;i++){const u=i/4,v=1-u,a=v*v*v,b=3*v*v*u,e=3*v*u*u,f=u*u*u;X.push(a*px+b*(px+tx*k1)+e*(qx+tx*k2)+f*qx);Y.push(a*py+b*(py+ty*k1)+e*(qy+ty*k2)+f*qy);Pr.push(pt);}sx=qx;sy=qy;}}}
+          const dx=ex-sx,dy=ey-sy,L=Math.hypot(dx,dy)||1,bw=k.bow+(R()-0.5)*0.02,Ns=clamp(Math.round(L/(sp0*0.9)),4,9),pmid=pm*clamp(1.15-L/(sp0*24),0.72,1.1),pe=0.98+0.2*R(),po=R()*9;
+          for(let i=1;i<=Ns;i++){const u=i/Ns,o=bw*4*u*(1-u)*L;X.push(sx+dx*u-dy/L*o);Y.push(sy+dy*u+dx/L*o);Pr.push(pmid*(0.82+0.36*vn(po+u*3.1))+(pe-pmid)*Math.pow(Math.abs(2*u-1),2.6));}
+          bb(sx,sy);bb(ex,ey);px=ex;py=ey;tx=dx/L;ty=dy/L;has=true;up=!up;left--;}
+        flush(true);};
       const C1=hatch(th0,sp0*(k.zig?0.8:1),0,1);
-      for(const ch of C1){any=true;if(k.zig){zig(ch,null);continue;}
-        // (now and then a part is done in separate strokes instead, each gone over twice so its edge and ends come out uneven)
-        for(const q of ch){const dx=q.x1-q.x0,dy=q.y1-q.y0,L=Math.hypot(dx,dy)||1,r=R(),d=r<0.1?0:r<0.38?1:2,pth=PT[d][(R()*3)|0],bw=k.bow+(R()-0.5)*0.014;pth.moveTo(q.x0,q.y0);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw,(q.y0+q.y1)/2+dx*bw,q.x1,q.y1);bb(q.x0,q.y0);bb(q.x1,q.y1);
-          if(L>sp0*1.2){const o=(R()<0.5?-1:1)*lw*(0.16+0.2*R()),ox=-dy/L*o,oy=dx/L*o,u0=R()*0.2,u1=1-R()*0.2;pth.moveTo(q.x0+dx*u0+ox,q.y0+dy*u0+oy);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw+ox,(q.y0+q.y1)/2+dx*bw+oy,q.x0+dx*u1+ox,q.y0+dy*u1+oy);}}}
+      for(const ch of C1){any=true;
+        // (where the strokes come out very short a zigzag would only be a squiggle: those are done as separate little strokes)
+        if(k.zig){const ls=ch.map(q=>Math.hypot(q.x1-q.x0,q.y1-q.y0)).sort((a,b)=>a-b);if(ls[ls.length>>1]>sp0*1.7){zig(ch,null);continue;}}
+        // (now and then a part is done in separate strokes instead: each comes down firmly, runs light, and leaves with a flick)
+        for(const q of ch){const dx=q.x1-q.x0,dy=q.y1-q.y0,L=Math.hypot(dx,dy)||1,r=R(),d=r<0.12?0:r<0.42?1:2,pm=(d===0?0.4:d===1?0.55:0.72)+0.2*R(),bw=k.bow+(R()-0.5)*0.016,Ns=clamp(Math.round(L/(sp0*0.9)),4,9),X=[],Y=[],Pr=[],po=R()*9,fl=R()<0.5;
+          for(let i=0;i<=Ns;i++){const u0=i/Ns,u=fl?1-u0:u0,o=bw*4*u*(1-u)*L;X.push(q.x0+dx*u-dy/L*o);Y.push(q.y0+dy*u+dx/L*o);Pr.push((pm*(0.85+0.3*vn(po+u0*3))+(1.05-pm)*Math.pow(1-u0,3))*(u0>0.72?Math.max(0.03,(1-u0)/0.28):1));}
+          rib(X,Y,Pr,d);bb(q.x0,q.y0);bb(q.x1,q.y1);}}
       // the hand goes back over a stretch of it, leaning a touch differently: lines that tangle with the first ones rather than cross them
       if(k.tng&&p.n>14){const f0=k.tf*0.6,C2=hatch(th0+k.ta,sp0*1.15,f0,f0+0.3+0.25*R());for(const ch of C2)zig(ch,R()<0.55?0:1);}}
     if(stamp%60===0)for(const [key,v] of T)if(stamp-v.stamp>40)T.delete(key);
     const q=this.q,cw=Math.round(W*q),chh=Math.round(H*q);if(!this.cv||this.cv.width!==cw||this.cv.height!==chh)this.cv=mkCanvas(cw,chh);const cv=this.cv,x=cv.cx;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';x.globalAlpha=1;x.clearRect(0,0,cw,chh);this.empty=!any;if(!any)return;
-    const lw=lwSum/lwN,pd=lw*2.5,rx=Math.max(0,bx0-pd),ry=Math.max(0,by0-pd),rw=Math.min(W,bx1+pd)-rx,rh=Math.min(H,by1+pd)-ry,kz=q*1.05,pat=x.createPattern(this.tooth,'repeat'),WM=[0.72,0.92,1.1],AL=[0.5,0.8,0.97];
+    const lw=lwSum/lwN,pd=lw*2.5,rx=Math.max(0,bx0-pd),ry=Math.max(0,by0-pd),rw=Math.min(W,bx1+pd)-rx,rh=Math.min(H,by1+pd)-ry,kz=q*1.05,pat=x.createPattern(this.tooth,'repeat'),AL=[0.5,0.74,0.9];
     const tooth=al=>{x.globalCompositeOperation='destination-out';x.globalAlpha=al;x.setTransform(kz,0,0,kz,0,0);x.fillStyle=pat;x.fillRect(rx*q/kz,ry*q/kz,rw*q/kz+1,rh*q/kz+1);x.setTransform(q,0,0,q,0,0);x.globalCompositeOperation='source-over';};
-    // every stroke first as a soft grainy bar, then (for the firmer ones) a solid core down its middle: a rough edge and a dense heart, as soft graphite leaves
-    x.setTransform(q,0,0,q,0,0);x.lineCap='round';x.lineJoin='round';x.strokeStyle='#202024';
-    for(let d=0;d<3;d++)for(let i=0;i<3;i++){x.globalAlpha=AL[d];x.lineWidth=lw*WM[i];x.stroke(PT[d][i]);}tooth(0.7);
-    for(let d=1;d<3;d++)for(let i=0;i<3;i++){x.globalAlpha=d===1?0.5:0.95;x.lineWidth=lw*WM[i]*(d===1?0.45:0.58);x.stroke(PT[d][i]);}tooth(0.26);
+    x.setTransform(q,0,0,q,0,0);x.fillStyle='#202024';for(let d=0;d<3;d++){x.globalAlpha=AL[d];x.fill(RB[d]);}tooth(0.68);
+    x.globalAlpha=0.55;x.fill(CR[1]);x.globalAlpha=0.96;x.fill(CR[2]);tooth(0.22);
     // graphite dust: a soft grey breath under the strokes
     const sw=Math.max(2,Math.round(W/7)),sh=Math.max(2,Math.round(H/7));if(!this.sm||this.sm.width!==sw||this.sm.height!==sh)this.sm=mkCanvas(sw,sh);const sx=this.sm.cx;sx.globalCompositeOperation='copy';sx.imageSmoothingEnabled=true;sx.drawImage(cv,0,0,sw,sh);
     x.globalCompositeOperation='destination-over';x.globalAlpha=0.2;x.imageSmoothingEnabled=true;x.drawImage(this.sm,0,0,W,H);x.globalAlpha=1;x.globalCompositeOperation='source-over';},
