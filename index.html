@@ -2185,7 +2185,86 @@ const mLight={id:'light',name:'빛 그림',desc:'어두운 화면에서 손이 �
     // dust of light: fine grains that drift down slowly and glimmer as they go out
     const S=this.sp;for(let i=S.length-1;i>=0;i--){const s=S[i],age=(t-s.t)/s.life;if(age>=1){S.splice(i,1);continue;}s.vy+=m*0.035*dt;s.vx*=Math.pow(0.3,dt);s.vy*=Math.pow(0.6,dt);s.x+=s.vx*dt;s.y+=s.vy*dt;const f=(1-age)*(0.55+0.45*Math.sin(t*9+s.ph));ctx.fillStyle='hsla('+s.tone[0]+','+s.tone[1]+'%,88%,'+Math.max(0,f*0.85).toFixed(3)+')';ctx.beginPath();ctx.arc(s.x,s.y,s.r*(0.7+0.5*(1-age)),0,TAU);ctx.fill();}
     ctx.globalCompositeOperation='source-over';}};
-const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mLight];
+/* 연기: smoke photographed against black. Thin silk sheets of smoke rise from the upper outline of everyone standing there, gather into a
+   column, fold over themselves and curl away; the body itself is a shape of smoke, wisps drifting up through it and its outline bright.
+   Threads of incense smoke rise from below the picture all the time, so the dark is never empty.
+   How: smoke from a line is a sheet, from a point a thin tube. Each is kept as a mesh of points let go one row at a time from the
+   source and carried by slowly turning air in three dimensions (a few waves that cannot compress, calm near the source and wilder
+   higher up). The picture is the mesh seen from the front: every patch gives the same amount of light however it is stretched, so a
+   patch pulled wide is a faint veil and one turned edge-on is a bright line, which is exactly how the folds of real smoke light up */
+const mSmoke={id:'smoke',name:'연기',desc:'검은 바탕에 찍은 연기 사진처럼, 서 있는 사람의 머리와 어깨 윤곽에서 비단결 같은 얇은 연기가 피어올라 한 줄기로 모였다가 접히고 말리며 흩어진다. 접힌 가장자리는 밝은 선으로 빛나고 펴진 곳은 옅은 막이 된다. 몸은 윤곽이 밝은 연기 형상으로만 보이고, 아무도 없어도 화면 아래에서 향 연기가 줄곧 올라온다',hint:'앞에 서면 몸에서 연기가 피어올라요',
+  init(){const f=QF()>0.9?1:QF()>0.6?0.8:0.62,m=Math.min(W,H);this.M=Math.round((isTouch?24:34)*f);this.NS=6;this.LP=this.NS*this.M;this.K=Math.round(12*(f<0.7?0.84:1));this.SRC=W<H?2:3;this.L=this.LP+this.SRC*this.K;this.N=Math.round((isTouch?42:56)*(f<0.7?0.85:1));this.EV=0.1;this.sub=f>0.9?2:1;
+    const L=this.L,N=this.N;for(const k of ['X','Y','Z','CX'])this[k]=new Float32Array(L*N);this.V=new Uint8Array(L*N);this.T=new Float32Array(N).fill(-1e9);this.head=0;this.acc=0;
+    this.rx=new Float32Array(L);this.ry=new Float32Array(L);this.rz=new Float32Array(L);this.on=new Uint8Array(L);this.cx=new Float32Array(L);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;this.slots=[];for(let k=0;k<this.NS;k++)this.slots.push({on:false,xl:0,xr:0});
+    // the air: slow waves, each pushing across its own direction of travel
+    const R=seeded(2024),C=this.C=[];for(const [lam,u] of [[1.25,0.062],[0.8,0.058],[0.52,0.05],[0.34,0.04],[0.22,0.028],[0.6,0.045],[0.135,0.019],[0.088,0.012]]){const th=R()*TAU,ph=Math.acos(R()*1.6-0.8),k=TAU/(lam*m),kx=Math.cos(th)*Math.sin(ph)*k,ky=Math.sin(th)*Math.sin(ph)*k,kz=Math.cos(ph)*k;
+      // a direction square to the wave's travel
+      let ax=R()-0.5,ay=R()-0.5,az=R()-0.5;const dot=(ax*kx+ay*ky+az*kz)/(k*k);ax-=dot*kx;ay-=dot*ky;az-=dot*kz;const l=Math.hypot(ax,ay,az)||1;C.push({kx,ky,kz,dx:ax/l*u*m,dy:ay/l*u*m,dz:az/l*u*m,w:(R()-0.5)*0.6,p:R()*TAU});}
+    const R3=seeded(11);for(let i=0;i<this.LP;i++){const k=i%this.M;this.rz[i]=m*(0.06*Math.sin(k*0.5+(i/this.M|0))+0.03*Math.sin(k*1.7+1)+(R3()-0.5)*0.012);}
+    this.src=[];for(let s=0;s<this.SRC;s++)this.src.push({x0:(s+0.5)/this.SRC+(R()-0.5)*0.14,ph:R()*TAU,sp:0.05+R()*0.05});
+    // wisps for the inside of a body: long wavering ribbons on a sheet that repeats, drawn once
+    if(!this.tex){const tw=512,th=1024,c=this.tex=mkCanvas(tw,th),x=c.cx,R2=seeded(7);x.globalCompositeOperation='lighter';
+      for(let k=0;k<54;k++){const x0=R2()*tw,w0=5+R2()*26,n1=1+(R2()*2|0),n2=2+(R2()*3|0),a1=14+R2()*40,a2=5+R2()*16,p1=R2()*TAU,p2=R2()*TAU,p3=R2()*TAU,br=0.5+R2()*0.5;
+        const cxAt=y=>a1*Math.sin(TAU*n1*y/th+p1)+a2*Math.sin(TAU*n2*y/th+p2),wAt=y=>w0*(0.25+0.75*Math.abs(Math.sin(TAU*(n1+1)*y/th*0.5+p3)));
+        for(const ox of [-tw,0,tw]){const pl=new Path2D(),e1=new Path2D(),e2=new Path2D();for(let y=-4;y<=th+4;y+=8){const cx0=x0+ox+cxAt(y),ww=wAt(y);if(y<=-4){pl.moveTo(cx0-ww,y);e1.moveTo(cx0-ww,y);}else{pl.lineTo(cx0-ww,y);e1.lineTo(cx0-ww,y);}}
+          for(let y=th+4;y>=-4;y-=8){const cx0=x0+ox+cxAt(y),ww=wAt(y);pl.lineTo(cx0+ww,y);if(y>=th+4)e2.moveTo(cx0+ww,y);else e2.lineTo(cx0+ww,y);}pl.closePath();
+          x.fillStyle='rgba(150,178,235,'+(0.05*br).toFixed(3)+')';x.fill(pl);x.strokeStyle='rgba(220,234,255,'+(0.2*br).toFixed(3)+')';x.lineWidth=0.9;x.stroke(e1);x.strokeStyle='rgba(220,234,255,'+(0.12*br).toFixed(3)+')';x.stroke(e2);}}}
+    this.AL=[];for(let k=0;k<30;k++)this.AL.push(0.012*Math.pow(1.16,k));},
+  draw(t,dt){const {L,N,LP,M,K,X,Y,Z,CX,V,T,rx,ry,rz,on,cx,C,AL,slots}=this,w=A.w,h=A.h,n=A.n,m=Math.min(W,H);if(this.pb.length!==n){this.pb=new Float32Array(n);this.tmp=new Float32Array(n);}const pb=this.pb,tmp=this.tmp;
+    const bg=ctx.createRadialGradient(W/2,H*0.6,m*0.1,W/2,H*0.6,Math.hypot(W,H)*0.65);bg.addColorStop(0,'#070a13');bg.addColorStop(1,'#010103');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    pb.set(A.p);blur3(pb,tmp,w,h);
+    // the top of the outline, column by column of the grid; each stretch of it is one sheet of smoke
+    const top=this.top&&this.top.length===w?this.top:(this.top=new Float32Array(w));for(let gx=0;gx<w;gx++){let y=-1;for(let gy=0;gy<h;gy++){const v=pb[gy*w+gx];if(v>0.5){const u=gy>0?pb[(gy-1)*w+gx]:0;y=(gy-(v-0.5)/Math.max(1e-3,v-u)+0.5)*A.sy;break;}}top[gx]=y>H*0.97?-1:y;}
+    const runs=[];for(let gx=0;gx<w;){if(top[gx]<0){gx++;continue;}let e=gx;while(e+1<w&&(top[e+1]>=0||(e+2<w&&top[e+2]>=0)))e++;if(e-gx>=2)runs.push({xl:(gx+0.1)*A.sx,xr:(e+0.9)*A.sx,used:false});gx=e+1;}
+    // a sheet stays with the person it belongs to: each keeps its own threads, spread evenly across that person's width, so they
+    // slide with the person instead of switching on and off
+    const ks=ez(0.45);for(const s of slots){s.was=s.on;s.on=false;if(!s.was)continue;let best=null,bo=0;for(const r of runs){if(r.used)continue;const o=Math.min(r.xr,s.xr)-Math.max(r.xl,s.xl);if(o>bo){bo=o;best=r;}}if(best){best.used=true;s.on=true;s.xl+=(best.xl-s.xl)*ks;s.xr+=(best.xr-s.xr)*ks;}}
+    for(const r of runs){if(r.used)continue;const s=slots.find(q=>!q.on&&!q.was)||slots.find(q=>!q.on);if(!s)break;s.on=true;s.fresh=true;s.xl=r.xl;s.xr=r.xr;}
+    const ke=ez(0.4),isx=1/A.sx;let people=false;slots.forEach((s,si)=>{const b=si*M;if(!s.on){for(let k=0;k<M;k++)on[b+k]=0;return;}people=true;const c=(s.xl+s.xr)/2;
+      for(let k=0;k<M;k++){const i=b+k,x=s.xl+(k+0.5)/M*(s.xr-s.xl),g=x*isx-0.5,g0=Math.max(0,Math.min(w-1,Math.floor(g))),g1=Math.min(w-1,g0+1),fr=Math.min(1,Math.max(0,g-g0)),a=top[g0],bb=top[g1];let y=a<0?bb:bb<0?a:a+(bb-a)*fr;
+        if(y<0){on[i]=0;continue;}if(!on[i]||s.fresh)ry[i]=y;else ry[i]+=(y-ry[i])*ke;rx[i]=x;on[i]=1;cx[i]=c;}s.fresh=false;});
+    // incense below the picture: a small ring, so the smoke is a tube
+    this.src.forEach((s,si)=>{const c=W*(s.x0+0.04*Math.sin(t*s.sp+s.ph)),r=m*0.014;for(let k=0;k<K;k++){const i=LP+si*K+k,an=k/K*TAU;rx[i]=c+Math.cos(an)*r;ry[i]=H+m*0.03;rz[i]=Math.sin(an)*m*0.1+si*m*0.37;on[i]=1;cx[i]=rx[i];}});
+    // let go of a new row of points
+    this.acc+=dt;if(this.acc>this.EV*3)this.acc=this.EV;while(this.acc>=this.EV){this.acc-=this.EV;const hd=this.head=(this.head+1)%N;T[hd]=t-this.acc;for(let i=0;i<L;i++){const q=i*N+hd;if(!on[i]){V[q]=0;continue;}V[q]=1;X[q]=rx[i];Y[q]=ry[i];Z[q]=rz[i];CX[q]=cx[i];}}
+    // carry every point: up, round with the air (which drifts up with the smoke, so a fold keeps folding), and toward the middle of its plume while young
+    const buoy=m*0.2,drift=buoy*0.8*t,life=N*this.EV,NC=C.length;
+    for(let j=0;j<N;j++){const age=t-T[j];if(age>life+1)continue;const rise=buoy*(0.5+0.5*Math.min(1,age/1.4));
+      for(let i=0;i<L;i++){const q=i*N+j;if(!V[q])continue;const x=X[q],y=Y[q],z=Z[q],amb=i>=LP,turb=amb?Math.min(1.5,0.05+Math.max(0,age-0.4)*0.42):Math.min(1.15,0.12+age*0.5);let vx=0,vy=0,vz=0;
+        for(let c=0;c<NC;c++){const o=C[c],cs=Math.cos(o.kx*x+o.ky*(y+drift)+o.kz*z+o.w*t+o.p);vx+=o.dx*cs;vy+=o.dy*cs;vz+=o.dz*cs;}
+        vx*=turb;vy=vy*turb-rise;vz*=turb;if(!amb)vx+=(CX[q]-x)*0.75*Math.exp(-age*0.9);
+        X[q]=x+vx*dt;Y[q]=y+vy*dt;Z[q]=z+vz*dt;if(Y[q]<-m*0.3)V[q]=0;}}
+    // draw the mesh: each patch with the light it carries spread over the area it shows; patches are sorted into a few strengths
+    // (and four interleaved sets, so that a fold lying over another part of the sheet adds its light). Over it the threads of the
+    // sheet themselves, fine lines that crowd together into a bright edge wherever the sheet turns
+    const hd=this.head,NAL=AL.length,P=this.paths||(this.paths=[]);for(let k=0;k<NAL*4;k++)P[k]=null;const maxGap=m*0.1,NB=12,TH=this.thr||(this.thr=[]);for(let k=0;k<NB*2;k++)TH[k]=null;const sub=this.sub;
+    const xs=this.xs||(this.xs=new Float32Array(N+1)),ys=this.ys||(this.ys=new Float32Array(N+1)),x2s=this.x2s||(this.x2s=new Float32Array(N+1)),y2s=this.y2s||(this.y2s=new Float32Array(N+1)),oks=this.oks||(this.oks=new Uint8Array(N+1)),ok2=this.ok2||(this.ok2=new Uint8Array(N+1));
+    const thread=(px,py,pok,cls)=>{ // one fine line, root first, cut into bands of age
+      for(let b=0;b<NB;b++){const r0=Math.floor(b*N/NB),r1=Math.floor((b+1)*N/NB);let p=null,pen=false,qx=0,qy=0;for(let r=r0;r<=r1;r++){if(!pok[r]){pen=false;continue;}const x=px[r],y=py[r];if(!pen){if(!p)p=TH[b*2+cls]||(TH[b*2+cls]=new Path2D());p.moveTo(x,y);pen=true;qx=x;qy=y;continue;}p.quadraticCurveTo(qx,qy,(qx+x)/2,(qy+y)/2);if(r===r1||!pok[r+1])p.lineTo(x,y);qx=x;qy=y;}}};
+    // how long each row of the mesh took to leave the source: a row let go over a longer moment carries more smoke
+    const dts=this.dts||(this.dts=new Float32Array(N+1));dts[0]=Math.max(0.004,t-T[hd]);for(let r=1;r<N;r++)dts[r]=Math.min(0.4,Math.max(0.004,T[(hd-r+1+N*4)%N]-T[(hd-r+N*4)%N]));
+    for(let i=0;i<L;i++){const amb=i>=LP;let i2=i+1,pair=true;if(amb){const s=(i-LP)/K|0;i2=LP+s*K+((i-LP+1)%K);}else if((i+1)%M===0)pair=false;const b1=i*N,b2=i2*N,cls=(i>>1)&3,base=amb?0.15:0.13;
+      // rows of this thread and its neighbour: row 0 is the source, then newest to oldest
+      xs[0]=rx[i];ys[0]=ry[i];oks[0]=on[i];let anyRow=on[i];for(let k=0;k<N;k++){const q=b1+((hd-k+N*4)%N);oks[k+1]=k<N-1?V[q]:0;xs[k+1]=X[q];ys[k+1]=Y[q];if(V[q])anyRow=1;}if(!anyRow)continue;
+      thread(xs,ys,oks,i&1);if(!pair)continue;
+      x2s[0]=rx[i2];y2s[0]=ry[i2];ok2[0]=on[i2];for(let k=0;k<N;k++){const q=b2+((hd-k+N*4)%N);ok2[k+1]=k<N-1?V[q]:0;x2s[k+1]=X[q];y2s[k+1]=Y[q];}
+      for(let r=0;r<N;r++){ok2[r]=oks[r]&&ok2[r]&&Math.abs(xs[r]-x2s[r])+Math.abs(ys[r]-y2s[r])<maxGap?1:0;}ok2[N]=0;
+      // the patch of light this pair starts with: its own width at the source times one row of rising
+      const a0=(Math.hypot(xs[0]-x2s[0],ys[0]-y2s[0])+(amb?m*0.004:1))*buoy*0.55;
+      for(let r=0;r<N-1;r++){if(!ok2[r]||!ok2[r+1])continue;const x1=xs[r],y1=ys[r],x2=x2s[r],y2=y2s[r],x3=x2s[r+1],y3=y2s[r+1],x4=xs[r+1],y4=ys[r+1];if(y1<-20&&y4<-20)continue;const age=r/N,fade=age<0.1?1:Math.pow(1-(age-0.1)/0.9,1.4);
+        const ar=Math.abs((x3-x1)*(y4-y2)-(x4-x2)*(y3-y1))*0.5+1.2,al=base*fade*Math.min(8,(a0*dts[r]+1.2)/ar);
+        if(al>0.012){let li=Math.log(al/0.012)/0.1484|0;if(li>=NAL)li=NAL-1;const pi=li*4+cls,p=P[pi]||(P[pi]=new Path2D());p.moveTo(x1,y1);p.lineTo(x2,y2);p.lineTo(x3,y3);p.lineTo(x4,y4);p.closePath();}}
+      // finer threads between the two, so the sheet reads as silk rather than as wires
+      for(let q=1;q<=sub;q++){const f=q/(sub+1),tx=this.tx||(this.tx=new Float32Array(N+1)),ty=this.ty||(this.ty=new Float32Array(N+1));for(let r=0;r<=N;r++){tx[r]=xs[r]+(x2s[r]-xs[r])*f;ty[r]=ys[r]+(y2s[r]-ys[r])*f;}thread(tx,ty,ok2,(i+q)&1);}}
+    ctx.globalCompositeOperation='lighter';for(let li=0;li<NAL;li++){let any=false;for(let c=0;c<4;c++)if(P[li*4+c]){if(!any){ctx.fillStyle='rgba(170,196,246,'+Math.min(0.92,AL[li]*1.08).toFixed(3)+')';any=true;}ctx.fill(P[li*4+c]);}}
+    ctx.lineJoin='round';ctx.lineCap='butt';for(let b=0;b<NB;b++){const am=(b+0.5)/NB,fd=Math.pow(1-am,1.5);ctx.strokeStyle='rgba(214,230,255,'+(0.25*fd+0.03).toFixed(3)+')';ctx.lineWidth=0.75+0.5*am;for(let c=0;c<2;c++)if(TH[b*2+c])ctx.stroke(TH[b*2+c]);}
+    // the body: a faint volume, wisps drifting up through it, and an outline that glows the way the edge of a sheet does
+    if(people){const sil=new Path2D();isoFill(pb,w,h,0.5,A.sx,A.sy,sil);this.sil=upsampleMask(pb,w,h,3,0.2,0.95,[92,118,186],this.sil);ctx.imageSmoothingEnabled=true;ctx.globalAlpha=0.1;ctx.drawImage(this.sil,0,0,W,H);ctx.globalAlpha=1;
+      ctx.save();ctx.clip(sil,'evenodd');const tw=m*0.72,th=tw*2,oy=-((t*buoy*0.45)%th),ox=Math.sin(t*0.13)*m*0.03;ctx.globalAlpha=0.85;for(let y=oy-th;y<H;y+=th)for(let x=ox-tw;x<W;x+=tw)ctx.drawImage(this.tex,x,y,tw,th);ctx.globalAlpha=0.5;const oy2=-((t*buoy*0.3+th*0.37)%th);for(let y=oy2-th;y<H;y+=th)for(let x=-ox-tw*1.4;x<W;x+=tw)ctx.drawImage(this.tex,x,y,tw,th);ctx.globalAlpha=1;
+      ctx.lineJoin='round';for(const [lw,al] of [[m*0.05,0.035],[m*0.026,0.06],[m*0.012,0.1]]){ctx.strokeStyle='rgba(150,180,240,'+al+')';ctx.lineWidth=lw;ctx.stroke(sil);}ctx.restore();
+      ctx.strokeStyle='rgba(220,234,255,0.6)';ctx.lineWidth=1.1;ctx.stroke(sil);}
+    ctx.globalCompositeOperation='source-over';}};
+const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mLight,mSmoke];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
