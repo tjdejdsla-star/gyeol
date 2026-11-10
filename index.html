@@ -477,7 +477,7 @@ async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loadi
   catch(e){SEG.state='offline';}}
 const ML={f:-1,turn:''};
 function camOK(){return (source.kind==='camera'||source.kind==='file')&&video.videoWidth>0&&!EMBEDDED;}
-const POSE_MODES={detect:1,gaze:1,trail:1,poem:1,aura:1,star:1,cari:1,frost:1,thermal:1,stack:1,firework:1,balloon:1,bubble:1,light:1};
+const POSE_MODES={detect:1,poem:1,aura:1,thermal:1,stack:1,balloon:1,bubble:1,croquis:1};
 function poseNeeded(){const id=role==='sensor'?MC.remote:(mode?mode.id:'');return !id||!!POSE_MODES[id];}
 function poseIv(){const c=FACE.pcost||8;return poseNeeded()?Math.max(role==='sensor'?80:66,c*4.5):Math.max(260,c*14);}
 function objIv(){return clamp((FACE.ocost||20)*9,160,3000);}
@@ -869,14 +869,14 @@ function drawFrameTo(cv){ // current camera frame, cropped like the analysis, in
   c.save();if(sx<0||sy<0){c.fillStyle=pal().bg;c.fillRect(0,0,W,H);}if(S.mirror){c.translate(W,0);c.scale(-1,1);}try{c.drawImage(el,sx,sy,cw,ch,0,0,W,H);}catch(e){}c.restore();
 }
 const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,ftime:-1e9,otime:-1e9,pose:null,pres:null,plast:0,ptime:-1e9};
-function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now()-r.t<500?r.L.map(lm=>lm.map(q=>({x:q[0]*W,y:q[1]*H,v:q[2]}))):null;}
+function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now()-r.t<Math.min(3000,Math.max(500,(FACE.rpIv||0)*2.6))?r.L.map(lm=>lm.map(q=>({x:q[0]*W,y:q[1]*H,v:q[2]}))):null;}
   if(!(FACE.pres&&performance.now()-FACE.ptime<poseWin()+100&&FACE.pres.landmarks&&FACE.pres.landmarks.length))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;
   const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw;
   return FACE.pres.landmarks.map(lm=>lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility};}));}
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star'||id==='cari',usePose=!!POSE_MODES[id],wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='poem'||id==='aura',usePose=!!POSE_MODES[id],wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&ML.turn==='pose'){FACE.plast=now;runPose(now);}
@@ -953,42 +953,6 @@ const TR={tracks:[],nextId:1,log:[],f:0,vis:null,q:null,
       this.track(this.merge(bl,true));return;}
     this.track(this.splitWide(this.merge(this.blobs(A.p,0.45,Math.max(12,A.n*0.004)),false)));}
 };
-const mTrail={id:'trail',name:'궤도',desc:'사람 한 명당 동선 하나. 얼굴로 같은 사람을 이어 그리고, 정해진 시간이 지나면 사라지며, 겹친 곳은 진하다',
-  init(){this.f=0;this.paths={};},
-  clear(){this.paths={};},
-  draw(t,dt){const P=pal();this.f++;fillBg();
-    if((this.f&1)===0){PEOPLE.update();PEOPLE.takeRenames().forEach(([ka,kb])=>{const pa=this.paths[ka];if(!pa)return;const pb=this.paths[kb];
-      if(pb){pb.pts=pa.pts.concat(pb.pts).sort((x,y)=>x[2]-y[2]);pa.ov.forEach(o=>pb.ov.add(o));}else{this.paths[kb]=pa;pa.key=kb;}delete this.paths[ka];});}
-    const paths=this.paths,cols=[P.fg[1],P.fg[3],P.fg[2]],R=Math.max(12,W*0.012),R2=R*R,fadeT=[6,12,24][S.trailp|0]||12;
-    PEOPLE.list.forEach(pp=>{let pa=paths[pp.key];if(!pa){let hsum=0;for(const ch of pp.key)hsum+=ch.charCodeAt(0)*7;pa=paths[pp.key]={key:pp.key,pts:[],col:cols[hsum%3],ov:new Set(),seen:t};}
-      pa.seen=t;const last=pa.pts[pa.pts.length-1];
-      if(!last||Math.hypot(pp.x-last[0],pp.y-last[1])>3){
-        for(const k in paths){const o=paths[k];if(o===pa||o.ov.has(pa.key))continue;const pts=o.pts;for(let i=0;i<pts.length;i+=2){const dx=pts[i][0]-pp.x,dy=pts[i][1]-pp.y;if(dx*dx+dy*dy<R2){pa.ov.add(o.key);o.ov.add(pa.key);break;}}}
-        pa.pts.push([pp.x,pp.y,t]);}});
-    // each path is a small bundle of hairlines: thickest and darkest at the head, thinning and fading with age.
-    // Multiply (or add, on dark palettes) makes every crossing read darker without extra marks.
-    const BANDS=10,base=Math.max(1.1,Math.min(2,W/1000)),gap=base*3;
-    ctx.save();ctx.globalCompositeOperation=P.light?'multiply':'lighter';ctx.lineCap='round';ctx.lineJoin='round';
-    for(const k in paths){const pa=paths[k],pts=pa.pts;while(pts.length&&t-pts[0][2]>fadeT)pts.shift();
-      if(pts.length<3){if(!pts.length&&t-pa.seen>fadeT)delete paths[k];continue;}
-      const n=pts.length,nx=new Float32Array(n),ny=new Float32Array(n);
-      for(let i=0;i<n;i++){const a=pts[Math.max(0,i-2)],c=pts[Math.min(n-1,i+2)];let vx=c[0]-a[0],vy=c[1]-a[1];const l=Math.hypot(vx,vy)||1;nx[i]=-vy/l;ny[i]=vx/l;}
-      const rgb=hex(pa.col);
-      [-1,0,1].forEach(sd=>{const bands=[];for(let b=0;b<BANDS;b++)bands.push(new Path2D());
-        const off=i=>sd*gap*(0.55+0.45*Math.sin(i*0.09+pa.key.length*1.3));
-        for(let i=1;i<n-1;i++){const a=pts[i-1],b=pts[i],c=pts[i+1];const oa=off(i-1),ob=off(i),oc=off(i+1);
-          const m1x=(a[0]+nx[i-1]*oa+b[0]+nx[i]*ob)/2,m1y=(a[1]+ny[i-1]*oa+b[1]+ny[i]*ob)/2,m2x=(b[0]+nx[i]*ob+c[0]+nx[i+1]*oc)/2,m2y=(b[1]+ny[i]*ob+c[1]+ny[i+1]*oc)/2;
-          const bi=Math.min(BANDS-1,(((t-b[2])/fadeT)*BANDS)|0);bands[bi].moveTo(m1x,m1y);bands[bi].quadraticCurveTo(b[0]+nx[i]*ob,b[1]+ny[i]*ob,m2x,m2y);}
-        for(let bi=0;bi<BANDS;bi++){const life=1-(bi+0.5)/BANDS;const al=(sd===0?0.6:0.3)*Math.pow(life,1.3);
-          ctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+al.toFixed(3)+')';ctx.lineWidth=(sd===0?base*1.7:base*0.75)*(0.4+0.6*life);ctx.stroke(bands[bi]);}});}
-    ctx.restore();
-    // a quiet note beside each moving head: how many other paths this one has crossed
-    ctx.font='500 '+(isTouch?10:11)+'px ui-monospace,"SF Mono",Menlo,Consolas,monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';
-    const note=P.light?'rgba(30,30,34,0.55)':'rgba(240,240,245,0.6)';
-    for(const k in paths){const pa=paths[k];if(!pa.ov.size||t-pa.seen>1.5)continue;const e=pa.pts[pa.pts.length-1];if(!e)continue;
-      ctx.strokeStyle=note;ctx.lineWidth=0.75;ctx.beginPath();ctx.moveTo(e[0]+6,e[1]-6);ctx.lineTo(e[0]+18,e[1]-18);ctx.stroke();
-      ctx.fillStyle=note;ctx.fillText('겹침 '+String(pa.ov.size).padStart(2,'0'),e[0]+21,e[1]-20);}
-  }};
 /* 인식: no footage. A surveillance-style rig: each person's silhouette as scan lines, the body split into head / torso / arms / legs
    with bones, joints and angles, and remembered faces. Uses the on-device pose model when available, an estimate otherwise. */
 const BONES={HEAD:[[0,11],[0,12],[7,0],[8,0]],TORSO:[[11,12],[11,23],[12,24],[23,24]],'ARM.L':[[11,13],[13,15],[15,19]],'ARM.R':[[12,14],[14,16],[16,20]],'LEG.L':[[23,25],[25,27],[27,31]],'LEG.R':[[24,26],[26,28],[28,32]]};
@@ -1086,50 +1050,6 @@ function upsampleMask(m,gw,gh,s,lo,hi,rgb,cv){const sw=Math.max(1,gw*s),sh=Math.
       const v=(m[o0+x0]*(1-fx)+m[o0+x0+1]*fx)*(1-fy)+(m[o1+x0]*(1-fx)+m[o1+x0+1]*fx)*fy;let a=(v-lo)*inv;a=a<0?0:a>1?1:a;a=a*a*(3-2*a);
       const q=(y*sw+x)*4;d[q]=r;d[q+1]=g;d[q+2]=b;d[q+3]=a*255;}}
   cv.cx.putImageData(cv.img,0,0);return cv;}
-
-/* 유리: people behind a frosted glass screen. Whoever is close to the glass is dark and sharp, whoever is far is a pale blur;
-   hands raised against the glass come through warm */
-const CANVAS_FILTER=(()=>{try{const c=document.createElement('canvas').getContext('2d');c.filter='blur(2px)';return c.filter==='blur(2px)';}catch(e){return false;}})();
-const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 유리 바로 앞까지 다가온 사람만 또렷하고 짙으며, 조금만 멀어져도 옅게 번진다',
-  init(){const n=A.n;this.M=new Float32Array(n);this.D=new Float32Array(n);this.Dn=new Float32Array(n);this.tmp=new Float32Array(n);this.cv=[null,null,null,null];this.O=mkCanvas(Math.max(2,Math.round(W*0.5*QF())),Math.max(2,Math.round(H*0.5*QF())));this.f=0;this.dInit=false;
-    // the glass itself, painted once: a smooth backlit field with fine grain so the gradient never bands
-    const bw=Math.max(2,Math.round(W/2)),bh=Math.max(2,Math.round(H/2)),bg=mkCanvas(bw,bh),c=bg.cx,img=c.createImageData(bw,bh),d=img.data;
-    for(let y=0;y<bh;y++){const v=y/(bh-1);for(let x=0;x<bw;x++){const u=x/(bw-1),glow=Math.exp(-(((u-0.5)/0.42)**2+((v-0.62)/0.5)**2));
-      const top=Math.pow(1-v,2.2);let r=228-150*top+20*glow,g=236-140*top+14*glow,bb=241-118*top+10*glow;const nz=(Math.random()-0.5)*5;const q=(y*bw+x)*4;d[q]=r+nz;d[q+1]=g+nz;d[q+2]=bb+nz;d[q+3]=255;}}
-    c.putImageData(img,0,0);this.bg=bg;},
-  // bilinear upsample of mask x weight with a smooth edge: one depth layer of the silhouette
-  layer(M,Wt,s,cv){const gw=A.w,gh=A.h,sw=gw*s,sh=gh*s;if(!cv||cv.width!==sw||cv.height!==sh){cv=mkCanvas(sw,sh);cv.img=cv.cx.createImageData(sw,sh);}
-    const d=cv.img.data,mw=gw-1.001,mh=gh-1.001;let any=false;
-    for(let y=0;y<sh;y++){let gy=(y+0.5)/s-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,o0=y0*gw,o1=o0+gw;
-      for(let x=0;x<sw;x++){let gx=(x+0.5)/s-0.5;gx=gx<0?0:gx>mw?mw:gx;const x0=gx|0,fx=gx-x0,i00=o0+x0,i01=o1+x0;
-        const v=(M[i00]*(1-fx)+M[i00+1]*fx)*(1-fy)+(M[i01]*(1-fx)+M[i01+1]*fx)*fy;const q=(y*sw+x)*4;if(v<0.3){d[q+3]=0;continue;}
-        let a=(v-0.32)/0.26;a=a>1?1:a;a=a*a*(3-2*a);const wv=(Wt[i00]*(1-fx)+Wt[i00+1]*fx)*(1-fy)+(Wt[i01]*(1-fx)+Wt[i01+1]*fx)*fy;
-        d[q]=12;d[q+1]=24;d[q+2]=36;d[q+3]=a*wv*255;if(wv>0.01)any=true;}}
-    cv.cx.putImageData(cv.img,0,0);cv.any=any;return cv;},
-  blurDraw(src,r,alpha){if(r<1.2){ctx.globalAlpha=alpha;ctx.drawImage(src,0,0,W,H);ctx.globalAlpha=1;return;}
-    const O=this.O,o=O.cx;o.setTransform(1,0,0,1,0,0);o.globalCompositeOperation='source-over';o.clearRect(0,0,O.width,O.height);o.imageSmoothingEnabled=true;
-    if(CANVAS_FILTER){o.filter='blur('+(r*O.width/W).toFixed(2)+'px)';o.drawImage(src,0,0,O.width,O.height);o.filter='none';}
-    else{if(!this.L||this.L[0].width!==O.width||this.L[0].height!==O.height){this.L=[];this.U=[];let lw=O.width,lh=O.height;for(let k=0;k<7;k++){this.L.push(mkCanvas(Math.max(2,lw),Math.max(2,lh)));this.U.push(mkCanvas(Math.max(2,lw),Math.max(2,lh)));lw=Math.round(lw/2);lh=Math.round(lh/2);}}
-      const L=this.L,U=this.U,put=(c,img)=>{const x=c.cx;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';x.clearRect(0,0,c.width,c.height);x.imageSmoothingEnabled=true;x.drawImage(img,0,0,c.width,c.height);};
-      const lv=clamp(Math.log2(r*O.width/W/0.75),0,6),k0=Math.floor(lv),k1=Math.min(6,k0+1),fr=lv-k0;put(L[0],src);for(let k=1;k<=k1;k++)put(L[k],L[k-1]);
-      const up=k=>{let cur=L[k];for(let j=k-1;j>=0;j--){put(U[j],cur);cur=U[j];}return cur;};
-      o.drawImage(up(k0),0,0);if(fr>0.02&&k1>k0){o.globalAlpha=fr;o.drawImage(up(k1),0,0);o.globalAlpha=1;}}
-    ctx.globalAlpha=alpha;ctx.drawImage(O,0,0,W,H);ctx.globalAlpha=1;},
-  draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();const w=A.w,h=A.h,n=A.n,M=this.M,D=this.D,Dn=this.Dn,p=A.p;
-    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
-    // the silhouette, averaged over a few frames so its edge does not shimmer
-    {const k=ez(0.75);for(let i=0;i<n;i++)M[i]+=(p[i]-M[i])*k;}if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
-    // a smooth depth map: each person's distance spreads softly around them, so blur changes gradually and never in a seam
-    const people=PEOPLE.list;let gNear=0.2;if(!people.length&&A.presN>12){let y0=h,y1=0;for(let i=0;i<n;i++)if(p[i]>0.5){const y=(i/w)|0;if(y<y0)y0=y;if(y>y1)y1=y;}gNear=clamp(((y1-y0)/h-0.2)/0.75,0,1);}
-    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!people.length){Dn[i]=gNear;continue;}const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let sw=0,sv=0;
-      for(const q of people){const cx=q.bx+q.bw/2,cy=q.by+q.bh/2,sx=Math.max(20,q.bw*0.6),sy=Math.max(20,q.bh*0.6),g=Math.exp(-(((px-cx)/sx)**2+((py-cy)/sy)**2)*0.5)+1e-6;sw+=g;sv+=g*q.near;}Dn[i]=sv/sw;}
-    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*ez(Dn[i]>D[i]?0.3:0.1);
-    // sharpness only in the last stretch before the glass; four depth layers blended, so blur is continuous across the body
-    const S=this.tmp;for(let i=0;i<n;i++){let s=(D[i]-0.62)/0.33;s=s<0?0:s>1?1:s;S[i]=s*s*(3-2*s);}
-    const sc=Math.max(1,Math.round((isTouch?2:3)*QF())),scl=W/1280,R=[1.6,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
-    for(let i=0;i<n;i++){const z=(1-S[i])*3;for(let l=0;l<4;l++){const wv=1-Math.abs(z-l);this.Wl[l][i]=wv>0?wv:0;}}
-    for(let l=3;l>=0;l--){this.cv[l]=this.layer(this.Mb,this.Wl[l],sc,this.cv[l]);if(!this.cv[l].any)continue;this.blurDraw(this.cv[l],R[l]*scl,AL[l]);}
-  }};
 
 /* 망점: a halftone print in one sky-blue ink. Dots are largest at the edge of each soft blob and shrink naturally both outward and inward;
    how far the inside opens to white depends on the picture itself: thick parts of a body and lighter clothing or skin open more */
@@ -1337,7 +1257,7 @@ function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h)
     while(hd<tl){const i=q[hd++],x=i%w;if(x>0&&on[i-1]&&!lab[i-1]){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&on[i+1]&&!lab[i+1]){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&on[i-w]&&!lab[i-w]){lab[i-w]=id;q[tl++]=i-w;}if(i<w*h-w&&on[i+w]&&!lab[i+w]){lab[i+w]=id;q[tl++]=i+w;}}
     if(tl>bestN){bestN=tl;best=id;}}for(let i=0;i<w*h;i++)if(lab[i]!==best)on[i]=0;}
 const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 쨍한 색 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
-  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.holdId=-1;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
+  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.hc=null;this.cool=0;this.dw=null;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
   // how far back someone may stand and still be taken: the height they would have with the whole body in view, as a share of the screen
   farH(){return [0.8,0.6,0.42][S.stackDist==null?1:S.stackDist]*H;},
@@ -1368,12 +1288,31 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
   // person's box across the whole frame; weaker parts (a thin raised arm) are kept as long as they connect to the body
   group(tr){const w=A.w,h=A.h,n=w*h,p=this.accP&&this.accP.length===n?this.accP:A.p;if(!this.gv||this.gv.length!==n){this.gv=new Uint8Array(n);this.gq=new Int32Array(n);}const vis=this.gv,q=this.gq;
-    vis.fill(0);let hd=0,tl=0;const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1),BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null;
-    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(p[i]>0.5&&!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}
+    vis.fill(0);let hd=0,tl=0;const BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null,dw=this.dw&&this.dw.length===n?this.dw:null,E=A.e;
+    // start from the places that have themselves been still (the person, not whoever is brushing past), then follow the shape out
+    // through whatever is joined to it and is not moving: a thin raised arm stays, a passer-by touching the shoulder does not
+    if(tr.cells){for(let k=0;k<tr.cells.length;k++){const i=tr.cells[k];if(!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}}
+    else{const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1);for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(p[i]>0.5&&!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}}
     let mnx=w,mxx=-1,mny=h,mxy=-1;while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;
-      const bx0=x0-(x1-x0)*0.1,bx1=x1+(x1-x0)*0.1,by0=y0-(y1-y0)*0.1,by1=y1+(y1-y0)*0.1,E=A.e;
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(vis[j]||p[j]<=0.28||(BAD&&BAD[j]))continue;if((xx<bx0||xx>bx1||yy<by0||yy>by1)&&E[j]>0.4)continue;vis[j]=1;q[tl++]=j;}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(vis[j]||p[j]<=0.28||(BAD&&BAD[j]))continue;if(dw?!(dw[j]>=0.12||(A.p[j]<=0.5&&E[j]<=0.4)):E[j]>0.4)continue;vis[j]=1;q[tl++]=j;}}
     return mxx<0?null:{vis,mnx,mxx,mny,mxy};},
+  // how long each place has held still. This is kept for places on the screen, not for people the tracker is following, so it does
+  // not care how many people there are, whether they overlap, or whether the tracker loses someone and finds them again under a
+  // new number: a place that has had a body on it and no movement keeps counting, a place where something moves counts back down
+  // (quickly, not at once, so a classmate walking in front does not wipe the count). The same map remembers who has been taken:
+  // those places stay marked until the person walks off, moves a lot, or a while has passed
+  dwell(dt){const n=A.n,p=A.p,e=A.e;if(!this.dw||this.dw.length!==n){this.dw=new Float32Array(n);this.lock=new Float32Array(n);this.emp=new Float32Array(n);}const dw=this.dw,lk=this.lock,em=this.emp,BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null;
+    for(let i=0;i<n;i++){if(p[i]>0.5&&!(BAD&&BAD[i])){if(e[i]<0.3)dw[i]=Math.min(30,dw[i]+dt);else dw[i]=Math.max(0,dw[i]-dt*2.5);if(dw[i]>0.4)em[i]=0;else if(dw[i]<=0){em[i]+=dt;if(em[i]>0.8)lk[i]=0;}if(lk[i]>0)lk[i]=Math.max(0,lk[i]-dt);}
+      else{dw[i]=Math.max(0,dw[i]-dt*4);em[i]+=dt;if(em[i]>0.5)lk[i]=0;}}},
+  // the bodies that are standing still right now: each connected patch of places that have been still for a moment. How long a body
+  // has held still is the time most of it (three fifths) has been still for, so a waving hand or a fringe of flicker does not hold it back
+  bodies(){const w=A.w,h=A.h,n=w*h,dw=this.dw,p=A.p,lk=this.lock;if(!this.lab||this.lab.length!==n){this.lab=new Uint8Array(n);this.bq=new Int32Array(n);this.bv=new Float32Array(n);}const lab=this.lab,q=this.bq,bv=this.bv,out=[],minC=Math.max(20,n*0.005),T0=0.3;lab.fill(0);
+    for(let s0=0;s0<n;s0++){if(lab[s0]||dw[s0]<T0||p[s0]<=0.5)continue;let hd=0,tl=0;q[tl++]=s0;lab[s0]=1;let mnx=w,mxx=-1,mny=h,mxy=-1,locked=0;
+      while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;if(lk[i]>0)locked++;bv[hd-1]=dw[i];
+        if(x>0){const j=i-1;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}if(x<w-1){const j=i+1;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}if(y>0){const j=i-w;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}if(y<h-1){const j=i+w;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}}
+      if(tl<minC)continue;const vals=bv.subarray(0,tl).slice().sort(),hold=vals[Math.floor(tl*0.4)],bh=(mxy-mny+1);
+      out.push({x:mnx*A.sx,y:mny*A.sy,w:(mxx-mnx+1)*A.sx,h:bh*A.sy,cells:q.slice(0,tl),hold,st:locked>tl*0.5?'done':mny<=0&&bh>h*0.8?'close':'hold'});}
+    return out;},
   capture(tr,col){const g=this.group(tr);if(!g)return null;const w=A.w,h=A.h,vis=g.vis,gx0=g.mnx-2,gy0=g.mny-2,gw=g.mxx-g.mnx+5,gh=g.mxy-g.mny+5;
     const keep=new Uint8Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const cx=gx0+x,cy=gy0+y;let k=0;for(let dy=-2;dy<=2&&!k;dy++)for(let dx=-2;dx<=2;dx++){const xx=cx+dx,yy=cy+dy;if(xx>=0&&yy>=0&&xx<w&&yy<h&&vis[yy*w+xx]){k=1;break;}}keep[y*gw+x]=k;}
     let m,mw2,mh2;const K=this.K,hi=this.hi;
@@ -1382,18 +1321,17 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     // weak but connected parts become solid, edges softened; then one solid piece: specks that do not touch the body are dropped
     m=hyst(m,mw2,mh2,0.5,0.22);{const tb=new Float32Array(m.length);blur3(m,tb,mw2,mh2);}
     const on=new Uint8Array(mw2*mh2);for(let i=0;i<on.length;i++)on[i]=m[i]>0.4?1:0;keepLargest(on,mw2,mh2);for(let i=0;i<on.length;i++)if(m[i]>0.4&&!on[i])m[i]=0;
-    const bx0=g.mnx*A.sx,bx1=(g.mxx+1)*A.sx,by0=g.mny*A.sy,by1=(g.mxy+1)*A.sy,who=[tr];TR.tracks.forEach(t=>{if(t!==tr&&TR.f-t.seen<=2&&t.stS&&t.stS!=='far'&&t.sx>=bx0&&t.sx<=bx1&&t.sy>=by0&&t.sy<=by1)who.push(t);});
-    return {m,gw:mw2,gh:mh2,sx:gx0*A.sx,sy:gy0*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:who.length,who};},
+    // these places are taken now; and how many people the shape holds: the people the tracker has standing inside it (at least one)
+    if(this.lock&&this.lock.length===w*h)for(let i=0;i<w*h;i++)if(vis[i])this.lock[i]=12;
+    let ppl=0;TR.tracks.forEach(t=>{if(TR.f-t.seen<=2&&t.stS!=='far'){const cx=clamp((t.sx/A.sx)|0,0,w-1),cy=clamp((t.sy/A.sy)|0,0,h-1);if(vis[cy*w+cx])ppl++;}});
+    return {m,gw:mw2,gh:mh2,sx:gx0*A.sx,sy:gy0*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:Math.max(1,ppl)};},
   draw(t,dt){dt=dt||0.016;if((this.f=(this.f||0)+1)%2===0)TR.update();const ok=STACK.ensure(),ww=this.wellW(),k=ww/STACK.viewW,fy=H;
     ctx.fillStyle='#ede8df';ctx.fillRect(0,0,W,H);
     // everyone in front: a quiet warm-grey shadow across the whole screen
     // who is in front, how far back each one stands, and whether they are still
-    const now=performance.now(),HOLD=this.HOLD,FAR=this.farH(),live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=6);
-    TR.tracks.forEach(tr=>{if(tr.stackT&&TR.f-tr.seen>12)tr.stackT=0;});
-    live.forEach(tr=>{const e=this.bodyH(tr);tr.bh=tr.bh&&TR.f-(tr.bhF||-9)<=4?tr.bh+(e-tr.bh)*0.25:e;tr.bhF=TR.f;
-      const hs=tr.hist,nn=hs.length,still=nn>8&&Math.hypot(hs[nn-1][0]-hs[nn-9][0],hs[nn-1][1]-hs[nn-9][1])<W*0.02,done=tr.stackT&&now-tr.stackT<12000&&Math.hypot(tr.sx-tr.stackX,tr.sy-tr.stackY)<W*0.2&&tr.bh>tr.stackH*0.7&&tr.bh<tr.stackH*1.45,
-        L=tr.pose,cut=L&&L[0]&&L[0].v>0.5?L[0].y<H*0.08:tr.y<A.sy*0.6;
-      tr.stS=tr.bh<FAR*(tr.stS==='far'?1.06:0.94)?'far':done?'done':cut&&tr.h>H*0.8?'close':!still?'move':'hold';tr.stHold=tr.stS==='hold'?(tr.stHold||0)+dt:Math.max(0,(tr.stHold||0)-dt*1.5);});
+    const now=performance.now(),HOLD=this.HOLD,FAR=this.farH(),live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=4);
+    // the tracker is only asked how far back each person stands (their size); who is standing still is read from the screen itself
+    live.forEach(tr=>{const e=this.bodyH(tr);tr.bh=tr.bh&&TR.f-(tr.bhF||-9)<=4?tr.bh+(e-tr.bh)*0.25:e;tr.bhF=TR.f;tr.stS=tr.bh<FAR*(tr.stS==='far'?1.06:0.94)?'far':'near';});
     // everyone in front: a quiet warm-grey shadow; those standing too far back only a faint one
     const w=A.w,h=A.h,n=A.n,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);const out=this.outMask(live);
     if(out){if(!this.pf||this.pf.length!==n)this.pf=new Float32Array(n);const pf=this.pf,bad=this.bad;for(let i=0;i<n;i++){if(bad[i]){pf[i]=pb[i];pb[i]=0;}else pf[i]=0;}this.liveFar=upsampleMask(pf,w,h,2,0.38,0.62,[228,222,212],this.liveFar);}
@@ -1401,15 +1339,16 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     const rw=W-ww,vs=Math.min(rw/W*0.96,1),vx=ww+(rw-W*vs)/2,vy=H-H*vs;if(out)ctx.drawImage(this.liveFar,vx,vy,W*vs,H*vs);ctx.drawImage(this.live,vx,vy,W*vs,H*vs);
     if(this.hold>0.05&&this.hiN>2){const HW=w*this.K,HH=h*this.K;if(this.f%3===0||!this.liveHi){this.disp=hyst(this.hi,HW,HH,0.5,0.22,this.disp);if(!this.dtmp||this.dtmp.length!==HW*HH)this.dtmp=new Float32Array(HW*HH);blur3(this.disp,this.dtmp,HW,HH);
       this.liveHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,[214,205,192],this.liveHi);this.fillHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,hex(this.col||'#8fa382'),this.fillHi);}ctx.drawImage(this.liveHi,vx,vy,W*vs,H*vs);}else{this.liveHi=null;}
-    // who is being measured, and whether they are close enough and still enough
-    // every person keeps their own clock: whoever stands still long enough is taken, however much the others around them move
-    // the one being measured: among those near enough, whoever has held still longest; only if nobody is near enough, the nearest of the rest
-    const near=live.filter(tr=>tr.stS!=='far'),pool=near.length?near:live;let cand=null;pool.forEach(tr=>{if(!cand||tr.stHold>cand.stHold+1e-6||(Math.abs(tr.stHold-cand.stHold)<1e-6&&tr.bh>cand.bh))cand=tr;});
-    const state=cand?cand.stS:'none';if(cand&&cand.id!==this.holdId){this.holdId=cand.id;this.gb=null;this.col=null;if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);}
-    this.hold=cand?cand.stHold:0;if(this.hold>0.05&&cand)this.accum(cand);else this.resetAcc();
+    // the one being measured: of the bodies standing still (near enough, not yet taken), the one that has held still longest
+    this.dwell(dt);this.cool=Math.max(0,(this.cool||0)-dt);const bodies=this.bodies();let cand=null;for(const b of bodies)if(b.st==='hold'&&(!cand||b.hold>cand.hold))cand=b;
+    const state=cand?'hold':bodies.some(b=>b.st==='done')?'done':bodies.some(b=>b.st==='close')?'close':live.some(t=>t.stS!=='far')?'move':live.length?'far':'none';
+    // the same body as a moment ago? (its patch still covers where the middle of it was) If not, start its picture afresh
+    if(cand){const c=this.hc,same=c&&cand.x<=c[0]&&cand.x+cand.w>=c[0]&&cand.y<=c[1]&&cand.y+cand.h>=c[1];if(!same){this.gb=null;this.col=null;if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);}this.hc=[cand.x+cand.w/2,cand.y+cand.h/2];}else this.hc=null;
+    this.hold=cand?Math.min(HOLD,cand.hold):0;if(this.hold>0.05&&cand)this.accum(cand);else this.resetAcc();
     if(this.hold>0.05&&cand){if(!this.col)this.col=STACK.color();const pr=Math.min(1,this.hold/HOLD),rgb=hex(this.col);const g=(this.f&3)===0||!this.gb?this.group(cand):null;if(g)this.gb=[g.mnx*A.sx,g.mny*A.sy,(g.mxx-g.mnx+1)*A.sx,(g.mxy-g.mny+1)*A.sy];
       const gb=this.gb||[cand.x,cand.y,cand.w,cand.h];this.fill=upsampleMask(pb,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]*1.3+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);if(this.liveHi&&this.fillHi)ctx.drawImage(this.fillHi,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
-    if(this.hold>=HOLD&&cand&&ok){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.resetAcc();(c?c.who:[cand]).forEach(t=>{t.stHold=0;t.stackT=now;t.stackX=t.sx;t.stackY=t.sy;t.stackH=t.bh;});
+    // taken one at a time, with a breath between, so a row of students standing still pile up one after another instead of all at once
+    if(cand&&cand.hold>=HOLD&&ok&&this.cool<=0){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.hc=null;this.resetAcc();this.cool=0.9;
       if(c){const pc=STACK.make(c.m,c.gw,c.gh,c.col,k);if(pc){STACK.people+=c.ppl;this.lastPpl=c.ppl;STACK.fly.push({pc,t:0,sx:vx+c.sx*vs,sy:vy+c.sy*vs,sw:c.sw*vs,sh:c.sh*vs});this.msg=2.4;}}}
     // the pile
     if(ok)STACK.step(dt,k);const flying=new Set(STACK.fly.map(f=>f.pc));
@@ -1425,95 +1364,6 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     this.msg=Math.max(0,this.msg-dt);const txt=this.msg>0?(this.lastPpl>1?this.lastPpl+'명이 함께 쌓였어요':STACK.people+'번째로 쌓였어요'):state==='far'?'조금 더 가까이 와 주세요':state==='close'?'조금만 뒤로 가 주세요':state==='move'?'그대로 멈춰 주세요':state==='hold'?'그대로… '+Math.max(1,Math.ceil(HOLD-this.hold)):state==='done'?'쌓였어요 · 다음 친구도 서 보세요':'앞에 서서 2초 동안 멈춰 보세요';
     ctx.fillStyle='rgba(40,32,24,0.78)';ctx.fillText(txt,cx,ly);ctx.font='500 '+Math.round(fz*0.72)+'px '+SANS;ctx.fillStyle='rgba(40,32,24,0.45)';ctx.fillText('함께 쌓인 사람 '+STACK.people,cx,ly+fz*1.5);ctx.textAlign='left';
     if(!ok){ctx.fillStyle='rgba(40,32,24,0.6)';ctx.fillText(STACK.rFail&&!window.Matter?'물리 엔진을 불러오지 못했어요':'물리 엔진 준비 중…',24,H-24);}}};
-/* 불꽃: people wander as soft grey shadows under a deep blue night. The moment two of them meet (touching or overlapping), fireworks burst
-   right where they meet: a white-gold flash with a spiked star, rays of pastel light tipped with sparkles, drifting capsules of colour,
-   confetti and falling golden sparks, then a few late crackles. Friends who stay together keep the sky going */
-const mFire={id:'firework',name:'불꽃',desc:'깊은 파란 밤하늘 아래 사람은 회색 그림자로 돌아다니고, 서로 붙거나 겹치는 순간 그 자리에서 불꽃놀이가 화려하게 터진다. 붙어 있는 동안 계속 터진다',
-  COL:['#fff6c8','#ffd36e','#ff9ec4','#ff7aa8','#9ff0d0','#8fd3ff','#c7a8ff','#ffffff','#ffb38a'],
-  SCHEMES:[['#fff6c8','#ffd36e','#ffb36b'],['#ff9ec4','#ff6fa8','#d9a8ff','#ffffff'],['#9ff0d0','#8fd3ff','#d4f6ff','#ffffff'],['#ff7a7a','#ffd36e','#8fd3ff','#9ff0d0','#c7a8ff'],['#c7a8ff','#8f9bff','#ffffff'],['#ffe08a','#ff9ec4','#9ff0d0']],
-  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.sil=null;this.bursts=[];this.amb=[];this.pairs={};this.sp={};this.q=[];
-    const bw=Math.max(2,Math.round(W/2)),bh=Math.max(2,Math.round(H/2)),b=mkCanvas(bw,bh),c=b.cx;
-    let g=c.createLinearGradient(0,0,0,bh);g.addColorStop(0,'#040a24');g.addColorStop(0.5,'#0f2766');g.addColorStop(1,'#071740');c.fillStyle=g;c.fillRect(0,0,bw,bh);
-    g=c.createRadialGradient(bw*0.5,bh*0.45,0,bw*0.5,bh*0.45,Math.max(bw,bh)*0.7);g.addColorStop(0,'rgba(80,125,220,0.24)');g.addColorStop(0.6,'rgba(70,50,150,0.1)');g.addColorStop(1,'rgba(4,4,24,0.5)');c.fillStyle=g;c.fillRect(0,0,bw,bh);
-    const im=c.getImageData(0,0,bw,bh),d=im.data;for(let i=0;i<d.length;i+=4){const n=(Math.random()-0.5)*12;d[i]+=n;d[i+1]+=n;d[i+2]+=n;}c.putImageData(im,0,0);
-    for(let i=0;i<bw*bh/700;i++){const x=Math.random()*bw,y=Math.random()*bh,r=Math.random()<0.9?0.25+Math.random()*0.6:0.7+Math.random()*1.1;c.fillStyle='rgba(255,255,255,'+(0.25+Math.random()*0.6).toFixed(2)+')';c.beginPath();c.arc(x,y,r,0,TAU);c.fill();}
-    this.bg=b;for(let i=0;i<24;i++)this.amb.push(this.ambient(true));},
-  ambient(spread){const R=Math.random;return {x:R()*W,y:spread?R()*H:H+H*0.05,vx:(R()-0.5)*W*0.006,vy:-H*(0.004+R()*0.01),cap:R()<0.5,len:H*(0.025+R()*0.05),wd:H*(0.007+R()*0.01),ang:R()*TAU,col:this.COL[(R()*this.COL.length)|0],a:0.18+R()*0.25,tw:R()*TAU,s:H*(0.008+R()*0.012)};},
-  glow(col){const k='g'+col;if(this.sp[k])return this.sp[k];const S2=96,c=mkCanvas(S2,S2),x=c.cx,g=x.createRadialGradient(S2/2,S2/2,0,S2/2,S2/2,S2/2),rgb=hex(col);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(0.18,'rgba('+rgb+',0.9)');g.addColorStop(0.5,'rgba('+rgb+',0.25)');g.addColorStop(1,'rgba('+rgb+',0)');x.fillStyle=g;x.fillRect(0,0,S2,S2);return this.sp[k]=c;},
-  star4(col){const k='s'+col;if(this.sp[k])return this.sp[k];const S2=96,c=mkCanvas(S2,S2),x=c.cx,m=S2/2;x.fillStyle=col;x.beginPath();x.moveTo(m,2);x.quadraticCurveTo(m+5,m-5,S2-2,m);x.quadraticCurveTo(m+5,m+5,m,S2-2);x.quadraticCurveTo(m-5,m+5,2,m);x.quadraticCurveTo(m-5,m-5,m,2);x.fill();
-    const g=x.createRadialGradient(m,m,0,m,m,m*0.5);g.addColorStop(0,'rgba(255,255,255,0.95)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.beginPath();x.arc(m,m,m*0.5,0,TAU);x.fill();return this.sp[k]=c;},
-  burst(x0,y0,big,sz){const R=Math.random,C=this.COL,s=(sz||(big?1:0.62))*Math.min(W,H)*0.16,x=clamp(x0+(R()-0.5)*s*0.4,s,W-s),y=clamp(y0-s*(big?1.1:0.8)-R()*s*0.4,s*0.9,H*0.62),b={x,y,x0,y0,s,t:big?-0.42:-0.32,lt:big?0.42:0.32,big,rays:[],gold:[],caps:[],bits:[],sparks:[],crack:[],spikes:[],hue:C[(R()*4)|0]};
-    const nS=12;for(let i=0;i<nS;i++)b.spikes.push(0.65+R()*0.7);
-    const nR=big?72:40;for(let i=0;i<nR;i++)b.rays.push({a:i/nR*TAU+(R()-0.5)*0.14,len:s*(1.1+R()*2.4),w:1.2+R()*2.4,col:C[(R()*C.length)|0],tip:R()<0.45,d:R()*0.1});
-    const nG=big?30:16;for(let i=0;i<nG;i++)b.gold.push({a:R()*TAU,len:s*(2.4+R()*2),w:0.7+R()*0.8,d:0.03+R()*0.08});
-    const nC=big?14:7;for(let i=0;i<nC;i++)b.caps.push({a:R()*TAU,v:s*(1.6+R()*2.2),len:s*(0.18+R()*0.4),w:s*(0.05+R()*0.07),col:C[(R()*C.length)|0],al:0.35+R()*0.3});
-    const nB=big?150:80;for(let i=0;i<nB;i++){const a=R()*TAU,v=s*(0.8+R()*4.2);b.bits.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-s*0.4,k:R()<0.55?0:R()<0.75?1:2,r:s*(0.012+R()*0.03),col:C[(R()*C.length)|0],rot:R()*TAU,vr:(R()-0.5)*8,life:1.4+R()*2,tw:R()*TAU});}
-    const nP=big?54:28;for(let i=0;i<nP;i++){const a=R()*TAU,v=s*(1.5+R()*3.2);b.sparks.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,px:x,py:y,life:1.1+R()*1.2,col:R()<0.6?'#ffd36e':'#fff6c8'});}
-    const nK=big?10:5;for(let i=0;i<nK;i++){const a=R()*TAU,rr=s*(1.4+R()*1.6);b.crack.push({x:x+Math.cos(a)*rr,y:y+Math.sin(a)*rr,t:0.45+R()*0.6,col:C[(R()*C.length)|0]});}
-    // a kind of shell: classic rays (peony), or a ring, a heart, a weeping willow, a chrysanthemum, a star, a crossette that splits, a palm
-    b.type='peony';const sc=this.SCHEMES[(R()*this.SCHEMES.length)|0],pc=()=>sc[(R()*sc.length)|0];b.ps=[];
-    const P=(vx,vy,o)=>b.ps.push(Object.assign({x,y,vx,vy,dr:0.45,g:s*0.25,life:1.7,col:pc(),sz:s*0.045,tr:0.1,t:0},o||{}));
-    if(b.type!=='peony'){b.rays=b.rays.slice(0,big?12:6);b.gold=[];b.sparks=b.sparks.slice(0,10);b.bits=b.bits.slice(0,big?50:25);b.caps=b.caps.slice(0,big?6:3);}
-    if(b.type==='ring'){const tilt=R()*Math.PI,q=0.35+R()*0.65,ct=Math.cos(tilt),st=Math.sin(tilt);for(const [N,v,c] of [[60,s*2.6,sc[0]],[36,s*1.45,sc[1%sc.length]]])for(let i=0;i<N;i++){const a=i/N*TAU,ux=Math.cos(a)*v,uy=Math.sin(a)*v*q;P(ux*ct-uy*st,ux*st+uy*ct,{col:c});}}
-    else if(b.type==='heart'){const N=76,pk=['#ff7aa8','#ff9ec4','#ffd1e3','#ffffff'];for(let i=0;i<N;i++){const u=i/N*TAU,hx=16*Math.pow(Math.sin(u),3),hy=-(13*Math.cos(u)-5*Math.cos(2*u)-2*Math.cos(3*u)-Math.cos(4*u));P(hx/16*s*2.3,hy/16*s*2.3,{col:pk[(R()*pk.length)|0],g:s*0.12,life:1.9,dr:0.42});}for(let i=0;i<30;i++){const a=R()*TAU,v=s*R()*1.2;P(Math.cos(a)*v,Math.sin(a)*v,{col:'#ffd1e3',sz:s*0.03,life:1.4});}}
-    else if(b.type==='star'){const rot=R()*TAU,pts=[];for(let i=0;i<10;i++){const a=rot+i/10*TAU,r=i%2?0.42:1;pts.push([Math.cos(a)*r,Math.sin(a)*r]);}for(let i=0;i<10;i++){const A2=pts[i],B2=pts[(i+1)%10];for(let k=0;k<7;k++){const f=k/7,ux=A2[0]+(B2[0]-A2[0])*f,uy=A2[1]+(B2[1]-A2[1])*f;P(ux*s*2.5,uy*s*2.5,{col:i%2?sc[0]:pc(),life:1.8,dr:0.42,g:s*0.15});}}}
-    else if(b.type==='willow'){for(let i=0;i<86;i++){const a=R()*TAU,v=s*(1.3+R()*1.4);P(Math.cos(a)*v,Math.sin(a)*v,{col:R()<0.7?'#ffd36e':'#fff1b8',dr:0.28,g:s*1.15,life:2.8+R()*0.6,tr:0.34,sz:s*0.034,tw:R()*TAU});}}
-    else if(b.type==='chrys'){for(let i=0;i<140;i++){const a=R()*TAU,v=s*(2.1+R()*0.8);P(Math.cos(a)*v,Math.sin(a)*v,{dr:0.5,g:s*0.35,life:1.5+R()*0.4,tr:0.14,sz:s*0.038,tw:R()<0.4?R()*TAU:0});}}
-    else if(b.type==='crossette'){for(let i=0;i<18;i++){const a=i/18*TAU+R()*0.2,v=s*2.2;P(Math.cos(a)*v,Math.sin(a)*v,{col:sc[0],life:0.62,split:1,sz:s*0.06,tr:0.12});}}
-    else if(b.type==='palm'){for(let i=0;i<9;i++){const a=-Math.PI/2+(i/8-0.5)*Math.PI*1.6+(R()-0.5)*0.2,v=s*(2.3+R()*0.6);P(Math.cos(a)*v,Math.sin(a)*v,{col:'#ffd36e',dr:0.5,g:s*0.75,life:2.2,tr:0.28,sz:s*0.09,shed:1});}}
-    this.bursts.push(b);if(this.bursts.length>10)this.bursts.shift();},
-  draw(t,dt){dt=Math.min(dt||0.016,0.05);if((this.f=(this.f||0)+1)%2===0)TR.update();const R=Math.random;
-    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
-    // the quiet sky: a few pastel capsules and sparkles drifting up
-    for(let i=0;i<this.amb.length;i++){const q=this.amb[i];q.x+=q.vx*dt;q.y+=q.vy*dt;q.tw+=dt;if(q.y<-H*0.08)this.amb[i]=this.ambient(false);
-      if(q.cap){ctx.globalAlpha=q.a;ctx.strokeStyle=q.col;ctx.lineCap='round';ctx.lineWidth=q.wd;ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(q.x+Math.cos(q.ang)*q.len,q.y+Math.sin(q.ang)*q.len);ctx.stroke();}
-      else{ctx.globalAlpha=q.a*(0.6+0.4*Math.sin(q.tw*2));const z=q.s*2;ctx.drawImage(this.star4(q.col),q.x-z,q.y-z,z*2,z*2);}}
-    ctx.globalAlpha=1;
-    // people: soft grey shadows
-    const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);this.sil=upsampleMask(pb,w,h,2,0.4,0.6,[124,134,160],this.sil);ctx.globalAlpha=0.5;ctx.drawImage(this.sil,0,0,W,H);ctx.globalAlpha=1;
-    // meetings: two people touching or overlapping set off a big burst where they meet, then smaller ones while they stay together
-    const live=TR.tracks.filter(tr=>TR.f-tr.seen<=2&&(tr.hits||0)>=4),seen={};
-    const touch=(a,b)=>{const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);return ox>-Math.min(a.w,b.w)*0.04&&oy>Math.min(a.h,b.h)*0.4;};
-    const meet=(key,x,y)=>{seen[key]=1;let P=this.pairs[key];if(!P){P=this.pairs[key]={next:1.5,gone:0};this.burst(x,y,true,1+R()*0.35);this.q.push({t:0.32,x:x-W*(0.08+R()*0.06),y:y-H*0.05,sz:0.45+R()*0.25},{t:0.62,x:x+W*(0.08+R()*0.06),y:y-H*0.1,sz:0.6+R()*0.3});}
-      else{P.gone=0;P.next-=dt;if(P.next<=0){const SZ=[0.45,0.6,0.8,1.05];this.burst(x+(R()-0.5)*W*0.1,y-R()*H*0.12,false,SZ[(R()*SZ.length)|0]);P.next=1.1+R()*0.8;}}};
-    for(let i=this.q.length-1;i>=0;i--){const q=this.q[i];q.t-=dt;if(q.t<=0){this.burst(q.x,q.y,false,q.sz);this.q.splice(i,1);}}
-    for(let i=0;i<live.length;i++)for(let j=i+1;j<live.length;j++){const a=live[i],b=live[j];if(!touch(a,b))continue;meet(Math.min(a.id,b.id)+'-'+Math.max(a.id,b.id),(Math.max(a.x,b.x)+Math.min(a.x+a.w,b.x+b.w))/2,Math.max(a.y,b.y)+Math.min(a.h,b.h)*0.28);}
-    live.forEach(tr=>{if(tr.w>tr.h*0.95&&tr.h>H*0.3&&!tr.pose)meet('w'+tr.id,tr.x+tr.w/2,tr.y+tr.h*0.28);}); // two people the tracker sees as one wide shape
-    for(const k in this.pairs)if(!seen[k]){this.pairs[k].gone+=dt;if(this.pairs[k].gone>0.6)delete this.pairs[k];}
-    // the fireworks
-    for(let i=this.bursts.length-1;i>=0;i--){const b=this.bursts[i];b.t+=dt;const T=b.t,s=b.s;if(T>3.6){this.bursts.splice(i,1);continue;}
-      ctx.globalCompositeOperation='lighter';
-      // the shell climbing from where they met, with a short glittering tail
-      if(T<0){const u=1+T/b.lt,e=1-Math.pow(1-u,2),x=lerp(b.x0,b.x,e),y=lerp(b.y0,b.y,e),px=lerp(b.x0,b.x,Math.max(0,e-0.18)),py=lerp(b.y0,b.y,Math.max(0,e-0.18));
-        const g=ctx.createLinearGradient(px,py,x,y);g.addColorStop(0,'rgba(255,214,140,0)');g.addColorStop(1,'rgba(255,240,200,0.95)');ctx.globalAlpha=1;ctx.strokeStyle=g;ctx.lineWidth=2.2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(x,y);ctx.stroke();
-        const z=s*0.1;ctx.drawImage(this.glow('#fff6c8'),x-z,y-z,z*2,z*2);if(R()<0.6){const z2=s*0.03;ctx.drawImage(this.glow('#ffd36e'),px+(R()-0.5)*6-z2,py+(R()-0.5)*6-z2,z2*2,z2*2);}ctx.globalCompositeOperation='source-over';continue;}
-      for(const r of b.gold){const u=(T-r.d)/1.3;if(u<0||u>1.3)continue;const e=1-Math.pow(1-Math.min(1,u),2),head=r.len*e,tail=head*Math.max(0,(u-0.1)/1.2),al=(u<1?1:(1.3-u)/0.3)*0.55,cx=Math.cos(r.a),cy=Math.sin(r.a);
-        ctx.globalAlpha=al;ctx.strokeStyle='#ffe3a0';ctx.lineWidth=r.w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(b.x+cx*tail,b.y+cy*tail);ctx.lineTo(b.x+cx*head,b.y+cy*head);ctx.stroke();}
-      {const a=0.4*Math.exp(-T*0.9),z=s*3.4;ctx.globalAlpha=a;ctx.drawImage(this.glow(b.hue),b.x-z,b.y-z,z*2,z*2);}
-      if(T<0.8){const k=Math.min(1,T/0.1),fa=Math.pow(1-T/0.8,1.4),z=s*(0.6+1.3*k);ctx.globalAlpha=fa;ctx.drawImage(this.glow('#fff6c8'),b.x-z,b.y-z,z*2,z*2);}
-      if(T<0.55){const k=1-Math.pow(1-Math.min(1,T/0.12),3),fa=1-T/0.55,n=b.spikes.length;ctx.globalAlpha=fa;ctx.beginPath();for(let q=0;q<n*2;q++){const a=q/(n*2)*TAU+0.2,rr=(q%2?s*0.22:s*0.95*b.spikes[q>>1])*k;const px=b.x+Math.cos(a)*rr,py=b.y+Math.sin(a)*rr;q?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();
-        ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fill();ctx.strokeStyle='rgba(150,195,255,0.9)';ctx.lineWidth=3;ctx.stroke();}
-      ctx.lineCap='round';ctx.globalCompositeOperation='source-over';
-      for(const r of b.rays){const u=(T-r.d)/0.95;if(u<0||u>1.35)continue;const e=1-Math.pow(1-Math.min(1,u),3),head=r.len*e,tail=head*Math.max(0,(u-0.2)/1.15),al=u<1?1:(1.35-u)/0.35,cx=Math.cos(r.a),cy=Math.sin(r.a);
-        ctx.globalAlpha=al*0.9;ctx.strokeStyle=r.col;ctx.lineWidth=r.w;ctx.beginPath();ctx.moveTo(b.x+cx*(tail+s*0.15),b.y+cy*(tail+s*0.15));ctx.lineTo(b.x+cx*head,b.y+cy*head);ctx.stroke();
-        if(r.tip){const z=r.w*5+s*0.05;ctx.globalAlpha=al;ctx.drawImage(this.star4(r.col),b.x+cx*head-z,b.y+cy*head-z,z*2,z*2);}}
-      ctx.globalCompositeOperation='lighter';
-      for(const q of b.sparks){if(T>q.life)continue;q.px=q.x;q.py=q.y;q.vx*=Math.pow(0.35,dt);q.vy=q.vy*Math.pow(0.35,dt)+s*1.6*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;const al=1-T/q.life;
-        ctx.globalAlpha=al*0.8;ctx.strokeStyle=q.col;ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(q.x-(q.x-q.px)*6,q.y-(q.y-q.py)*6);ctx.lineTo(q.x,q.y);ctx.stroke();const z=s*0.06;ctx.globalAlpha=al;ctx.drawImage(this.glow(q.col),q.x-z,q.y-z,z*2,z*2);}
-      for(let j=b.ps.length-1;j>=0;j--){const q=b.ps[j];q.t+=dt;if(q.t>q.life){if(q.split){for(let k=0;k<4;k++){const a=Math.atan2(q.vy,q.vx)+Math.PI/4+k*Math.PI/2,v=s*0.95;b.ps.push({x:q.x,y:q.y,vx:Math.cos(a)*v+q.vx*0.2,vy:Math.sin(a)*v+q.vy*0.2,dr:0.4,g:s*0.3,life:1.0,col:this.COL[(R()*this.COL.length)|0],sz:s*0.035,tr:0.1,t:0});}}b.ps.splice(j,1);continue;}
-        const dr=Math.pow(q.dr,dt);q.vx*=dr;q.vy=q.vy*dr+q.g*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;const al=Math.min(1,(q.life-q.t)/0.45)*(q.tw?0.55+0.45*Math.sin(q.t*30+q.tw):1);if(al<=0.01)continue;
-        ctx.globalAlpha=al*0.75;ctx.strokeStyle=q.col;ctx.lineWidth=Math.max(1,q.sz*0.45);ctx.beginPath();ctx.moveTo(q.x-q.vx*q.tr,q.y-q.vy*q.tr);ctx.lineTo(q.x,q.y);ctx.stroke();const z=q.sz*1.6;ctx.globalAlpha=al;ctx.drawImage(this.glow(q.col),q.x-z,q.y-z,z*2,z*2);
-        if(q.shed&&R()<dt*40)b.ps.push({x:q.x,y:q.y,vx:(R()-0.5)*s*0.3,vy:(R()-0.5)*s*0.3,dr:0.3,g:s*0.5,life:0.5+R()*0.4,col:'#fff1b8',sz:s*0.022,tr:0.05,t:0,tw:R()*TAU});}
-      for(const c of b.crack){const u=T-c.t;if(u<0||u>0.3)continue;const k=Math.sin(u/0.3*Math.PI),z=s*0.22*k;ctx.globalAlpha=k;ctx.drawImage(this.star4(c.col),c.x-z,c.y-z,z*2,z*2);ctx.drawImage(this.glow('#ffffff'),c.x-z*0.7,c.y-z*0.7,z*1.4,z*1.4);}
-      ctx.globalCompositeOperation='source-over';
-      for(const c of b.caps){const dd=c.v*(1-Math.exp(-T*1.6))/1.6,al=c.al*Math.min(1,T/0.15)*Math.max(0,Math.min(1,(3.4-T)/1.4)),cx=Math.cos(c.a),cy=Math.sin(c.a);if(al<=0)continue;
-        ctx.globalAlpha=al;ctx.strokeStyle=c.col;ctx.lineWidth=c.w;ctx.beginPath();ctx.moveTo(b.x+cx*dd,b.y+cy*dd);ctx.lineTo(b.x+cx*(dd+c.len),b.y+cy*(dd+c.len));ctx.stroke();}
-      for(const q of b.bits){if(T>q.life)continue;q.vx*=Math.pow(0.3,dt);q.vy=q.vy*Math.pow(0.3,dt)+s*0.5*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.rot+=q.vr*dt;const al=Math.min(1,(q.life-T)/0.6)*(0.75+0.25*Math.sin(T*9+q.tw));ctx.globalAlpha=al;
-        if(q.k===0){ctx.fillStyle=q.col;ctx.beginPath();ctx.arc(q.x,q.y,q.r,0,TAU);ctx.fill();}
-        else if(q.k===1){ctx.save();ctx.translate(q.x,q.y);ctx.rotate(q.rot);ctx.fillStyle=q.col;ctx.beginPath();ctx.moveTo(0,-q.r*1.6);ctx.lineTo(q.r*1.3,q.r);ctx.lineTo(-q.r*1.3,q.r);ctx.closePath();ctx.fill();ctx.restore();}
-        else{const z=q.r*3.2;ctx.drawImage(this.star4(q.col),q.x-z,q.y-z,z*2,z*2);}}}
-    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';}};
-
 /* 물감: the surface of water with oil on it. A film of iridescent colour (magenta, violet, blue, cyan, green, gold, orange) drifts and
    curls; wherever people move, the water follows them and drags the colour into swirls and fine marbled lines. A small fluid simulation
    (advection, pressure projection, a little vorticity) on a coarse grid; colour comes from the film's thickness through a thin-film palette */
@@ -1621,8 +1471,29 @@ function noVideo(msg){ctx.fillStyle='#101114';ctx.fillRect(0,0,W,H);ctx.font='50
 
 /* 비눗방울: raise your arms over your head and bubbles come pouring out of your hands, rat-a-tat, in the direction the arm points; they
    slow, drift and wobble, catch rainbow light on their skins, and burst the moment they touch somebody else. Over the real camera picture */
+// arms held out, read from the shape of the people alone. Every place inside the shape knows how far it is from the edge; thick
+// places (deep inside: trunks, heads) are bodies, thin places are limbs. From every body the shape is walked outward through its thin parts, and
+// a thin part that reaches far from its body without hanging below it is an arm held out: its far end is the hand, and the way
+// it points is from where it leaves the body to that end. Works for any number of people, touching or not, with no pose model
+const ARMS={d:null,r:null,g:null,src:null,q:null,
+  find(pb,w,h){const n=w*h;if(!this.d||this.d.length!==n){this.d=new Float32Array(n);this.r=new Float32Array(n);this.t=new Float32Array(n);this.g=new Float32Array(n);this.pm=new Float32Array(n);this.src=new Int32Array(n);this.q=new Int32Array(n);}const d=this.d,r=this.r,t=this.t,g=this.g,pm=this.pm,src=this.src,q=this.q,out=[];
+    for(let i=0;i<n;i++)d[i]=pb[i]>0.5?60:0;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;let v=d[i];if(!v)continue;v=Math.min(v,(x>0?d[i-1]:0)+1,(y>0?d[i-w]:0)+1,(x>0&&y>0?d[i-w-1]:0)+1.414,(x<w-1&&y>0?d[i-w+1]:0)+1.414);d[i]=v;}
+    for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){const i=y*w+x;let v=d[i];if(!v)continue;v=Math.min(v,(x<w-1?d[i+1]:0)+1,(y<h-1?d[i+w]:60)+1,(x<w-1&&y<h-1?d[i+w+1]:60)+1.414,(x>0&&y<h-1?d[i+w-1]:60)+1.414);d[i]=v;}
+    // how thick the body is that a place belongs to: the deepest place within an arm's reach (a running maximum, across then down)
+    const R=Math.max(6,Math.round(h*0.2));for(let y=0;y<h;y++)for(let x=0;x<w;x++){let m=0;const a=Math.max(0,x-R),b=Math.min(w-1,x+R);for(let k=a;k<=b;k++){const v=d[y*w+k];if(v>m)m=v;}t[y*w+x]=m;}
+    for(let x=0;x<w;x++)for(let y=0;y<h;y++){let m=0;const a=Math.max(0,y-R),b=Math.min(h-1,y+R);for(let k=a;k<=b;k++){const v=t[k*w+x];if(v>m)m=v;}r[y*w+x]=m;}
+    // walk outward from the bodies through the shape
+    let qh=0,qt=0;for(let i=0;i<n;i++){g[i]=-1;pm[i]=0;if(d[i]>0&&r[i]>=2.4&&d[i]>=r[i]*0.36){g[i]=0;src[i]=i;q[qt++]=i;}}
+    while(qh<qt){const i=q[qh++],x=i%w,y=(i/w)|0,gi=g[i];for(let k=0;k<8;k++){const dx=k===0||k===4||k===5?-1:k===1||k===6||k===7?1:0,dy=k===2||k===4||k===6?-1:k===3||k===5||k===7?1:0,nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;const j=ny*w+nx;if(d[j]<=0||g[j]>=0)continue;g[j]=gi+(dx&&dy?1.414:1);src[j]=src[i];pm[j]=Math.max(pm[i],d[j]);q[qt++]=j;}}
+    // the far ends: far enough out, and thin all the way (a head or a second person leaning in is thick somewhere on the way)
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x,v=g[i];if(v<3)continue;const s0=src[i],rb=r[s0];if(v<rb*1.0||pm[i]>Math.max(1.6,rb*0.34))continue;
+      let top=true;for(let dy=-2;dy<=2&&top;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(g[j]>v||(g[j]===v&&j<i)){top=false;break;}}if(!top)continue;
+      const sx=s0%w,sy=(s0/w)|0;if(y>sy+rb*0.45)continue; // hanging down, or a leg
+      out.push({x:(x+0.5)*A.sx,y:(y+0.5)*A.sy,sx:(sx+0.5)*A.sx,sy:(sy+0.5)*A.sy,r:rb*A.sx,len:v*A.sx});}
+    return out;}};
 const mBubble={id:'bubble',name:'비눗방울',needVideo:true,desc:'팔을 쭉 뻗으면(옆으로든 위로든) 손끝에서 팔이 향한 쪽으로 비눗방울이 두두두 뿜어져 나가고, 다른 사람에게 닿으면 톡 터진다. 실제 화면 그대로',
-  init(){this.b=[];this.fx=[];this.guns={};this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
+  init(){this.b=[];this.fx=[];this.guns=[];this.tips=null;this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
   sprite(){if(this.sp)return this.sp;const S2=160,c=mkCanvas(S2,S2),x=c.cx,m=S2/2,r=S2/2-4;
     let g=x.createRadialGradient(m,m,r*0.55,m,m,r);g.addColorStop(0,'rgba(255,255,255,0.0)');g.addColorStop(0.82,'rgba(205,232,255,0.10)');g.addColorStop(1,'rgba(255,255,255,0.42)');x.fillStyle=g;x.beginPath();x.arc(m,m,r,0,TAU);x.fill();
     const hs=['rgba(255,120,205,0.62)','rgba(255,214,120,0.55)','rgba(130,240,200,0.5)','rgba(120,180,255,0.6)','rgba(200,140,255,0.58)'];x.lineWidth=3.2;for(let k=0;k<2;k++)for(let i=0;i<hs.length;i++){x.strokeStyle=hs[i];x.beginPath();x.arc(m,m,r-1.5-k*2.5,(i/hs.length+k*0.1)*TAU,((i+1.15)/hs.length+k*0.1)*TAU);x.stroke();}
@@ -1633,14 +1504,29 @@ const mBubble={id:'bubble',name:'비눗방울',needVideo:true,desc:'팔을 쭉 �
   draw(t,dt){dt=Math.min(dt||0.016,0.05);const R=Math.random,src=videoSrc();if(src)drawVideo(src);else{const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#cfe9ff');g.addColorStop(1,'#fdf3ff');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
     const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
     const pS=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
-    // an arm held out: each outstretched hand fires a stream of bubbles along the arm, from that person (who is not hit by their own bubbles)
-    const PL=poseScreen()||[],seen={};PL.forEach((L,pi)=>{if(!L[0]||!L[11]||!L[12])return;const n=L[0],d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y)||W*0.05;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.forEach(q=>{if(q&&q.v>0.3){x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);}});
-      const own={x0:x0-d*0.6,y0:y0-d*0.6,x1:x1+d*0.6,y1:H+d};
-      for(const [wj,ej,sj] of [[15,13,11],[16,14,12]]){const wq=L[wj],sq=L[sj];if(!wq||wq.v<0.3||!sq)continue;const ux=wq.x-sq.x,uy=wq.y-sq.y,ul=Math.hypot(ux,uy)||1;if(!(wq.y<n.y-d*0.15||(ul>d*1.0&&uy<ul*0.72)))continue;const key=pi+'-'+wj;seen[key]=1;const gun=this.guns[key]||(this.guns[key]={acc:0});gun.acc+=dt*15;
-        const e=L[ej],side=wq.x>(L[11].x+L[12].x)/2?1:-1;let ax=0,ay=0;if(e&&e.v>0.3){ax=wq.x-e.x;ay=wq.y-e.y;const l=Math.hypot(ax,ay)||1;ax/=l;ay/=l;}let dx=ux/ul*0.75+ax*0.45+side*0.12,dy=uy/ul*0.75+ay*0.45;{const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;}
-        while(gun.acc>=1){gun.acc-=1;if(this.b.length>=240){this.pop(this.b.shift());}const a=Math.atan2(dy,dx)+(R()-0.5)*0.8,v=W*(0.35+R()*0.45),r=Math.max(7,Math.min(W,H)*(0.012+R()*R()*0.05));
-          this.b.push({x:wq.x+dx*d*0.2,y:wq.y+dy*d*0.2,vx:Math.cos(a)*v,vy:Math.sin(a)*v,r,ph:R()*TAU,own,t:0,life:6+R()*5});}}});
-    for(const k in this.guns)if(!seen[k])delete this.guns[k];
+    // an arm held out: each outstretched hand fires a stream of bubbles along the arm, from that person (who is not hit by their own bubbles).
+    // Hands come from the pose model where it sees a person, and from the shape alone for everyone it misses (crowds, people half
+    // hidden, a model that is slow or absent). Each hand keeps its own emitter, matched from frame to frame by where it is, and an
+    // emitter lives on for a moment when its hand drops out, so the stream does not stutter while the models catch up
+    const PL=poseScreen()||[],cand=[],boxes=[];PL.forEach(L=>{const ok=k=>L[k]&&L[k].v>0.25;if(!L[11]||!L[12])return;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.forEach(q=>{if(q&&q.v>0.3){x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);}});if(x1<x0)return;
+      // the size of this body: shoulders, or the trunk when the person stands sideways and the shoulders overlap
+      const smx=(L[11].x+L[12].x)/2,smy=(L[11].y+L[12].y)/2;let d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y);if(ok(23)&&ok(24))d=Math.max(d,Math.hypot((L[23].x+L[24].x)/2-smx,(L[23].y+L[24].y)/2-smy)*0.6);d=Math.max(d,W*0.03);
+      const ny=L[0]?L[0].y:smy-d*0.7,own={x0:x0-d*0.6,y0:y0-d*0.6,x1:x1+d*0.6,y1:H+d};boxes.push([x0-d*0.5,y0-d*0.8,x1+d*0.5,y1+d*0.5]);
+      for(const [wj,ej,sj] of [[15,13,11],[16,14,12]]){const sq=L[sj],e=L[ej];if(!sq)continue;let wq=L[wj];
+        if(!(wq&&wq.v>=0.25)){if(e&&e.v>=0.3)wq={x:e.x+(e.x-sq.x)*0.85,y:e.y+(e.y-sq.y)*0.85};else continue;} // wrist hidden: carry on along the upper arm
+        const ux=wq.x-sq.x,uy=wq.y-sq.y,ul=Math.hypot(ux,uy)||1;if(!(wq.y<ny-d*0.15||(ul>d*0.95&&uy<ul*0.72)))continue;
+        const side=wq.x>smx?1:-1;let ax=0,ay=0;if(e&&e.v>0.3){ax=wq.x-e.x;ay=wq.y-e.y;const l=Math.hypot(ax,ay)||1;ax/=l;ay/=l;}let dx=ux/ul*0.75+ax*0.45+side*0.12,dy=uy/ul*0.75+ay*0.45;{const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;}
+        cand.push({x:wq.x,y:wq.y,dx,dy,d,own});}});
+    if((this.af=(this.af||0)+1)%2===0||!this.tips)this.tips=ARMS.find(pb,w,h);
+    for(const a of this.tips){let covered=false;for(const b of boxes)if(a.sx>b[0]&&a.sx<b[2]&&a.sy>b[1]&&a.sy<b[3]){covered=true;break;}if(covered)continue;
+      let dx=a.x-a.sx,dy=a.y-a.sy;const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;const d=Math.max(a.r*2,W*0.03);cand.push({x:a.x,y:a.y,dx,dy,d,own:{x0:a.sx-d*1.6,y0:Math.min(a.y,a.sy)-d*1.6,x1:a.sx+d*1.6,y1:H+d}});}
+    const G=this.guns;for(const gq of G)gq.hit=false;
+    for(const c of cand){let best=null,bd=c.d*1.6;for(const gq of G){if(gq.hit)continue;const dd=Math.hypot(gq.x-c.x,gq.y-c.y);if(dd<bd){bd=dd;best=gq;}}if(!best){best={acc:0.6,x:c.x,y:c.y,dx:c.dx,dy:c.dy};G.push(best);}
+      const k=ez(0.5);best.x+=(c.x-best.x)*k;best.y+=(c.y-best.y)*k;best.dx+=(c.dx-best.dx)*k;best.dy+=(c.dy-best.dy)*k;best.d=c.d;best.own=c.own;best.hit=true;best.ttl=0.45;}
+    for(let gi=G.length-1;gi>=0;gi--){const gq=G[gi];if(!gq.hit){gq.ttl-=dt;if(gq.ttl<=0){G.splice(gi,1);continue;}}
+      gq.acc+=dt*15;const dl=Math.hypot(gq.dx,gq.dy)||1,dx=gq.dx/dl,dy=gq.dy/dl,d=gq.d;
+      while(gq.acc>=1){gq.acc-=1;if(this.b.length>=260){this.pop(this.b.shift());}const a=Math.atan2(dy,dx)+(R()-0.5)*0.8,v=W*(0.35+R()*0.45),r=Math.max(7,Math.min(W,H)*(0.012+R()*R()*0.05));
+        this.b.push({x:gq.x+dx*d*0.2,y:gq.y+dy*d*0.2,vx:Math.cos(a)*v,vy:Math.sin(a)*v,r,ph:R()*TAU,own:gq.own,t:0,life:6+R()*5});}}
     // bubbles slow down, drift and bob; they burst on someone else's body, at the edges, or when their time is up
     const B=this.b;for(let i=B.length-1;i>=0;i--){const q=B[i];q.t+=dt;const dr=Math.pow(0.22,dt);q.vx=q.vx*dr+Math.sin(t*0.7+q.ph)*W*0.01*dt;q.vy=q.vy*dr+H*0.13*dt+Math.cos(t*0.9+q.ph)*H*0.006*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;
       const o=q.own,mine=q.x>o.x0&&q.x<o.x1&&q.y>o.y0&&q.y<o.y1;let hit=false;if(!mine&&q.t>0.12){hit=pS(q.x,q.y)>0.5;for(let k=0;k<4&&!hit;k++){const a=k/4*TAU+0.4;if(pS(q.x+Math.cos(a)*q.r*0.8,q.y+Math.sin(a)*q.r*0.8)>0.55)hit=true;}}
@@ -2248,43 +2134,6 @@ const mMosaic={id:'mosaic',name:'모자이크 타일',desc:'상아색 돌 타일
         const s=this.gold[i]&&dp[i]>0.22?this.gspr[this.var[i]]:this.spr[Math.min(4,dp[i]<0.14?0:1+(dp[i]*3.99|0))][this.var[i]];ctx.drawImage(s,px+ts*(1-sx)/2,py,ts*sx,ts);
         // a band of light sliding over the glaze, and gold that keeps catching it
         if(o>=1){let gl=Math.sin((px+py*0.6)*0.011-gt);gl=gl>0.86?(gl-0.86)/0.14*0.3:0;if(this.gold[i])gl+=0.16+0.16*Math.sin(t*2.1+i);if(gl>0.02){ctx.fillStyle='rgba(255,255,255,'+gl.toFixed(3)+')';ctx.fillRect(px+ts*0.08,py+ts*0.08,ts*0.84,ts*0.84);ctx.fillStyle=this.GROUT;}}}}}};
-/* 빛 그림: a dark room and a long exposure. Each hand is a light, and what it draws stays in the air for a few seconds as a ribbon of
-   fine bright threads, gold or pearl, twisting gently round a white core and thinning to nothing at the far end, with a little
-   dust of light falling from the tip. Quiet colours on purpose: it should look like a photograph, not a neon sign */
-const mLight={id:'light',name:'빛 그림',desc:'어두운 화면에서 손이 붓이 된다. 손이 지나간 자리에 금빛·진주빛의 가는 빛 실이 리본처럼 꼬이며 몇 초 동안 남고, 끝으로 갈수록 가늘어지며 사라진다. 손끝에서는 고운 빛가루가 떨어진다',hint:'손을 움직여 빛으로 그림을 그려 보세요',
-  LIFE:4.6,TONE:[[40,88,74],[208,62,80],[18,80,76],[262,40,82]],init(){this.tr=[];this.sp=[];this.sil=null;this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.ti=0;},
-  heads(){const out=[],P=poseScreen();if(P&&P.length){for(const L of P)for(const k of [15,16]){const q=L[k];if(q&&q.v>0.35&&q.x>-W*0.05&&q.x<W*1.05&&q.y>-H*0.05&&q.y<H*1.05)out.push({x:q.x,y:q.y});}if(out.length)return out;}
-    // without the pose model: the place where each person is moving most
-    const w=A.w,h=A.h,e=A.e;for(const tk of TR.tracks){const x0=Math.max(0,tk.x/A.sx|0),x1=Math.min(w-1,(tk.x+tk.w)/A.sx|0),y0=Math.max(0,tk.y/A.sy|0),y1=Math.min(h-1,(tk.y+tk.h)/A.sy|0);let s=0,sx=0,sy=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const v=e[y*w+x];if(v>0.25){const v2=v*v;s+=v2;sx+=v2*x;sy+=v2*y;}}if(s>1.2)out.push({x:(sx/s+0.5)*A.sx,y:(sy/s+0.5)*A.sy});}return out;},
-  draw(t,dt){const m=Math.min(W,H),w=A.w,h=A.h;if(this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}
-    const bg=ctx.createRadialGradient(W/2,H*0.55,m*0.1,W/2,H*0.55,Math.hypot(W,H)*0.62);bg.addColorStop(0,'#0b0d17');bg.addColorStop(1,'#030308');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
-    // the people themselves, barely there: a dim shape so you can find your own hands
-    this.pb.set(A.p);blur3(this.pb,this.tmp,w,h);this.sil=upsampleMask(this.pb,w,h,3,0.3,0.7,[58,66,96],this.sil);ctx.imageSmoothingEnabled=true;ctx.globalAlpha=0.26;ctx.drawImage(this.sil,0,0,W,H);ctx.globalAlpha=1;
-    // match each hand to the line it was drawing; a hand that appears somewhere new starts a new line
-    const H0=this.heads(),tr=this.tr,R=m*0.3,ke=ez(0.5),minD=m*0.007;for(const a of tr)a.hit=false;
-    for(const p of H0){let best=null,bd=R;for(const a of tr){if(a.hit||a.dead)continue;const dd=Math.hypot(a.tx-p.x,a.ty-p.y);if(dd<bd){bd=dd;best=a;}}
-      if(!best){best={x:p.x,y:p.y,pts:[],tone:this.TONE[this.ti++%this.TONE.length],ph:Math.random()*TAU,dead:false,miss:0};tr.push(best);}best.tx=p.x;best.ty=p.y;best.hit=true;best.miss=0;}
-    for(const a of tr){if(a.dead)continue;if(!a.hit){a.miss+=dt;if(a.miss>0.5)a.dead=true;continue;}a.x+=(a.tx-a.x)*ke;a.y+=(a.ty-a.y)*ke;const l=a.pts[a.pts.length-1];
-      if(!l||Math.hypot(a.x-l.x,a.y-l.y)>minD){const sp=l?Math.hypot(a.x-l.x,a.y-l.y)/Math.max(0.016,t-l.t):0;a.pts.push({x:a.x,y:a.y,t,nx:0,ny:0});
-        if(sp>m*0.2&&this.sp.length<160&&Math.random()<0.6){const an=Math.random()*TAU,v=m*(0.004+Math.random()*0.03);this.sp.push({x:a.x+(Math.random()-0.5)*m*0.012,y:a.y+(Math.random()-0.5)*m*0.012,vx:Math.cos(an)*v,vy:Math.sin(an)*v,t,life:1.1+Math.random()*1.5,tone:a.tone,ph:Math.random()*TAU,r:m*(0.0009+Math.random()*0.0017)});}}}
-    const LIFE=this.LIFE;for(let i=tr.length-1;i>=0;i--){const a=tr[i];while(a.pts.length&&t-a.pts[0].t>LIFE)a.pts.shift();if(a.dead&&a.pts.length<2)tr.splice(i,1);}
-    // age and taper of each piece of each line, and which way is across it (the threads of the ribbon are laid to either side)
-    const bw=m*0.0085;for(const a of tr){const P=a.pts,n=P.length;for(let k=0;k<n;k++){const p=P[k],p0=P[k-1]||p,p2=P[k+1]||(a.dead?p:{x:a.x,y:a.y}),dx=p2.x-p0.x,dy=p2.y-p0.y,l=Math.hypot(dx,dy)||1,age=(t-p.t)/LIFE;p.nx=-dy/l;p.ny=dx/l;p.f=(age<0.5?1:Math.max(0,1-(age-0.5)/0.5))*Math.min(1,(k+0.2)/6,a.dead?(n-k)/6:1);}}
-    // the glow: on a small dark sheet where overlapping pieces take the brighter of the two instead of adding up (so the joints do not
-    // bead), softened as the sheet is stretched over the picture
-    const gs=0.25,gw=Math.max(2,Math.round(W*gs)),gh=Math.max(2,Math.round(H*gs));if(!this.gc||this.gc.width!==gw||this.gc.height!==gh)this.gc=mkCanvas(gw,gh);const gx=this.gc.cx;gx.setTransform(1,0,0,1,0,0);gx.globalCompositeOperation='source-over';gx.fillStyle='#000';gx.fillRect(0,0,gw,gh);gx.setTransform(gs,0,0,gs,0,0);gx.globalCompositeOperation='lighten';gx.lineCap='round';
-    for(const [wm,al] of [[12,0.035],[8,0.065],[5,0.11],[2.8,0.19]])for(const a of tr){const P=a.pts,n=P.length,tn=a.tone;for(let k=1;k<n;k++){const p0=P[k-1],p1=P[k];if(p1.f<=0.02)continue;gx.strokeStyle='hsl('+tn[0]+','+tn[1]+'%,'+(tn[2]*0.8*al*p1.f*p1.f).toFixed(1)+'%)';gx.lineWidth=bw*wm*(0.35+0.65*p1.f);gx.beginPath();gx.moveTo(p0.x,p0.y);gx.lineTo(p1.x,p1.y);gx.stroke();}if(!a.dead&&n){const p1=P[n-1];gx.beginPath();gx.moveTo(p1.x,p1.y);gx.lineTo(a.x,a.y);gx.stroke();}}
-    ctx.globalCompositeOperation='lighter';ctx.drawImage(this.gc,0,0,W,H);
-    // the ribbon: fine threads that wander from side to side of the line and cross one another, and a white core down the middle
-    ctx.lineCap='butt';const TH=[[1,0,0.2,0.5],[-0.8,1.7,0.16,0.42],[0.55,3.1,0.14,0.36],[-0.4,4.4,0.14,0.3],[0,0,0.52,0.92]];
-    for(const a of tr){const P=a.pts,n=P.length,tn=a.tone;if(n<2)continue;const t0=P[0].t,head=a.dead?null:{x:a.x,y:a.y,nx:P[n-1].nx,ny:P[n-1].ny,f:P[n-1].f,t};
-      for(const [amp,ph,wd,al] of TH){const core=!amp,off=p=>amp?amp*bw*2.1*p.f*Math.sin((p.t-t0)*2.3+ph+a.ph+t*0.5):0;let px=0,py=0,qx=0,qy=0;
-        for(let k=0;k<=n;k++){const p=k<n?P[k]:head;if(!p)break;const o=off(p),x=p.x+p.nx*o,y=p.y+p.ny*o;if(k===0){px=qx=x;py=qy=y;continue;}const mx=(qx+x)/2,my=(qy+y)/2,f=p.f;if(f>0.02){ctx.strokeStyle=core?'hsla('+tn[0]+',60%,95%,'+(al*f).toFixed(3)+')':'hsla('+((tn[0]+10*Math.sin((p.t-t0)*0.9+ph))|0)+','+tn[1]+'%,'+tn[2]+'%,'+(al*f).toFixed(3)+')';ctx.lineWidth=Math.max(0.6,bw*wd*(0.4+0.6*f));ctx.beginPath();ctx.moveTo(px,py);ctx.quadraticCurveTo(qx,qy,mx,my);if(k===n||(k===n-1&&!head))ctx.lineTo(x,y);ctx.stroke();}px=mx;py=my;qx=x;qy=y;}}}
-    // the light at each hand: small and white, with a breath of the line's colour round it
-    for(const a of tr){if(a.dead||!a.pts.length)continue;const tn=a.tone,r=bw*6*(1+0.08*Math.sin(t*7+a.ph)),g=ctx.createRadialGradient(a.x,a.y,0,a.x,a.y,r);g.addColorStop(0,'rgba(255,255,255,0.95)');g.addColorStop(0.12,'hsla('+tn[0]+','+tn[1]+'%,86%,0.6)');g.addColorStop(0.45,'hsla('+tn[0]+','+tn[1]+'%,'+tn[2]+'%,0.1)');g.addColorStop(1,'hsla('+tn[0]+','+tn[1]+'%,'+tn[2]+'%,0)');ctx.fillStyle=g;ctx.fillRect(a.x-r,a.y-r,r*2,r*2);}
-    // dust of light: fine grains that drift down slowly and glimmer as they go out
-    const S=this.sp;for(let i=S.length-1;i>=0;i--){const s=S[i],age=(t-s.t)/s.life;if(age>=1){S.splice(i,1);continue;}s.vy+=m*0.035*dt;s.vx*=Math.pow(0.3,dt);s.vy*=Math.pow(0.6,dt);s.x+=s.vx*dt;s.y+=s.vy*dt;const f=(1-age)*(0.55+0.45*Math.sin(t*9+s.ph));ctx.fillStyle='hsla('+s.tone[0]+','+s.tone[1]+'%,88%,'+Math.max(0,f*0.85).toFixed(3)+')';ctx.beginPath();ctx.arc(s.x,s.y,s.r*(0.7+0.5*(1-age)),0,TAU);ctx.fill();}
-    ctx.globalCompositeOperation='source-over';}};
 /* 연기: people made of smoke, against black, computed as a real fluid. The air is a grid of speeds and warmth on the graphics chip
    (it carries itself, warm air rises, and a pressure step keeps it from piling up or thinning out), kept twice over for two depths
    of smoke that move differently, which is most of what makes it look like a volume instead of a flat stain. Smoke condenses only
@@ -2437,7 +2286,183 @@ const mLumen={id:'lumen',name:'빛의 공간',desc:'거친 흑백 필름 사진 
     this.gf+=dt;if(this.gf>0.05){this.gf=0;this.go=[Math.random()*256,Math.random()*256,Math.random()*256,Math.random()*256];}
     const gz=1.45,pat=(c,ox,oy)=>{const p=ctx.createPattern(c,'repeat');ctx.save();ctx.translate(-ox*gz,-oy*gz);ctx.scale(gz,gz);ctx.fillStyle=p;ctx.fillRect(0,0,(W+512)/gz,(H+512)/gz);ctx.restore();};
     ctx.globalCompositeOperation='overlay';ctx.globalAlpha=0.55;pat(this.gn,this.go[0],this.go[1]);ctx.globalCompositeOperation='source-over';if(QF()>0.9){ctx.globalAlpha=0.2;pat(this.gs,this.go[2],this.go[3]);}ctx.globalAlpha=1;}};
-const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mTrail,mContour,mFrost,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFire,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mLight,mSmoke,mLumen];
+/* 스케치 2: a quick croquis in soft pencil, played like hand-drawn animation: several times a second the figure is drawn again from
+   nothing and the new drawing replaces the old one outright.
+   There is no outline. A body is hatched, part by part, the way the reference is: the head, the trunk, each arm and each leg gets
+   its own run of short straight strokes laid side by side, all leaning the same way within the part and a little differently from
+   the part next to it (never across it: strokes of neighbouring parts stop where the parts meet, so nothing is cross-hatched).
+   A stroke is a thick, blunt-ended bar of graphite; its ends fall a little short of the edge of the figure or run a little past it,
+   so the edge is ragged and the figure is found by where the strokes stop. Now and then, where the strokes are long, the pencil
+   does not lift and runs to and fro in a tight zigzag instead. The whole sheet leans one way, like one hand's work.
+   Each part keeps the lean of its hatching for a few drawings and then takes another, as an animator would from sheet to sheet.
+   Parts come from the skeleton of the pose model when it sees the person, from the outline alone when it does not */
+const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 연필의 짧고 굵은 빗금만으로 사람을 그리는 크로키. 머리·몸통·팔·다리마다 빗금이 나란히 놓이고 부위마다 기울기가 조금씩 달라지며, 빗금 끝이 들쭉날쭉해 형태가 드러난다. 손그림 애니메이션처럼 초당 여덟 장쯤 새 그림으로 바뀐다',hint:'앞에 서면 연필이 쓱쓱 그려요',
+  init(){const m=Math.min(W,H),f=QF()>0.9?1:QF()>0.6?1.12:1.26;this.dens=f;this.PER=f>1.1?0.16:0.125;this.q=Math.min(DPR,f>1.1?1.25:1.5);this.step=Math.min(A.sx,A.sy)*0.5;
+    this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.lab=null;this.tS=-1;this.nD=0;this.cv=null;this.empty=true;this.takes=new Map();
+    const key=[W,H].join(',');if(this.key!==key){this.key=key;const q=Math.min(DPR,1.5),B=this.paper=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx,R=seeded(5);x.scale(q,q);x.fillStyle='#f3f1ec';x.fillRect(0,0,W,H);
+      for(let k=0;k<Math.round(W*H/150);k++){const px=R()*W,py=R()*H;x.fillStyle=R()<0.5?'rgba(255,255,255,'+(0.2+R()*0.3)+')':'rgba(80,72,58,'+(0.02+R()*0.05)+')';x.fillRect(px,py,0.7+R()*1.6,0.7+R()*1.6);}
+      x.lineCap='round';for(let k=0;k<Math.round(W*H/5200);k++){const px=R()*W,py=R()*H,an=R()*TAU,l=4+R()*12;x.strokeStyle=R()<0.6?'rgba(255,255,255,0.35)':'rgba(90,78,60,0.05)';x.lineWidth=0.5+R()*0.5;x.beginPath();x.moveTo(px,py);x.lineTo(px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
+      const g=x.createRadialGradient(W/2,H/2,m*0.35,W/2,H/2,Math.hypot(W,H)*0.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(70,58,40,0.1)');x.fillStyle=g;x.fillRect(0,0,W,H);}
+    // the tooth of the paper: the hollows graphite does not reach. Fine specks gathered into small clumps, as paper fibres lie
+    if(!this.tooth){const T=this.tooth=mkCanvas(256,256),im=T.cx.createImageData(256,256),d=im.data,R2=seeded(77),G=new Float32Array(64*64);for(let i=0;i<G.length;i++)G[i]=R2();
+      for(let y=0;y<256;y++)for(let x=0;x<256;x++){const gx=x/2.2,gy=y/2.2,x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy),a=G[(y0&63)*64+(x0&63)],b=G[(y0&63)*64+((x0+1)&63)],c=G[((y0+1)&63)*64+(x0&63)],e=G[((y0+1)&63)*64+((x0+1)&63)];
+        const n=((a*(1-ux)+b*ux)*(1-uy)+(c*(1-ux)+e*ux)*uy)*0.42+R2()*0.58,al=Math.min(1,Math.max(0,(n-0.5)/0.16)),i=(y*256+x)*4;d[i]=d[i+1]=d[i+2]=0;d[i+3]=al*255;}T.cx.putImageData(im,0,0);}},
+  // the parts of one person as thick bones: [part, ax, ay, bx, by, radius] with part 0 head, 1 trunk, 2-3 arms, 4-5 legs
+  partsOf(tr){const L=tr.pose||rigFromSilhouette(tr);if(!L)return null;const ok=i=>L[i]&&L[i].v>0.35,P=i=>L[i];if(!ok(11)||!ok(12))return null;
+    const sm={x:(P(11).x+P(12).x)/2,y:(P(11).y+P(12).y)/2},sw=Math.hypot(P(11).x-P(12).x,P(11).y-P(12).y),hip=ok(23)&&ok(24),hm0=hip?{x:(P(23).x+P(24).x)/2,y:(P(23).y+P(24).y)/2}:null,sz=Math.max(12,sw,hm0?Math.hypot(sm.x-hm0.x,sm.y-hm0.y)*0.6:0),hm=hm0||{x:sm.x,y:sm.y+sz*1.3};
+    let hd=ok(0)?{x:P(0).x,y:P(0).y}:{x:sm.x,y:sm.y-sz*0.75};if(ok(7)&&ok(8))hd={x:((P(7).x+P(8).x)/2+hd.x)/2,y:((P(7).y+P(8).y)/2+hd.y)/2};const hr=sz*0.38;
+    const S=[[0,hd.x,hd.y-hr*0.3,hd.x,hd.y+hr*0.3,hr*1.15],[1,sm.x,sm.y,hm.x,hm.y,sz*0.6]];
+    [[2,11,13,15],[3,12,14,16]].forEach(([k,a,e,w2])=>{if(!ok(e))return;S.push([k,P(a).x,P(a).y,P(e).x,P(e).y,sz*0.2]);if(ok(w2))S.push([k,P(e).x,P(e).y,P(w2).x+(P(w2).x-P(e).x)*0.25,P(w2).y+(P(w2).y-P(e).y)*0.25,sz*0.17]);});
+    [[4,23,25,27],[5,24,26,28]].forEach(([k,a,e,f])=>{if(!ok(a)||!ok(e))return;S.push([k,P(a).x,P(a).y,P(e).x,P(e).y,sz*0.3]);if(ok(f))S.push([k,P(e).x,P(e).y,P(f).x,P(f).y+sz*0.25,sz*0.22]);});
+    return {S,hd,hr,sz};},
+  // one whole drawing of whoever is there now
+  build(){const R=seeded((this.nD=this.nD+1)*7919+13),m=Math.min(W,H),w=A.w,h=A.h,n=A.n,pb=this.pb,isx=1/A.sx,isy=1/A.sy,step=this.step;pb.set(A.p);blur3(pb,this.tmp,w,h);
+    if(!this.lab||this.lab.length!==n){this.lab=new Int16Array(n);this.sc=new Float32Array(n);}const lab=this.lab,sc=this.sc;lab.fill(0);sc.fill(1e9);
+    // which part of whom each place belongs to: the nearest bone, measured in bone thicknesses
+    const parts=[null],reg=(key,sz,hd,hr)=>{parts.push({key,sz,hd,hr,x0:1e9,y0:1e9,x1:-1,y1:-1,n:0});return parts.length-1;};
+    for(const tr of TR.tracks){if(TR.f-tr.seen>2)continue;const pp=this.partsOf(tr);if(!pp)continue;const idx=[];for(let k=0;k<6;k++)idx.push(reg(tr.id*8+k,pp.sz,k?null:pp.hd,pp.hr));
+      const ex=tr.w*0.12+A.sx*2,ey=tr.h*0.12+A.sy*2,x0=clamp(((tr.x-ex)*isx)|0,0,w-1),x1=clamp(((tr.x+tr.w+ex)*isx)|0,0,w-1),y0=clamp(((tr.y-ey)*isy)|0,0,h-1),y1=clamp(((tr.y+tr.h+ey)*isy)|0,0,h-1);
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(pb[i]<=0.35)continue;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let bs=1e9,bk=0;
+        for(const q of pp.S){const ax=q[1],ay=q[2],dx=q[3]-ax,dy=q[4]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const e1=px-ax-dx*u,e2=py-ay-dy*u,dd=Math.sqrt(e1*e1+e2*e2)/q[5];if(dd<bs){bs=dd;bk=q[0];}}
+        if(bs<sc[i]){sc[i]=bs;lab[i]=idx[bk];}}}
+    const rest=reg(-8,m*0.17,null,0);for(let i=0;i<n;i++){if(pb[i]>0.35&&!lab[i])lab[i]=rest;const l=lab[i];if(l&&pb[i]>0.5){const p=parts[l],x=i%w,y=(i/w)|0;if(x<p.x0)p.x0=x;if(x>p.x1)p.x1=x;if(y<p.y0)p.y0=y;if(y>p.y1)p.y1=y;p.n++;}}
+    const pbAt=(X,Y)=>{const gx=X*isx-0.5,gy=Y*isy-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
+    // strokes are gathered by how dark and how thick they are, and painted together afterwards
+    const PT=[0,1,2].map(()=>[new Path2D(),new Path2D(),new Path2D()]);let bx0=1e9,by0=1e9,bx1=-1e9,by1=-1e9,any=false,lwSum=0,lwN=0;const bb=(x,y)=>{if(x<bx0)bx0=x;if(x>bx1)bx1=x;if(y<by0)by0=y;if(y>by1)by1=y;};
+    const T=this.takes,stamp=this.nD,seen=new Set(),G=this.G||(this.G={hold:0}),tk=key=>{let k=T.get(key);if(!k){k={hold:0,ver:-1};T.set(key,k);}k.stamp=stamp;return k;};
+    for(let pi=1;pi<parts.length;pi++){const p=parts[pi];if(p.n<2)continue;const who='b'+(p.key>>3),bk=tk(who);
+      // the lean of the hand for this person, kept for a while; each part leans a little off it, also kept for a few drawings
+      if(!seen.has('g')){seen.add('g');if(--G.hold<=0){G.hold=8+((R()*10)|0);G.ang=0.72+R()*0.5;if(R()<0.12)G.ang=Math.PI-G.ang;G.ver=(G.ver|0)+1;}}
+      if(!seen.has(who)){seen.add(who);if(--bk.hold<=0||bk.gv!==G.ver){bk.gv=G.ver;bk.hold=6+((R()*9)|0);bk.off=(R()-0.5)*0.2;bk.ver=(bk.ver|0)+1;}bk.ang=G.ang+bk.off;}
+      const k=tk(p.key);if(--k.hold<=0||k.ver!==bk.ver){k.ver=bk.ver;k.hold=3+((R()*5)|0);k.d=(R()-0.5)*0.46;k.zig=R()<0.14;k.spk=0.9+R()*0.26;k.bow=(R()<0.5?-1:1)*(0.01+R()*0.028);}
+      const sp0=clamp(p.sz*0.115,m*0.0115,m*0.026)*k.spk*this.dens,sp=sp0*(k.zig?0.62:1),lw=sp0*0.44,th=bk.ang+k.d+(R()-0.5)*0.07,hx=Math.cos(th),hy=-Math.sin(th),nx=Math.sin(th),ny=Math.cos(th);lwSum+=lw;lwN++;
+      let cmin=1e9,cmax=-1e9,smin=1e9,smax=-1e9;for(const X of [p.x0*A.sx,(p.x1+1)*A.sx])for(const Y of [p.y0*A.sy,(p.y1+1)*A.sy]){const c=nx*X+ny*Y,s=hx*X+hy*Y;if(c<cmin)cmin=c;if(c>cmax)cmax=c;if(s<smin)smin=s;if(s>smax)smax=s;}
+      const iv=[],chains=[],open=[];let line=0;
+      for(let c=cmin+sp*(0.15+0.5*R());c<cmax;c+=sp*(0.76+0.5*R())*(R()<0.04?1.7:1)){iv.length=0;line++;let inS=false,a0=0,pv=0;
+        for(let s=smin-step;;s+=step){const end=s>smax+step;let v=0;if(!end){const X=nx*c+hx*s,Y=ny*c+hy*s;if(X>=0&&Y>=0&&X<W&&Y<H&&lab[((Y*isy)|0)*w+((X*isx)|0)]===pi)v=pbAt(X,Y);}
+          if(!inS&&v>0.5){inS=true;a0=s-step*(v-0.5)/Math.max(1e-3,v-pv);}else if(inS&&v<=0.5){inS=false;iv.push(a0,s-step*(0.5-v)/Math.max(1e-3,pv-v));}pv=v;if(end)break;}
+        for(let i=0;i<iv.length;i+=2){let a=iv[i],b=iv[i+1];while(i+2<iv.length&&iv[i+2]-b<sp*0.6){b=iv[i+3];i+=2;}if(b-a<sp*0.4&&p.n>12)continue;
+          // where a stroke ends: past the edge of the figure a little, or short of it; where another part begins, it simply stops
+          const oe=(s,dir)=>pbAt(nx*c+hx*(s+dir*step*2),ny*c+hy*(s+dir*step*2))<=0.5?(R()<0.05?0.8+R()*0.7:-0.26+0.74*R())*sp0:(-0.4+0.95*R())*sp0;
+          const a2=a-oe(a,-1),b2=b+oe(b,1),mid=(a2+b2)/2,half=Math.max(sp*0.22,(b2-a2)/2),t2=th+(R()-0.5)*0.085,ux=Math.cos(t2),uy=-Math.sin(t2),cx=nx*c+hx*mid,cy=ny*c+hy*mid,s={a,b,c,x0:cx-ux*half,y0:cy-uy*half,x1:cx+ux*half,y1:cy+uy*half};
+          let best=null,bo=sp*0.25;for(const o of open){if(o.line===line||c-o.c>sp*2.4)continue;const v=Math.min(b,o.b)-Math.max(a,o.a);if(v>bo){bo=v;best=o;}}
+          if(best){best.ch.push(s);best.a=a;best.b=b;best.c=c;best.line=line;}else{const ch=[s];chains.push(ch);open.push({ch,a,b,c,line});}}}
+      for(const ch of chains){const N=ch.length;any=true;
+        let med=0;if(k.zig&&N>=6){const ls=ch.map(q=>Math.hypot(q.x1-q.x0,q.y1-q.y0)).sort((a,b)=>a-b);med=ls[N>>1];}
+        if(med>sp0*4.2){ // to and fro without lifting: one line through the ends of the strokes in turn, so close that the strokes stay side by side
+          const V=[];for(let j=0;j<N;j++){const q=ch[j];V.push((j&1)?[q.x1,q.y1]:[q.x0,q.y0]);bb(q.x0,q.y0);bb(q.x1,q.y1);}const pth=PT[R()<0.3?1:2][(R()*3)|0];pth.moveTo(V[0][0],V[0][1]);
+          for(let j=1;j<N-1;j++){const v=V[j],p0=V[j-1],p1=V[j+1],l0=Math.hypot(p0[0]-v[0],p0[1]-v[1])||1,l1=Math.hypot(p1[0]-v[0],p1[1]-v[1])||1,r=sp*(0.5+0.6*R()),r0=Math.min(r,l0*0.4)/l0,r1=Math.min(r,l1*0.4)/l1;pth.lineTo(v[0]+(p0[0]-v[0])*r0,v[1]+(p0[1]-v[1])*r0);pth.quadraticCurveTo(v[0],v[1],v[0]+(p1[0]-v[0])*r1,v[1]+(p1[1]-v[1])*r1);}
+          pth.lineTo(V[N-1][0],V[N-1][1]);continue;}
+        for(let j=0;j<N;j++){if(k.zig&&(j&1)&&N>2)continue; // (a part meant for zigzag that came out short is plain bars at the usual distance)
+          const q=ch[j],dx=q.x1-q.x0,dy=q.y1-q.y0,L=Math.hypot(dx,dy)||1,r=R(),d=r<0.1?0:r<0.38?1:2,pth=PT[d][(R()*3)|0],bw=k.bow+(R()-0.5)*0.014;
+          pth.moveTo(q.x0,q.y0);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw,(q.y0+q.y1)/2+dx*bw,q.x1,q.y1);bb(q.x0,q.y0);bb(q.x1,q.y1);
+          // a bar is not one clean pass: the lead goes over it again a hair to one side and not quite as far, which is what makes its edge and its ends uneven
+          if(L>sp0*1.2){const o=(R()<0.5?-1:1)*lw*(0.16+0.2*R()),ox=-dy/L*o,oy=dx/L*o,u0=R()*0.2,u1=1-R()*0.2;pth.moveTo(q.x0+dx*u0+ox,q.y0+dy*u0+oy);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw+ox,(q.y0+q.y1)/2+dx*bw+oy,q.x0+dx*u1+ox,q.y0+dy*u1+oy);}}}}
+    if(stamp%60===0)for(const [key,v] of T)if(stamp-v.stamp>40)T.delete(key);
+    const q=this.q,cw=Math.round(W*q),chh=Math.round(H*q);if(!this.cv||this.cv.width!==cw||this.cv.height!==chh)this.cv=mkCanvas(cw,chh);const cv=this.cv,x=cv.cx;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';x.globalAlpha=1;x.clearRect(0,0,cw,chh);this.empty=!any;if(!any)return;
+    const lw=lwSum/lwN,pd=lw*2.5,rx=Math.max(0,bx0-pd),ry=Math.max(0,by0-pd),rw=Math.min(W,bx1+pd)-rx,rh=Math.min(H,by1+pd)-ry,kz=q*1.05,pat=x.createPattern(this.tooth,'repeat'),WM=[0.72,0.92,1.1],AL=[0.5,0.8,0.97];
+    const tooth=al=>{x.globalCompositeOperation='destination-out';x.globalAlpha=al;x.setTransform(kz,0,0,kz,0,0);x.fillStyle=pat;x.fillRect(rx*q/kz,ry*q/kz,rw*q/kz+1,rh*q/kz+1);x.setTransform(q,0,0,q,0,0);x.globalCompositeOperation='source-over';};
+    // every stroke first as a soft grainy bar, then (for the firmer ones) a solid core down its middle: a rough edge and a dense heart, as soft graphite leaves
+    x.setTransform(q,0,0,q,0,0);x.lineCap='round';x.lineJoin='round';x.strokeStyle='#202024';
+    for(let d=0;d<3;d++)for(let i=0;i<3;i++){x.globalAlpha=AL[d];x.lineWidth=lw*WM[i];x.stroke(PT[d][i]);}tooth(0.7);
+    for(let d=1;d<3;d++)for(let i=0;i<3;i++){x.globalAlpha=d===1?0.5:0.95;x.lineWidth=lw*WM[i]*(d===1?0.45:0.58);x.stroke(PT[d][i]);}tooth(0.26);
+    // graphite dust: a soft grey breath under the strokes
+    const sw=Math.max(2,Math.round(W/7)),sh=Math.max(2,Math.round(H/7));if(!this.sm||this.sm.width!==sw||this.sm.height!==sh)this.sm=mkCanvas(sw,sh);const sx=this.sm.cx;sx.globalCompositeOperation='copy';sx.imageSmoothingEnabled=true;sx.drawImage(cv,0,0,sw,sh);
+    x.globalCompositeOperation='destination-over';x.globalAlpha=0.2;x.imageSmoothingEnabled=true;x.drawImage(this.sm,0,0,W,H);x.globalAlpha=1;x.globalCompositeOperation='source-over';},
+  draw(t,dt){if((this.f=(this.f||0)+1)%2===0)TR.update();ctx.imageSmoothingEnabled=true;ctx.drawImage(this.paper,0,0,W,H);
+    // a new drawing every eighth of a second or so, cut in whole like a new sheet under the camera (less often on a slow machine,
+    // so that drawing never takes more than a fifth of the time)
+    const per=Math.min(0.5,Math.max(this.PER,(this.bt||0)*0.0045));if(this.tS<0||t-this.tS>=per||t<this.tS){const b0=performance.now();this.build();this.tS=t;const bd=performance.now()-b0;this.bt=this.bt?this.bt*0.7+bd*0.3:bd;}
+    if(!this.empty){ctx.globalCompositeOperation='multiply';ctx.drawImage(this.cv,0,0,W,H);ctx.globalCompositeOperation='source-over';}}};
+/* the bird (a robin): modelled in three dimensions as a signed-distance shape (body, head, beak, eyes, wings folded or spread,
+   tail, legs and toes, each placed by the pose) and ray-traced with soft light, shadow and feather colouring. It is not drawn
+   live: when the mode first opens, every pose it will ever need (looking round, preening, the wing-beat, the landing flare...)
+   is rendered once into a sheet of small pictures, a few per frame, and from then on a bird costs one picture to draw. Without
+   WebGL a plain flat bird is drawn into the same sheet instead */
+const BIRD={st:'idle',S:0,cols:8,atlas:null,done:0,F:{},list:[],
+  SRC:`#version 300 es
+precision highp float;precision highp int;
+in vec2 uv;out vec4 o;uniform vec4 A0,A1,A2,A3;
+mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
+float sdEll(vec3 p,vec3 r){float k0=length(p/r),k1=length(p/(r*r));return k0*(k0-1.0)/max(k1,1e-4);}
+float smin(float a,float b,float k){float h=clamp(0.5+0.5*(b-a)/k,0.0,1.0);return mix(b,a,h)-k*h*(1.0-h);}
+float sdCap(vec3 p,vec3 a,vec3 b,float r1,float r2){vec3 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);return length(pa-ba*h)-mix(r1,r2,h);}
+float h3(vec3 p){p=fract(p*0.3183099+vec3(0.1,0.2,0.3));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float vn3(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);return mix(mix(mix(h3(i),h3(i+vec3(1,0,0)),f.x),mix(h3(i+vec3(0,1,0)),h3(i+vec3(1,1,0)),f.x),f.y),mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+vec3(1,1,1)),f.x),f.y),f.z);}
+vec3 gB,gH,gW,gT;float gHd,gBd;
+// distance to the bird, and which part is nearest (0 feathers of body and head, 1 wing, 2 tail, 3 beak, 4 eye, 5 leg)
+vec2 map(vec3 p){float pitch=A0.x,hyaw=A0.y,hpit=A0.z,spread=A0.w,flap=A1.x,sweep=A1.y,fan=A1.z,tang=A1.w,legs=A2.x,vyaw=A2.y,crouch=A2.z,fluff=A2.w,roll=A3.x,tilt=A3.y,ext=A3.z;
+ p.xz=rot(vyaw)*p.xz;p.yz=rot(roll)*p.yz;vec3 pw=p,b=p;b.y+=0.07*crouch;b.xy-=vec2(-0.03,-0.2);b.xy=rot(pitch)*b.xy;b.xy+=vec2(-0.03,-0.2);
+ float fl=1.0+0.11*fluff;
+ float body=sdEll(b,vec3(0.36,0.25,0.24)*fl);body=smin(body,sdEll(b-vec3(0.15,-0.03,0.0),vec3(0.23,0.235,0.225)*fl),0.08);body=smin(body,sdEll(b-vec3(-0.27,0.03,0.0),vec3(0.2,0.14,0.14)),0.1);
+ vec3 hc=mix(vec3(0.35,0.21,0.0),vec3(0.43,0.08,0.0),ext)-vec3(0.03,0.045,0.0)*max(fluff,crouch);
+ vec3 h=b-hc;h.xz=rot(hyaw)*h.xz;h.xy=rot(hpit)*h.xy;h.yz=rot(tilt)*h.yz;
+ float head=sdEll(h,vec3(0.172,0.162,0.158));float fe=smin(body,head,0.1);float nz=vn3(p*52.0);fe-=0.006*(nz-0.5)+0.004*fluff*nz;
+ gB=b;gH=h;gHd=head;gBd=body;vec2 res=vec2(fe,0.0);
+ float beak=sdCap(h,vec3(0.12,-0.012,0.0),vec3(0.292,-0.034,0.0),0.043,0.005);if(beak<res.x)res=vec2(beak,3.0);
+ float eye=length(vec3(h.x-0.092,h.y-0.034,abs(h.z)-0.122))-0.03;if(eye<res.x)res=vec2(eye,4.0);
+ vec3 tl=b-vec3(-0.4,0.035,0.0);tl.xy=rot(-tang)*tl.xy;float ts=clamp(-tl.x/0.46,0.0,1.0),hw=mix(0.05,0.075+0.16*fan,ts);
+ float tail=max(max(abs(tl.z)-hw,abs(tl.y)-0.011-0.012*(1.0-ts)),max(tl.x-0.05,-tl.x-0.46))-0.007;gT=tl;if(tail<res.x)res=vec2(tail,2.0);
+ float wing;
+ if(spread<0.5){vec3 q=vec3(b.x,b.y,abs(b.z));vec3 w1=q-vec3(-0.06,0.055,0.19*fl);w1.xy=rot(0.25)*w1.xy;wing=sdEll(w1,vec3(0.3,0.135,0.06));vec3 w2=q-vec3(-0.37,-0.005,0.125);w2.xy=rot(0.18)*w2.xy;wing=min(wing,sdEll(w2,vec3(0.2,0.05,0.035)));gW=w1;}
+ else{vec3 q=vec3(b.x-0.08,b.y-0.1,abs(b.z)-0.13);q.yz=rot(-flap)*q.yz;q.xz=rot(sweep)*q.xz;float sp=clamp(q.z/0.82,0.0,1.0),lead=0.12-0.13*sp*sp,ch=0.31*pow(max(0.0,1.0-pow(sp,2.4)),0.6)+0.015;ch*=1.0+0.045*sin(q.z*64.0);float trail=lead-ch;
+  float d2=max(max(q.x-lead,trail-q.x),max(-q.z-0.03,q.z-0.82));wing=max(d2,abs(q.y)-0.009)-0.007;gW=vec3((lead-q.x)/ch,q.y,q.z);}
+ if(wing<res.x)res=vec2(wing,1.0);
+ vec3 Hw=vec3(-0.03,-0.2-0.07*crouch,0.075),Fp=vec3(0.03,-0.5,0.075),Ft=Hw+vec3(-0.16,-0.035,0.0),Fe=Hw+vec3(0.17,-0.25,0.0);
+ vec3 F=legs<1.0?mix(Fp,Ft,legs):mix(Ft,Fe,legs-1.0);float tz=legs<1.0?mix(1.0,0.35,legs):mix(0.35,1.0,legs-1.0);vec3 K=Hw+vec3(0.025,-0.04,0.0),q2=vec3(pw.x,pw.y,abs(pw.z));
+ float leg=sdCap(q2,K,F,0.016,0.012);leg=min(leg,sdCap(q2,F,F+vec3(0.1,-0.028,0.0)*tz,0.011,0.007));leg=min(leg,sdCap(q2,F,F+vec3(0.088,-0.028,0.05)*tz,0.011,0.007));leg=min(leg,sdCap(q2,F,F+vec3(0.088,-0.028,-0.05)*tz,0.011,0.007));leg=min(leg,sdCap(q2,F,F+vec3(-0.07,-0.024,0.0)*tz,0.011,0.007));
+ if(leg<res.x)res=vec2(leg,5.0);return res;}
+void main(){vec3 ro=vec3((uv.x*2.0-1.0)-0.08,uv.y*2.0-1.0,2.2),rd=vec3(0.0,0.0,-1.0);float t=0.0;vec2 m=vec2(1.0,-1.0);bool hit=false;
+ for(int i=0;i<120;i++){m=map(ro+rd*t);if(m.x<0.0012){hit=true;break;}t+=m.x*0.6;if(t>4.4)break;}if(!hit){o=vec4(0.0);return;}
+ vec3 p=ro+rd*t;vec2 e=vec2(0.0025,0.0);vec3 n=normalize(vec3(map(p+e.xyy).x-map(p-e.xyy).x,map(p+e.yxy).x-map(p-e.yxy).x,map(p+e.yyx).x-map(p-e.yyx).x));
+ m=map(p);vec3 b=gB,h=gH,w=gW,tl=gT;float hwt=smoothstep(0.03,-0.03,gHd-gBd);
+ // plumage: olive-brown above, an orange-red face and breast edged with blue-grey, buff flanks, a pale belly
+ vec3 cOr=vec3(0.95,0.34,0.06),cBr=vec3(0.43,0.37,0.30),cBd=vec3(0.27,0.235,0.2),cWh=vec3(0.93,0.91,0.87),cGr=vec3(0.62,0.65,0.69),cBf=vec3(0.80,0.71,0.60),col;
+ if(m.y<0.5){float up=smoothstep(-0.03,0.07,b.y-0.02-0.1*b.x);vec3 base=mix(mix(cWh,cBf,smoothstep(-0.2,-0.02,b.y+0.25*(b.x+0.2))),cBr,up);
+  float eb=length((b-vec3(0.2,-0.02,0.0))/vec3(0.25,0.215,0.3)),oB=1.0-smoothstep(0.9,1.04,eb),gBm=1.0-smoothstep(1.0,1.22,eb);
+  float oH=smoothstep(-0.035,0.03,(0.06+0.42*h.x)-h.y)*smoothstep(-0.12,-0.045,h.x),gHm=smoothstep(-0.07,0.03,(0.095+0.42*h.x)-h.y)*smoothstep(-0.16,-0.06,h.x);
+  float om=max(oB,oH*hwt),gm=max(gBm*(1.0-hwt),gHm*hwt);col=mix(base,cBr,hwt);col=mix(col,cGr,gm*0.85);col=mix(col,cOr,om);
+  float mt=vn3(p*vec3(30.0,46.0,30.0));col*=0.9+0.2*mt;col*=0.97+0.06*sin(b.x*90.0+mt*6.0)*(1.0-om);}
+ else if(m.y<1.5){if(A0.w<0.5){float st=0.5+0.5*sin(w.y*105.0+sin(w.x*9.0)),cov=smoothstep(0.0,0.12,w.x);col=mix(cBd,cBr*1.12,st*0.75);col=mix(col,cBr*1.05*(0.85+0.3*abs(sin(w.x*46.0)*sin(w.y*52.0))),cov);col=mix(col,cBf,0.45*smoothstep(0.75,1.0,st)*(1.0-cov));}
+  else{float c=w.x,st=0.5+0.5*sin(w.z*78.0+c*2.0);col=mix(cBd,cBr*1.1,st*0.7)*mix(1.08,0.82,c);col=mix(cBr*1.05,col,smoothstep(0.22,0.4,c));col=mix(col,cBf*0.9,0.35*smoothstep(0.6,1.0,st)*smoothstep(0.3,0.5,c));col=mix(col,vec3(0.74,0.7,0.66),0.5*step(w.y,0.0));}}
+ else if(m.y<2.5)col=cBd*(0.9+0.2*sin(tl.z*120.0));
+ else if(m.y<3.5)col=vec3(0.22,0.19,0.17);else if(m.y<4.5)col=vec3(0.03);else col=vec3(0.5,0.35,0.29);
+ vec3 L=normalize(vec3(-0.5,0.78,0.48)),V=vec3(0.0,0.0,1.0),H2=normalize(L+V);float nl=dot(n,L),wrap=clamp(nl*0.6+0.4,0.0,1.0);
+ float sh=1.0,tt=0.02;for(int i=0;i<14;i++){float d=map(p+n*0.006+L*tt).x;sh=min(sh,9.0*d/tt);tt+=clamp(d,0.012,0.06);if(sh<0.02)break;}sh=clamp(sh,0.0,1.0);
+ float ao=1.0;for(int i=1;i<=4;i++){float hh=0.022*float(i);ao-=(hh-map(p+n*hh).x)*(0.9/float(i));}ao=clamp(ao,0.25,1.0);
+ vec3 lit=col*(vec3(0.44,0.46,0.5)*mix(0.55,1.0,0.5+0.5*n.y)*ao+vec3(1.0,0.96,0.9)*0.82*wrap*mix(0.45,1.0,sh));lit+=col*0.1*max(0.0,-n.y)*vec3(1.0,0.9,0.8);
+ lit+=pow(1.0-max(n.z,0.0),3.0)*0.1*vec3(0.9,0.95,1.0)*(0.5+0.5*n.y)*ao;
+ if(m.y>3.5&&m.y<4.5)lit=vec3(0.02)+pow(max(dot(n,H2),0.0),90.0)*1.6+pow(1.0-max(n.z,0.0),2.0)*0.12;
+ if(m.y>2.5&&m.y<3.5)lit+=pow(max(dot(n,H2),0.0),30.0)*0.25;
+ o=vec4(clamp(lit,0.0,1.0),1.0);}`,
+  poses(){const P=[],add=(name,o)=>P.push([name,Object.assign({pitch:0.62,hyaw:0,hpit:0.05,spread:0,flap:0,sweep:0,fan:0,tang:0.1,legs:0,vyaw:0.38,crouch:0,fluff:0,roll:0,tilt:0,ext:0},o)]);
+    add('p0',{hyaw:-0.9});add('p1',{hyaw:-0.4});add('p2',{});add('p3',{hyaw:0.55});add('p4',{hyaw:1.05});add('p5',{hyaw:0.3,hpit:0.45});add('p6',{hyaw:0.25,hpit:-0.5});add('p7',{hyaw:0.7,tilt:0.4});add('p8',{hyaw:0.7,tilt:-0.4});
+    add('preen',{hyaw:-2.3,hpit:-0.25,fluff:0.5});add('fluff',{hyaw:0.3,fluff:1,pitch:0.5});add('flick',{tang:0.55});add('crouch',{pitch:0.32,crouch:1,hpit:0.1});
+    const fa=[1.15,0.8,0.3,-0.3,-0.78,-0.5,0.1,0.75],sw=[0.12,0.04,0,0,0.12,0.5,0.62,0.4];for(let i=0;i<8;i++)add('f'+i,{pitch:0.12,spread:1,flap:fa[i],sweep:sw[i],fan:0.15,tang:0,legs:1,vyaw:0.3,ext:1});
+    add('tuck',{pitch:0.08,legs:1,vyaw:0.3,ext:1,tang:0});
+    add('l0',{pitch:0.75,spread:1,flap:0.95,sweep:0.05,fan:1,tang:-0.45,legs:2,vyaw:0.35,ext:0.4});add('l1',{pitch:0.95,spread:1,flap:0.3,sweep:0,fan:1,tang:-0.5,legs:2,vyaw:0.35,ext:0.3});add('l2',{pitch:0.85,spread:1,flap:0.8,sweep:0.15,fan:0.8,tang:-0.3,legs:2,vyaw:0.35,ext:0.2});
+    add('to',{pitch:0.5,spread:1,flap:1.2,sweep:0.1,fan:0.5,legs:0.4,ext:0.5});return P;},
+  start(){if(this.st!=='idle')return;this.st='bake';const S=this.S=window.BIRD_S||(isTouch?192:DPR>1.4?320:256);this.list=this.poses();this.rows=Math.ceil(this.list.length/this.cols);this.atlas=mkCanvas(S*this.cols,S*this.rows);this.list.forEach((p,i)=>{this.F[p[0]]=i;});this.done=0;
+    try{const cv=this.cv=document.createElement('canvas');cv.width=cv.height=S*2;const gl=this.gl=cv.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,preserveDrawingBuffer:true});if(!gl)throw new Error('no webgl2');
+      const sh=(ty,src)=>{const o=gl.createShader(ty);gl.shaderSource(o,src);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;},pr=this.pr=gl.createProgram();
+      gl.attachShader(pr,sh(gl.VERTEX_SHADER,'#version 300 es\nin vec2 a;out vec2 uv;void main(){uv=a*0.5+0.5;gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,this.SRC));gl.bindAttribLocation(pr,0,'a');gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pr));
+      const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.useProgram(pr);gl.viewport(0,0,S*2,S*2);gl.clearColor(0,0,0,0);
+      this.U=['A0','A1','A2','A3'].map(k=>gl.getUniformLocation(pr,k));}catch(e){console.warn('bird gl',e);this.gl=null;}},
+  // a few pictures of the sheet per frame, until it is full
+  step(ms){if(this.st!=='bake')return;const t0=performance.now(),S=this.S,x=this.atlas.cx;
+    while(this.done<this.list.length){const i=this.done,p=this.list[i][1],ox=(i%this.cols)*S,oy=((i/this.cols)|0)*S;
+      if(this.gl){const gl=this.gl,U=this.U;try{gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform4f(U[0],p.pitch,p.hyaw,p.hpit,p.spread);gl.uniform4f(U[1],p.flap,p.sweep,p.fan,p.tang);gl.uniform4f(U[2],p.legs,p.vyaw,p.crouch,p.fluff);gl.uniform4f(U[3],p.roll,p.tilt,p.ext,0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(this.cv,ox,oy,S,S);}catch(e){this.gl=null;continue;}}
+      else this.flat(x,p,ox,oy,S);
+      this.done++;if(performance.now()-t0>ms)break;}
+    if(this.done>=this.list.length){this.st='ready';if(this.gl){const e=this.gl.getExtension('WEBGL_lose_context');if(e)e.loseContext();}this.gl=null;this.cv=null;}},
+  // the plain bird, for a browser with no WebGL
+  flat(x,p,ox,oy,S){const u=S/2;x.save();x.translate(ox+S*0.54,oy+S*0.5);x.scale(u,-u);x.translate(-0.03,-0.2);x.rotate(p.pitch);x.translate(0.03,0.2);const el=(cx,cy,rx,ry,a,c)=>{x.fillStyle=c;x.beginPath();x.ellipse(cx,cy,rx,ry,a,0,TAU);x.fill();};
+    x.fillStyle='#4a3f35';x.beginPath();x.moveTo(-0.35,0.06);x.lineTo(-0.86,0.02+p.tang*0.4);x.lineTo(-0.84,-0.06+p.tang*0.4);x.lineTo(-0.35,-0.02);x.fill();
+    el(0,0,0.36,0.25,0,'#6e5f4d');el(0.16,-0.04,0.22,0.2,0,'#f1590f');el(0.02,-0.14,0.26,0.1,0,'#ece8de');const hx=p.ext?0.43:0.35,hy=p.ext?0.08:0.21;el(hx,hy,0.17,0.16,0,'#6e5f4d');el(hx+0.05,hy-0.03,0.12,0.11,0,'#f1590f');
+    x.fillStyle='#38302b';x.beginPath();x.moveTo(hx+0.14,hy+0.02);x.lineTo(hx+0.3,hy-0.03);x.lineTo(hx+0.14,hy-0.05);x.fill();el(hx+0.07,hy+0.035,0.028,0.028,0,'#0a0a0a');
+    if(p.spread>0.5){x.fillStyle='#5a4c3f';x.beginPath();x.moveTo(0.2,0.1);x.lineTo(0.0,0.1+0.8*Math.sin(p.flap));x.lineTo(-0.25,0.1+0.55*Math.sin(p.flap));x.lineTo(-0.12,0.08);x.fill();}else el(-0.1,0.04,0.3,0.12,0.25,'#54473b');
+    x.restore();if(p.legs<0.5){x.strokeStyle='#7e5a49';x.lineWidth=S*0.014;x.beginPath();x.moveTo(ox+S*0.53,oy+S*0.62);x.lineTo(ox+S*0.555,oy+S*0.75);x.lineTo(ox+S*0.6,oy+S*0.762);x.stroke();}}};
+const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mCroquis,mContour,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mSmoke,mLumen];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -2567,7 +2592,7 @@ function createHostPeer(fresh){if(peer){try{peer.destroy();}catch(e){}}code=(fre
   peer.on('call',call=>{try{if(RV.call)try{RV.call.close();}catch(e){}RV.call=call;call.answer();call.on('stream',st=>{RV.el.srcObject=st;RV.el.play().catch(()=>{});RV.on=true;});call.on('close',()=>{if(RV.call===call){RV.on=false;RV.call=null;}});call.on('error',()=>{RV.on=false;});}catch(e){}});
   peer.on('connection',c=>{const old=conn;conn=c;if(old&&old!==c){try{old.close();}catch(e){}}
     c.on('open',()=>{onSensorConnected();sendHello();wantVideo();});
-    c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info'){setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));RV.mirror=m.mirror!=null?!!m.mirror:m.facing==='user';}else if(m.type==='pose'&&Array.isArray(m.L)){FACE.rpose={L:m.L,t:performance.now()};if(Array.isArray(m.B))FACE.rboxes={B:m.B,t:performance.now()};}}catch(e){}}
+    c.on('data',d=>{if(typeof d==='string'){try{const m=JSON.parse(d);if(m.type==='info'){setStatus('센서 연결됨 · '+(m.facing==='user'?'전면':'후면'));RV.mirror=m.mirror!=null?!!m.mirror:m.facing==='user';}else if(m.type==='pose'&&Array.isArray(m.L)){const tp=performance.now();if(FACE.rpose){const iv=tp-FACE.rpose.t;if(iv<4000)FACE.rpIv=FACE.rpIv?FACE.rpIv*0.7+iv*0.3:iv;}FACE.rpose={L:m.L,t:tp};if(Array.isArray(m.B))FACE.rboxes={B:m.B,t:performance.now()};}}catch(e){}}
       else if(d instanceof ArrayBuffer)decodePacket(d);else if(d&&d.buffer instanceof ArrayBuffer)decodePacket(d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength));else if(typeof Blob!=='undefined'&&d instanceof Blob)d.arrayBuffer().then(decodePacket);});
     c.on('close',()=>onSensorLost(c));c.on('error',()=>onSensorLost(c));});
   peer.on('error',err=>{if(me!==peer)return;const ty=(err&&err.type)||'unknown';
@@ -2716,7 +2741,7 @@ else if(location.hash==='#solo'&&!EMBEDDED){startCamera(S.facing==='environment'
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 if('serviceWorker' in navigator&&location.protocol==='https:'&&!EMBEDDED){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 setTimeout(()=>{if(role!=='sensor')STACK.load();},4000);
-window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,BIRD,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
