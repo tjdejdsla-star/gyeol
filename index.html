@@ -2288,15 +2288,17 @@ const mLumen={id:'lumen',name:'빛의 공간',desc:'거친 흑백 필름 사진 
     ctx.globalCompositeOperation='overlay';ctx.globalAlpha=0.55;pat(this.gn,this.go[0],this.go[1]);ctx.globalCompositeOperation='source-over';if(QF()>0.9){ctx.globalAlpha=0.2;pat(this.gs,this.go[2],this.go[3]);}ctx.globalAlpha=1;}};
 /* 스케치 2: a quick croquis in soft pencil, played like hand-drawn animation: several times a second the figure is drawn again from
    nothing and the new drawing replaces the old one outright.
-   There is no outline. A body is hatched, part by part, the way the reference is: the head, the trunk, each arm and each leg gets
-   its own run of short straight strokes laid side by side, all leaning the same way within the part and a little differently from
-   the part next to it (never across it: strokes of neighbouring parts stop where the parts meet, so nothing is cross-hatched).
-   A stroke is a thick, blunt-ended bar of graphite; its ends fall a little short of the edge of the figure or run a little past it,
-   so the edge is ragged and the figure is found by where the strokes stop. Now and then, where the strokes are long, the pencil
-   does not lift and runs to and fro in a tight zigzag instead. The whole sheet leans one way, like one hand's work.
+   There is no outline. A body is scribbled in, part by part: over the head, the trunk, each arm and each leg the pencil runs to
+   and fro in a zigzag, its strokes lying side by side, all leaning much the same way (the whole sheet leans one way, like one
+   hand's work; people and parts are only a little off it, so lines tangle but never cross square).
+   The zigzag is a hand's, not a ruler's: no two turns are alike (a small round swing here, a dead stop and straight back from
+   the same point there, sometimes an overshoot into a little loop, sometimes the pencil lifts), the strokes are uneven in length
+   and run a little past the edge of the figure or stop short of it, the gaps between them open and close, and every few strokes
+   the pressure changes. Over some parts the hand goes back a second time, leaning a touch differently, and the lines tangle.
+   A stroke is a thick line of soft graphite: grainy at its edge where the paper shows through, dense down its middle.
    Each part keeps the lean of its hatching for a few drawings and then takes another, as an animator would from sheet to sheet.
    Parts come from the skeleton of the pose model when it sees the person, from the outline alone when it does not */
-const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 연필의 짧고 굵은 빗금만으로 사람을 그리는 크로키. 머리·몸통·팔·다리마다 빗금이 나란히 놓이고 부위마다 기울기가 조금씩 달라지며, 빗금 끝이 들쭉날쭉해 형태가 드러난다. 손그림 애니메이션처럼 초당 여덟 장쯤 새 그림으로 바뀐다',hint:'앞에 서면 연필이 쓱쓱 그려요',
+const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 연필을 지그재그로 휘갈겨 사람을 그리는 크로키. 머리·몸통·팔·다리마다 선이 왕복하며 채워지는데, 꺾이는 곳이 어떤 데는 둥글고 어떤 데는 뾰족하며 가끔 작은 고리가 지고, 덧그은 선들이 살짝 엉킨다. 손그림 애니메이션처럼 초당 여덟 장쯤 새 그림으로 바뀐다',hint:'앞에 서면 연필이 쓱쓱 그려요',
   init(){const m=Math.min(W,H),f=QF()>0.9?1:QF()>0.6?1.12:1.26;this.dens=f;this.PER=f>1.1?0.16:0.125;this.q=Math.min(DPR,f>1.1?1.25:1.5);this.step=Math.min(A.sx,A.sy)*0.5;
     this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.lab=null;this.tS=-1;this.nD=0;this.cv=null;this.empty=true;this.takes=new Map();
     const key=[W,H].join(',');if(this.key!==key){this.key=key;const q=Math.min(DPR,1.5),B=this.paper=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx,R=seeded(5);x.scale(q,q);x.fillStyle='#f3f1ec';x.fillRect(0,0,W,H);
@@ -2334,30 +2336,40 @@ const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 �
       // the lean of the hand for this person, kept for a while; each part leans a little off it, also kept for a few drawings
       if(!seen.has('g')){seen.add('g');if(--G.hold<=0){G.hold=8+((R()*10)|0);G.ang=0.72+R()*0.5;if(R()<0.12)G.ang=Math.PI-G.ang;G.ver=(G.ver|0)+1;}}
       if(!seen.has(who)){seen.add(who);if(--bk.hold<=0||bk.gv!==G.ver){bk.gv=G.ver;bk.hold=6+((R()*9)|0);bk.off=(R()-0.5)*0.2;bk.ver=(bk.ver|0)+1;}bk.ang=G.ang+bk.off;}
-      const k=tk(p.key);if(--k.hold<=0||k.ver!==bk.ver){k.ver=bk.ver;k.hold=3+((R()*5)|0);k.d=(R()-0.5)*0.46;k.zig=R()<0.14;k.spk=0.9+R()*0.26;k.bow=(R()<0.5?-1:1)*(0.01+R()*0.028);}
-      const sp0=clamp(p.sz*0.115,m*0.0115,m*0.026)*k.spk*this.dens,sp=sp0*(k.zig?0.62:1),lw=sp0*0.44,th=bk.ang+k.d+(R()-0.5)*0.07,hx=Math.cos(th),hy=-Math.sin(th),nx=Math.sin(th),ny=Math.cos(th);lwSum+=lw;lwN++;
-      let cmin=1e9,cmax=-1e9,smin=1e9,smax=-1e9;for(const X of [p.x0*A.sx,(p.x1+1)*A.sx])for(const Y of [p.y0*A.sy,(p.y1+1)*A.sy]){const c=nx*X+ny*Y,s=hx*X+hy*Y;if(c<cmin)cmin=c;if(c>cmax)cmax=c;if(s<smin)smin=s;if(s>smax)smax=s;}
-      const iv=[],chains=[],open=[];let line=0;
-      for(let c=cmin+sp*(0.15+0.5*R());c<cmax;c+=sp*(0.76+0.5*R())*(R()<0.04?1.7:1)){iv.length=0;line++;let inS=false,a0=0,pv=0;
-        for(let s=smin-step;;s+=step){const end=s>smax+step;let v=0;if(!end){const X=nx*c+hx*s,Y=ny*c+hy*s;if(X>=0&&Y>=0&&X<W&&Y<H&&lab[((Y*isy)|0)*w+((X*isx)|0)]===pi)v=pbAt(X,Y);}
-          if(!inS&&v>0.5){inS=true;a0=s-step*(v-0.5)/Math.max(1e-3,v-pv);}else if(inS&&v<=0.5){inS=false;iv.push(a0,s-step*(0.5-v)/Math.max(1e-3,pv-v));}pv=v;if(end)break;}
-        for(let i=0;i<iv.length;i+=2){let a=iv[i],b=iv[i+1];while(i+2<iv.length&&iv[i+2]-b<sp*0.6){b=iv[i+3];i+=2;}if(b-a<sp*0.4&&p.n>12)continue;
-          // where a stroke ends: past the edge of the figure a little, or short of it; where another part begins, it simply stops
-          const oe=(s,dir)=>pbAt(nx*c+hx*(s+dir*step*2),ny*c+hy*(s+dir*step*2))<=0.5?(R()<0.05?0.8+R()*0.7:-0.26+0.74*R())*sp0:(-0.4+0.95*R())*sp0;
-          const a2=a-oe(a,-1),b2=b+oe(b,1),mid=(a2+b2)/2,half=Math.max(sp*0.22,(b2-a2)/2),t2=th+(R()-0.5)*0.085,ux=Math.cos(t2),uy=-Math.sin(t2),cx=nx*c+hx*mid,cy=ny*c+hy*mid,s={a,b,c,x0:cx-ux*half,y0:cy-uy*half,x1:cx+ux*half,y1:cy+uy*half};
-          let best=null,bo=sp*0.25;for(const o of open){if(o.line===line||c-o.c>sp*2.4)continue;const v=Math.min(b,o.b)-Math.max(a,o.a);if(v>bo){bo=v;best=o;}}
-          if(best){best.ch.push(s);best.a=a;best.b=b;best.c=c;best.line=line;}else{const ch=[s];chains.push(ch);open.push({ch,a,b,c,line});}}}
-      for(const ch of chains){const N=ch.length;any=true;
-        let med=0;if(k.zig&&N>=6){const ls=ch.map(q=>Math.hypot(q.x1-q.x0,q.y1-q.y0)).sort((a,b)=>a-b);med=ls[N>>1];}
-        if(med>sp0*4.2){ // to and fro without lifting: one line through the ends of the strokes in turn, so close that the strokes stay side by side
-          const V=[];for(let j=0;j<N;j++){const q=ch[j];V.push((j&1)?[q.x1,q.y1]:[q.x0,q.y0]);bb(q.x0,q.y0);bb(q.x1,q.y1);}const pth=PT[R()<0.3?1:2][(R()*3)|0];pth.moveTo(V[0][0],V[0][1]);
-          for(let j=1;j<N-1;j++){const v=V[j],p0=V[j-1],p1=V[j+1],l0=Math.hypot(p0[0]-v[0],p0[1]-v[1])||1,l1=Math.hypot(p1[0]-v[0],p1[1]-v[1])||1,r=sp*(0.5+0.6*R()),r0=Math.min(r,l0*0.4)/l0,r1=Math.min(r,l1*0.4)/l1;pth.lineTo(v[0]+(p0[0]-v[0])*r0,v[1]+(p0[1]-v[1])*r0);pth.quadraticCurveTo(v[0],v[1],v[0]+(p1[0]-v[0])*r1,v[1]+(p1[1]-v[1])*r1);}
-          pth.lineTo(V[N-1][0],V[N-1][1]);continue;}
-        for(let j=0;j<N;j++){if(k.zig&&(j&1)&&N>2)continue; // (a part meant for zigzag that came out short is plain bars at the usual distance)
-          const q=ch[j],dx=q.x1-q.x0,dy=q.y1-q.y0,L=Math.hypot(dx,dy)||1,r=R(),d=r<0.1?0:r<0.38?1:2,pth=PT[d][(R()*3)|0],bw=k.bow+(R()-0.5)*0.014;
-          pth.moveTo(q.x0,q.y0);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw,(q.y0+q.y1)/2+dx*bw,q.x1,q.y1);bb(q.x0,q.y0);bb(q.x1,q.y1);
-          // a bar is not one clean pass: the lead goes over it again a hair to one side and not quite as far, which is what makes its edge and its ends uneven
-          if(L>sp0*1.2){const o=(R()<0.5?-1:1)*lw*(0.16+0.2*R()),ox=-dy/L*o,oy=dx/L*o,u0=R()*0.2,u1=1-R()*0.2;pth.moveTo(q.x0+dx*u0+ox,q.y0+dy*u0+oy);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw+ox,(q.y0+q.y1)/2+dx*bw+oy,q.x0+dx*u1+ox,q.y0+dy*u1+oy);}}}}
+      const k=tk(p.key);if(--k.hold<=0||k.ver!==bk.ver){k.ver=bk.ver;k.hold=3+((R()*5)|0);k.d=(R()-0.5)*0.46;k.zig=R()<0.86;k.spk=0.9+R()*0.26;k.bow=(R()<0.5?-1:1)*(0.01+R()*0.028);k.tng=R()<0.42;k.ta=(R()<0.5?-1:1)*(0.13+R()*0.2);k.tf=R();}
+      const sp0=clamp(p.sz*0.115,m*0.0115,m*0.026)*k.spk*this.dens,lw=sp0*0.42,th0=bk.ang+k.d+(R()-0.5)*0.07;lwSum+=lw;lwN++;
+      // one going-over of the part: lines across it at a lean, the stretch of each that lies in the part, and which stretches follow on from which
+      const hatch=(th,sp,f0,f1)=>{const hx=Math.cos(th),hy=-Math.sin(th),nx=Math.sin(th),ny=Math.cos(th);let cmin=1e9,cmax=-1e9,smin=1e9,smax=-1e9;
+        for(const X of [p.x0*A.sx,(p.x1+1)*A.sx])for(const Y of [p.y0*A.sy,(p.y1+1)*A.sy]){const c=nx*X+ny*Y,s=hx*X+hy*Y;if(c<cmin)cmin=c;if(c>cmax)cmax=c;if(s<smin)smin=s;if(s>smax)smax=s;}
+        const iv=[],chains=[],open=[],cA=cmin+(cmax-cmin)*f0,cB=cmin+(cmax-cmin)*f1;let line=0;
+        for(let c=cA+sp*(0.15+0.5*R());c<cB;c+=sp*(0.62+0.76*R())*(R()<0.05?1.8:1)){iv.length=0;line++;let inS=false,a0=0,pv=0;
+          for(let s=smin-step;;s+=step){const end=s>smax+step;let v=0;if(!end){const X=nx*c+hx*s,Y=ny*c+hy*s;if(X>=0&&Y>=0&&X<W&&Y<H&&lab[((Y*isy)|0)*w+((X*isx)|0)]===pi)v=pbAt(X,Y);}
+            if(!inS&&v>0.5){inS=true;a0=s-step*(v-0.5)/Math.max(1e-3,v-pv);}else if(inS&&v<=0.5){inS=false;iv.push(a0,s-step*(0.5-v)/Math.max(1e-3,pv-v));}pv=v;if(end)break;}
+          for(let i=0;i<iv.length;i+=2){let a=iv[i],b=iv[i+1];while(i+2<iv.length&&iv[i+2]-b<sp*0.6){b=iv[i+3];i+=2;}if(b-a<sp*0.4&&p.n>12)continue;
+            // where a stroke ends: past the edge of the figure a little, or short of it; where another part begins it runs on or stops short by about as much
+            const oe=(s,dir)=>pbAt(nx*c+hx*(s+dir*step*2),ny*c+hy*(s+dir*step*2))<=0.5?(R()<0.06?0.8+R()*0.9:-0.3+0.8*R())*sp0:(-0.4+0.95*R())*sp0;
+            const a2=a-oe(a,-1),b2=b+oe(b,1),mid=(a2+b2)/2,half=Math.max(sp*0.22,(b2-a2)/2),t2=th+(R()-0.5)*0.11,ux=Math.cos(t2),uy=-Math.sin(t2),cx=nx*c+hx*mid,cy=ny*c+hy*mid,q={x0:cx-ux*half,y0:cy-uy*half,x1:cx+ux*half,y1:cy+uy*half};
+            let best=null,bo=sp*0.25;for(const o of open){if(o.line===line||c-o.c>sp*2.6)continue;const v=Math.min(b,o.b)-Math.max(a,o.a);if(v>bo){bo=v;best=o;}}
+            if(best){best.ch.push(q);best.a=a;best.b=b;best.c=c;best.line=line;}else{const ch=[q];chains.push(ch);open.push({ch,a,b,c,line});}}}
+        return chains;};
+      // to and fro without lifting: up one stroke, round the end, down the next. No two turns are alike: at some the pencil swings
+      // round in a small curve, at some it stops dead and comes straight back from the same point, now and then it overshoots into
+      // a little loop or lifts off; and every few strokes the hand bears down harder or lets up
+      const zig=(ch,dk)=>{const N=ch.length;let up=R()<0.5,pth=null,left=0,px=0,py=0,tx=0,ty=0,has=false;
+        for(let j=0;j<N;j++){const q=ch[j];let sx=up?q.x0:q.x1,sy=up?q.y0:q.y1;const ex=up?q.x1:q.x0,ey=up?q.y1:q.y0;
+          if(left<=0){const r=R(),d=dk!=null?dk:r<0.1?0:r<0.4?1:2;pth=PT[d][(R()*3)|0];left=2+((R()*6)|0);if(has)pth.moveTo(px,py);}
+          if(!has)pth.moveTo(sx,sy);else{const gx=sx-px,gy=sy-py,gap=Math.hypot(gx,gy),r=R();
+            if(gap>sp0*3.2||r<0.05)pth.moveTo(sx,sy);
+            else{const rho=r<0.36?R()*0.12:r<0.8?0.3+R()*0.5:r<0.94?0.8+R()*0.35:-(0.18+R()*0.25);
+              if(Math.abs(rho)<0.04){sx=px;sy=py;}else{const qx=px+gx*rho,qy=py+gy*rho,kk=Math.abs(rho)*gap*(0.5+0.35*R())+(rho<0?sp0*(0.35+0.3*R()):0);pth.bezierCurveTo(px+tx*kk,py+ty*kk,qx+tx*kk,qy+ty*kk,qx,qy);sx=qx;sy=qy;}}}
+          const dx=ex-sx,dy=ey-sy,L=Math.hypot(dx,dy)||1,bw=k.bow+(R()-0.5)*0.02;pth.quadraticCurveTo((sx+ex)/2-dy*bw,(sy+ey)/2+dx*bw,ex,ey);bb(sx,sy);bb(ex,ey);px=ex;py=ey;tx=dx/L;ty=dy/L;has=true;up=!up;left--;}};
+      const C1=hatch(th0,sp0*(k.zig?0.8:1),0,1);
+      for(const ch of C1){any=true;if(k.zig){zig(ch,null);continue;}
+        // (now and then a part is done in separate strokes instead, each gone over twice so its edge and ends come out uneven)
+        for(const q of ch){const dx=q.x1-q.x0,dy=q.y1-q.y0,L=Math.hypot(dx,dy)||1,r=R(),d=r<0.1?0:r<0.38?1:2,pth=PT[d][(R()*3)|0],bw=k.bow+(R()-0.5)*0.014;pth.moveTo(q.x0,q.y0);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw,(q.y0+q.y1)/2+dx*bw,q.x1,q.y1);bb(q.x0,q.y0);bb(q.x1,q.y1);
+          if(L>sp0*1.2){const o=(R()<0.5?-1:1)*lw*(0.16+0.2*R()),ox=-dy/L*o,oy=dx/L*o,u0=R()*0.2,u1=1-R()*0.2;pth.moveTo(q.x0+dx*u0+ox,q.y0+dy*u0+oy);pth.quadraticCurveTo((q.x0+q.x1)/2-dy*bw+ox,(q.y0+q.y1)/2+dx*bw+oy,q.x0+dx*u1+ox,q.y0+dy*u1+oy);}}}
+      // the hand goes back over a stretch of it, leaning a touch differently: lines that tangle with the first ones rather than cross them
+      if(k.tng&&p.n>14){const f0=k.tf*0.6,C2=hatch(th0+k.ta,sp0*1.15,f0,f0+0.3+0.25*R());for(const ch of C2)zig(ch,R()<0.55?0:1);}}
     if(stamp%60===0)for(const [key,v] of T)if(stamp-v.stamp>40)T.delete(key);
     const q=this.q,cw=Math.round(W*q),chh=Math.round(H*q);if(!this.cv||this.cv.width!==cw||this.cv.height!==chh)this.cv=mkCanvas(cw,chh);const cv=this.cv,x=cv.cx;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';x.globalAlpha=1;x.clearRect(0,0,cw,chh);this.empty=!any;if(!any)return;
     const lw=lwSum/lwN,pd=lw*2.5,rx=Math.max(0,bx0-pd),ry=Math.max(0,by0-pd),rw=Math.min(W,bx1+pd)-rx,rh=Math.min(H,by1+pd)-ry,kz=q*1.05,pat=x.createPattern(this.tooth,'repeat'),WM=[0.72,0.92,1.1],AL=[0.5,0.8,0.97];
