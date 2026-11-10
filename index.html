@@ -353,6 +353,9 @@ let W=1,H=1,DPR=1;
 // 'fill' fills the screen and cuts off what does not fit. The part of the picture the screen covers: [x, y, width, height] in camera pixels,
 // which in 'full' reaches past the picture's own edges
 function camCrop(sw,sh,SA){let cw,ch;if(S.fit==='fill'){cw=sw;ch=sw/SA;if(ch>sh){ch=sh;cw=sh*SA;}}else{cw=sw;ch=sw/SA;if(ch<sh){ch=sh;cw=sh*SA;}}return [(sw-cw)/2,(sh-ch)/2,cw,ch];}
+// FR: how many sixtieths of a second the last frame took. ez(c) turns an easing amount meant for one frame at 60 a second into the
+// amount for this frame, so shapes follow people just as quickly on a laptop that only manages 20 frames a second
+let FR=1;function ez(c){return FR===1?c:1-Math.pow(1-c,FR);}
 function mkCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;c.cx=c.getContext('2d');return c;}
 function fillBg(){ctx.fillStyle=pal().bg;ctx.fillRect(0,0,W,H);}
 function fade(a){ctx.fillStyle=rgba(pal().bg,a);ctx.fillRect(0,0,W,H);}
@@ -424,7 +427,7 @@ async function reloadPose(){try{const {vision,fs}=await mpVision();const old=FAC
   FACE.pose=await mkTask(vision.PoseLandmarker,fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},runningMode:'VIDEO',numPoses:15,outputSegmentationMasks:true,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});}catch(e){PM.off=true;}}
 function takePoseMask(r){if(PM.off){PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=performance.now();const ms=r&&r.segmentationMasks;if(ms)for(const m of ms){try{m.close();}catch(e){}}return;}const now=performance.now(),ms=r&&r.segmentationMasks;PM.n=r&&r.landmarks?r.landmarks.length:0;if(PM.n>0)PM.seen=now;
   if(!ms||!ms.length){PM.fresh=now;PM.n=Math.min(PM.n,0);return;}
-  try{const mw=ms[0].width,mh=ms[0].height,len=mw*mh;if(!PM.mask||PM.mask.length!==len)PM.mask=new Float32Array(len);const out=PM.mask;for(let i=0;i<len;i++)out[i]*=0.55;
+  try{const mw=ms[0].width,mh=ms[0].height,len=mw*mh;if(!PM.mask||PM.mask.length!==len)PM.mask=new Float32Array(len);const out=PM.mask;for(let i=0;i<len;i++)out[i]*=0.25;
     for(const m of ms){if(m.width===mw&&m.height===mh){const a=m.getAsFloat32Array();for(let i=0;i<len;i++)if(a[i]>out[i])out[i]=a[i];}try{m.close();}catch(e){}}
     PM.mw=mw;PM.mh=mh;PM.fresh=now;PM.n=ms.length;}catch(e){}}
 const SEG={state:'idle',seg:null,idx:0,mask:null,mw:0,mh:0,last:0,ts:0,fresh:0};
@@ -455,8 +458,12 @@ async function loadSeg(){if(SEG.state!=='idle'||EMBEDDED)return;SEG.state='loadi
   catch(e){SEG.state='offline';}}
 const ML={f:-1,turn:''};
 function camOK(){return (source.kind==='camera'||source.kind==='file')&&video.videoWidth>0&&!EMBEDDED;}
-function poseIv(){return Math.max(role==='sensor'?80:66,(FACE.pcost||8)*3);}
-function objIv(){return clamp((FACE.ocost||20)*4,120,600);}
+const POSE_MODES={detect:1,gaze:1,trail:1,poem:1,aura:1,star:1,cari:1,frost:1,thermal:1,stack:1,firework:1,balloon:1,bubble:1};
+function poseNeeded(){const id=role==='sensor'?MC.remote:(mode?mode.id:'');return !id||!!POSE_MODES[id];}
+function poseIv(){const c=FACE.pcost||8;return poseNeeded()?Math.max(role==='sensor'?80:66,c*4.5):Math.max(260,c*14);}
+function objIv(){return clamp((FACE.ocost||20)*9,160,3000);}
+function poseWin(){return Math.max(400,poseIv()*1.7);}
+function objWin(){return Math.max(700,objIv()*1.7);}
 function mlPlan(now){ML.turn='';if(!camOK())return;let best=1,who='';const c=(k,ok,last,iv)=>{if(!ok)return;const r=(now-last)/iv;if(r>=1&&r>best-1e-9&&(who===''||r>best)){best=r;who=k;}};
   c('seg',SEG.state==='ready',SEG.last,40);if(partsWanted()){if(MC.state==='idle'&&SEG.state==='ready')loadMC();c('mc',MC.state==='ready',MC.last,Math.min(2000,Math.max(250,(MC.cost||60)*4)));}c('pose',FACE.state==='ready'&&!!FACE.pose,FACE.plast,poseIv());c('obj',FACE.state==='ready'&&!!FACE.obj,FACE.olast,objIv());ML.turn=who;}
 function runSeg(now){if(SEG.state!=='ready'||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth)return;if(ML.turn!=='seg')return;SEG.last=now;ML.f=frame;
@@ -533,7 +540,7 @@ function analyze(){
   A.hotN=hotN; A.level+=(clamp(total/(n*0.05),0,1)-A.level)*0.2;
   // presence: either "moving things only" (motion energy, spread and held briefly) or background subtraction
   const bg=A.bg,pr=A.p,pres=A.pres; let presN=0;
-  const tnow=performance.now(),segOK=!!(SEG.mask&&tnow-SEG.fresh<400),pmOK=!!(PM.mask&&tnow-PM.fresh<400&&PM.n>0),poseOn=!!(FACE.pose&&tnow-PM.fresh<400);
+  const tnow=performance.now(),segOK=!!(SEG.mask&&tnow-SEG.fresh<400),pmOK=!!(PM.mask&&tnow-PM.fresh<poseWin()&&PM.n>0),poseOn=!!(FACE.pose&&tnow-PM.fresh<poseWin());
   if(segOK||pmOK){
     // a mask sampled onto the analysis grid through the same crop (and mirror) as the frame. Each cell reads four points and keeps the
     // stronger of their average and most of their maximum, so a limb thinner than a cell is not lost between samples
@@ -551,8 +558,8 @@ function analyze(){
       const lab=A.lab&&A.lab.length===n?A.lab:(A.lab=new Int32Array(n)),q=A.lq&&A.lq.length===n?A.lq:(A.lq=new Int32Array(n));lab.fill(0);let id=0;const keep=[0];
       for(let s0=0;s0<n;s0++){if(lab[s0]||cur[s0]<0.35)continue;id++;let hd=0,tl=0,hit=false,inb=0;q[tl++]=s0;lab[s0]=id;while(hd<tl){const i=q[hd++],x=i%w;if(gp[i]>0.3)hit=true;if(bm&&bm[i])inb++;
           if(x>0&&!lab[i-1]&&cur[i-1]>=0.35){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&!lab[i+1]&&cur[i+1]>=0.35){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&!lab[i-w]&&cur[i-w]>=0.35){lab[i-w]=id;q[tl++]=i-w;}if(i<n-w&&!lab[i+w]&&cur[i+w]>=0.35){lab[i+w]=id;q[tl++]=i+w;}}keep.push(hit||inb>=tl*0.3?1:0);}
-      for(let i=0;i<n;i++){const s2=lab[i]?(keep[lab[i]]?cur[i]:0):cur[i]*0.5,g2=gp[i];cur[i]=g2>s2?g2:s2;}}
-    else if((poseOn||(FACE.obj&&tnow-FACE.otime<800))&&tnow-PM.seen>900&&tnow-(FACE.oseen||-1e9)>900){for(let i=0;i<n;i++)cur[i]*=0.3;} // the pose model has seen nobody for a while: a lone selfie-mask blob is probably not a person
+      const useG=!segOK||tnow-PM.fresh<130;for(let i=0;i<n;i++){const s2=lab[i]?(keep[lab[i]]?cur[i]:0):cur[i]*0.5,g2=useG?gp[i]:0;cur[i]=g2>s2?g2:s2;}}
+    else if((poseOn||(FACE.obj&&tnow-FACE.otime<objWin()))&&tnow-PM.seen>poseWin()+500&&tnow-(FACE.oseen||-1e9)>objWin()+200){for(let i=0;i<n;i++)cur[i]*=0.3;} // the pose model has seen nobody for a while: a lone selfie-mask blob is probably not a person
     // the pose model knows where arms and legs are: along each visible limb, faint mask becomes solid (no mask at all stays empty, so a
     // late pose never paints a ghost arm)
     limbBoost(cur,w,h,sx,sy,cw,ch,sw,sh);
@@ -560,7 +567,7 @@ function analyze(){
     blur3(cur,A.tmp,w,h);
     const hs=A.hs=hyst(cur,w,h,0.55,0.32,A.hs);
     // over time: shape appears at once and fades over a few frames, so an arm the model drops for a frame does not flicker away
-    for(let i=0;i<n;i++){let v=cur[i];if(hs[i]&&v<0.72)v=0.72;const o=pr[i],sm=v>o?o*0.45+v*0.55:o*0.6+v*0.4;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
+    for(let i=0;i<n;i++){let v=cur[i];if(hs[i]&&v<0.72)v=0.72;const o=pr[i],sm=v>o?o*0.25+v*0.75:o*0.42+v*0.58;pr[i]=sm;if(sm>0.5)pres[presN++]=i;bg[i]+=(g[i]-bg[i])*0.02;}
   }else if(S.detect==='motion'){
     // motion energy -> close the gaps between moving edges (dilate then erode) -> brief hold, so a moving
     // person reads as one filled shape and nothing is compared against a stored background
@@ -712,14 +719,14 @@ void main(){vec2 r=g*3.0,px=vec2(6.0)+uv*(r-12.0),gc=clamp((px+0.5)/3.0-0.5,vec2
 const mShapes={id:'shapes',name:'도형',desc:'격자 위 기본 도형들이 제자리에서 피어나고 사라지며 사람을 그린다. 움직이는 곳은 도형이 바뀐다',
   init(){const cols=isTouch?38:64;this.cols=cols;this.cell=W/cols;this.rows=Math.ceil(H/this.cell);const m=cols*this.rows;
     this.a=new Float32Array(m);this.rate=new Float32Array(m);this.type=new Uint8Array(m);this.next=new Uint8Array(m);this.mo=new Float32Array(m);this.cool=new Float32Array(m);
-    for(let i=0;i<m;i++){this.rate[i]=0.06+Math.random()*0.1;this.type[i]=(Math.random()*4)|0;}},
+    for(let i=0;i<m;i++){this.rate[i]=0.17+Math.random()*0.14;this.type[i]=(Math.random()*4)|0;}},
   shape(path,k,x,y,s){if(s<0.4)return;if(k===0){path.moveTo(x+s,y);path.arc(x,y,s,0,TAU);}else if(k===1){path.rect(x-s*0.86,y-s*0.86,s*1.72,s*1.72);}
     else if(k===2){path.moveTo(x,y-s);path.lineTo(x+s*0.95,y+s*0.75);path.lineTo(x-s*0.95,y+s*0.75);path.closePath();}else{path.moveTo(x,y-s);path.lineTo(x+s,y);path.lineTo(x,y+s);path.lineTo(x-s,y);path.closePath();}},
   draw(t,dt){const P=pal();paper(P.light?'#f6f5f1':P.bg);const cols=this.cols,rows=this.rows,cell=this.cell,a=this.a,rate=this.rate,type=this.type,next=this.next,mo=this.mo,cool=this.cool;
     const rest=new Path2D(),fill=new Path2D(),hot=new Path2D(),R=cell*0.42;
     for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c,x=(c+0.5)*cell,y=(r+0.5)*cell;const f=at(x,y);
       // each shape eases in or out at its own pace, so the figure blooms rather than switching on
-      const target=f.p>0.5?1:f.p>0.25?0.55:0;a[i]+=(target-a[i])*rate[i];
+      const target=f.p>0.5?1:f.p>0.25?0.55:0;a[i]+=(target-a[i])*ez(rate[i]);
       // where something moves, the shape turns into another one: shrink out, swap, grow back
       cool[i]=Math.max(0,cool[i]-dt);if(mo[i]===0&&f.e>0.3&&a[i]>0.3&&cool[i]===0){mo[i]=0.0001;next[i]=(type[i]+1+((Math.random()*3)|0))%4;}
       let s1=a[i],morph=false;if(mo[i]>0){mo[i]+=dt*3.2;morph=true;if(mo[i]>=1){type[i]=next[i];mo[i]=0;cool[i]=0.6+Math.random()*0.6;}}
@@ -729,10 +736,10 @@ const mShapes={id:'shapes',name:'도형',desc:'격자 위 기본 도형들이 �
   }};
 const mDots={id:'dots',name:'점',desc:'화면 가득 흩뿌려진 점들 중 사람이 선 자리의 점만 제자리에서 차오르고, 떠나면 천천히 스러진다',
   init(){const n=clamp(Math.round(W*H/(isTouch?120:80)),2500,14000);this.n=n;this.x=new Float32Array(n);this.y=new Float32Array(n);this.sz=new Float32Array(n);this.v=new Float32Array(n);this.rate=new Float32Array(n);this.col=new Uint8Array(n);this.pop=new Float32Array(n);
-    for(let i=0;i<n;i++){this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;this.sz[i]=1+Math.random()*2.2;this.rate[i]=0.04+Math.random()*0.12;const r=Math.random();this.col[i]=r<0.5?1:r<0.85?2:3;}},
+    for(let i=0;i<n;i++){this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;this.sz[i]=1+Math.random()*2.2;this.rate[i]=0.14+Math.random()*0.16;const r=Math.random();this.col[i]=r<0.5?1:r<0.85?2:3;}},
   draw(t,dt){const P=pal();paper(P.light?'#f6f5f1':P.bg);const n=this.n,x=this.x,y=this.y,sz=this.sz,v=this.v,rate=this.rate,col=this.col,pop=this.pop,LV=6;
     const paths=[];for(let c=0;c<4;c++){paths.push([]);for(let l=0;l<LV;l++)paths[c].push(new Path2D());}
-    for(let i=0;i<n;i++){const f=at(x[i],y[i]);const target=f.p>0.45?1:0.08;v[i]+=(target-v[i])*rate[i];
+    for(let i=0;i<n;i++){const f=at(x[i],y[i]);const target=f.p>0.45?1:0.08;v[i]+=(target-v[i])*ez(rate[i]);
       if(f.e>0.3&&pop[i]<0.05)pop[i]=1;pop[i]*=0.9;
       const vis=v[i];if(vis<0.05)continue;const s=sz[i]*(0.55+0.7*vis+0.9*pop[i]);const lv=Math.min(LV-1,(vis*LV)|0);const c=vis>0.4?col[i]:0;
       paths[c][lv].rect(x[i]-s/2,y[i]-s/2,s,s);}
@@ -757,13 +764,13 @@ function drawFrameTo(cv){ // current camera frame, cropped like the analysis, in
 }
 const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,ftime:-1e9,otime:-1e9,pose:null,pres:null,plast:0,ptime:-1e9};
 function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now()-r.t<500?r.L.map(lm=>lm.map(q=>({x:q[0]*W,y:q[1]*H,v:q[2]}))):null;}
-  if(!(FACE.pres&&performance.now()-FACE.ptime<500&&FACE.pres.landmarks&&FACE.pres.landmarks.length))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;
+  if(!(FACE.pres&&performance.now()-FACE.ptime<poseWin()+100&&FACE.pres.landmarks&&FACE.pres.landmarks.length))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;
   const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw;
   return FACE.pres.landmarks.map(lm=>lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility};}));}
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
-  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star'||id==='cari',usePose=wantFace||id==='frost'||id==='thermal'||id==='stack'||id==='emoji'||id==='dodge'||id==='firework'||id==='balloon'||id==='bubble',wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
+  const id=mode.id,wantFace=id==='detect'||id==='gaze'||id==='trail'||id==='poem'||id==='aura'||id==='star'||id==='cari',usePose=!!POSE_MODES[id],wantPose=true,wantObj=!FACE.pose&&usePose;if(!wantFace&&!wantPose)return;
   if(FACE.state==='idle')loadFace();if(FACE.state!=='ready')return;const now=performance.now();
   if(wantFace&&now-FACE.last>66){FACE.last=now;try{FACE.res=FACE.det.detectForVideo(video,now);FACE.ftime=now;}catch(e){FACE.res=null;}}
   if(wantPose&&FACE.pose&&ML.turn==='pose'){FACE.plast=now;runPose(now);}
@@ -773,10 +780,10 @@ function runObj(now){if(!FACE.obj||ML.turn!=='obj')return;FACE.olast=now;ML.f=fr
   try{FACE.ores=FACE.obj.detectForVideo(video,now+0.5);FACE.otime=now;if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.length)FACE.oseen=now;}catch(e){FACE.ores=null;}FACE.ocost=(FACE.ocost||20)*0.7+(performance.now()-t0)*0.3;}
 // the person detector's boxes on screen: from this camera, or relayed by the phone sensor
 function objScreen(){const now=performance.now();if(A.remote){const r=FACE.rboxes;return r&&now-r.t<700?r.B.map(b=>({x:b[0]*W,y:b[1]*H,w:b[2]*W,h:b[3]*H,score:b[4]})):null;}
-  const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<700))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw,out=[];
+  const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<objWin()))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw,out=[];
   r.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k;const y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;if(x+w<0||x>W||y+h<0||y>H)return;out.push({x,y,w,h,score:c.score});});return out;}
 // the same boxes painted onto the analysis grid, a little wider than each person (for arms, and for movement since the detector last looked)
-function personBoxMask(sx,sy,cw,ch,w,h,now){const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<700))return null;const n=w*h,bm=A.bm&&A.bm.length===n?A.bm:(A.bm=new Uint8Array(n));bm.fill(0);let any=false;
+function personBoxMask(sx,sy,cw,ch,w,h,now){const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<objWin()))return null;const n=w*h,bm=A.bm&&A.bm.length===n?A.bm:(A.bm=new Uint8Array(n));bm.fill(0);let any=false;
   for(const o of r.detections){const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')continue;const bb=o.boundingBox,ex=bb.width*0.15,ey=bb.height*0.06;let x0=(bb.originX-ex-sx)/cw*w,x1=(bb.originX+bb.width+ex-sx)/cw*w;if(S.mirror){const a=w-x1;x1=w-x0;x0=a;}
     const xa=Math.max(0,Math.floor(x0)),xb=Math.min(w-1,Math.ceil(x1)),ya=Math.max(0,Math.floor((bb.originY-ey-sy)/ch*h)),yb=Math.min(h-1,Math.ceil((bb.originY+bb.height+ey-sy)/ch*h));if(xb<xa||yb<ya)continue;any=true;for(let y=ya;y<=yb;y++){const o2=y*w;for(let x=xa;x<=xb;x++)bm[o2+x]=1;}}
   return any?bm:null;}
@@ -949,11 +956,11 @@ const mDotm={id:'dotm',name:'도트',desc:'정사각 격자 위 둥근 점의 �
     for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const i=r*cols+k,x=(k+0.5)*c,y=(r+0.5)*c;
       // coverage of the cell, sampled at nine points
       let m=0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)m+=pAt(x+a*c*0.33,y+b*c*0.33);m/=9;
-      const prev=mem[i];mem[i]=m>prev*0.86?m:prev*0.86;
+      const prev=mem[i],hd=Math.pow(0.8,FR);mem[i]=m>prev*hd?m:prev*hd;
       let lv=m>0.82?3:m>0.55?2:m>0.3?1:m>0.12?0:-1;
       if(lv>=0&&lv<3&&at(x,y).e>0.25&&hash2(k+((t*10)|0),r)<0.35)lv=Math.max(0,lv-1); // moving edges flicker a size down
       // the trail of what just left keeps a small dot; every dot eases toward its size, growing in and shrinking out in place
-      const want=lv>=0?R*steps[lv]:prev>0.3?R*(prev>0.6?0.3:0.18):0;const cur=this.rad[i];this.rad[i]=cur+(want-cur)*(want>cur?0.35:0.18);
+      const want=lv>=0?R*steps[lv]:prev>0.3?R*(prev>0.6?0.3:0.18):0;const cur=this.rad[i];this.rad[i]=cur+(want-cur)*ez(want>cur?0.5:0.32);
       const rad=this.rad[i];if(rad>0.5){(lv>=0?big:small).moveTo(x+rad,y);(lv>=0?big:small).arc(x,y,rad,0,TAU);}}
     ctx.fillStyle=ink;ctx.fill(big);ctx.fill(small);
   }};
@@ -1009,12 +1016,12 @@ const mFrost={id:'frost',name:'유리',desc:'젖빛 유리 너머의 사람들. 
   draw(t){this.f++;if((this.f&1)===0)PEOPLE.update();const w=A.w,h=A.h,n=A.n,M=this.M,D=this.D,Dn=this.Dn,p=A.p;
     ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
     // the silhouette, averaged over a few frames so its edge does not shimmer
-    for(let i=0;i<n;i++)M[i]=M[i]*0.35+p[i]*0.65;if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
+    {const k=ez(0.75);for(let i=0;i<n;i++)M[i]+=(p[i]-M[i])*k;}if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
     // a smooth depth map: each person's distance spreads softly around them, so blur changes gradually and never in a seam
     const people=PEOPLE.list;let gNear=0.2;if(!people.length&&A.presN>12){let y0=h,y1=0;for(let i=0;i<n;i++)if(p[i]>0.5){const y=(i/w)|0;if(y<y0)y0=y;if(y>y1)y1=y;}gNear=clamp(((y1-y0)/h-0.2)/0.75,0,1);}
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!people.length){Dn[i]=gNear;continue;}const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let sw=0,sv=0;
       for(const q of people){const cx=q.bx+q.bw/2,cy=q.by+q.bh/2,sx=Math.max(20,q.bw*0.6),sy=Math.max(20,q.bh*0.6),g=Math.exp(-(((px-cx)/sx)**2+((py-cy)/sy)**2)*0.5)+1e-6;sw+=g;sv+=g*q.near;}Dn[i]=sv/sw;}
-    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*(Dn[i]>D[i]?0.14:0.03);
+    box5(Dn,this.tmp,w,h);box5(Dn,this.tmp,w,h);if(!this.dInit){D.set(Dn);this.dInit=true;}else for(let i=0;i<n;i++)D[i]+=(Dn[i]-D[i])*ez(Dn[i]>D[i]?0.2:0.06);
     // sharpness only in the last stretch before the glass; four depth layers blended, so blur is continuous across the body
     const S=this.tmp;for(let i=0;i<n;i++){let s=(D[i]-0.62)/0.33;s=s<0?0:s>1?1:s;S[i]=s*s*(3-2*s);}
     const sc=Math.max(1,Math.round((isTouch?2:3)*QF())),scl=W/1280,R=[1.6,7,18,40],AL=[0.94,0.8,0.64,0.48];if(!this.Wl)this.Wl=[0,1,2,3].map(()=>new Float32Array(n));
@@ -1043,7 +1050,7 @@ const mHalftone={id:'halftone',name:'망점',desc:'흰 바탕에 하늘색 망�
       let l=0.5+(lum[i]-mean)*k1;l=l<0?0:l>1?1:l;l=0.5*l+0.5*lum[i];const open=0.18+0.8*Math.pow(l,1.3);S[i]=outer*(1-0.95*open*cr);}
     const sS=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (S[i]*(1-fx)+S[i+1]*fx)*(1-fy)+(S[i+w]*(1-fx)+S[i+w+1]*fx)*fy;};
     // one ink, one grid: every dot only grows or shrinks in its own place
-    const dots=new Path2D();for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const x=k*c+c/2,y=r*c+c/2,i=r*cols+k;I[i]+=(sS(x,y)-I[i])*0.3;const iv=I[i];if(iv<0.02)continue;
+    const dots=new Path2D();for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const x=k*c+c/2,y=r*c+c/2,i=r*cols+k;I[i]+=(sS(x,y)-I[i])*ez(0.5);const iv=I[i];if(iv<0.02)continue;
       const rad=c*0.5*Math.min(0.97,Math.pow(iv,0.62));if(rad<0.55)continue;dots.moveTo(x+rad,y);dots.arc(x,y,rad,0,TAU);}
     ctx.fillStyle='#3d97e4';ctx.fill(dots);
   }};
@@ -1058,7 +1065,7 @@ const mThermal={id:'thermal',
     GL.up('thS',sg,sg.length/4,1,'rgba32f');GL.up('thR',pr,pr.length/4,1,'rgba32f');const part=!!(A.part&&A.part.length===A.n&&performance.now()-(A.partT||0)<3000);if(part)GL.up('thC',A.part,w,h,'r8','nearest');
     GL.run('thT',GLSRC.thermalT,'thT',tw,th,{scr:[W,H],tt:t*0.2,nS:{i:ns},usePT:part?1:0},{P:'thP',SG:'thS',PR:'thR',PT:part?'thC':'thP'});
     const sgm=3.27*tw/(W/3);GL.run('blur',GLSRC.blur,'thB1',tw,th,{dir:[1/tw,0],sg:sgm},{X:'thT'});GL.run('blur',GLSRC.blur,'thB2',tw,th,{dir:[0,1/th],sg:sgm},{X:'thB1'});
-    const a=this.pp?'thA':'thZ',b2=this.pp?'thZ':'thA';this.pp=!this.pp;GL.run('mix',GLSRC.mix,a,tw,th,{k:this.glInit?0.35:1},{X:'thB2',Y:b2});this.glInit=true;
+    const a=this.pp?'thA':'thZ',b2=this.pp?'thZ':'thA';this.pp=!this.pp;GL.run('mix',GLSRC.mix,a,tw,th,{k:this.glInit?ez(0.55):1},{X:'thB2',Y:b2});this.glInit=true;
     const sz=GL.size();GL.run('thOut',GLSRC.thermalOut,null,sz[0],sz[1],{seed:(this.f%977)*0.618,gs:Math.max(1,sz[0]/tw)},{X:a,LUT:'thLUT'});GL.show();
     // the warmest point, read back a few times a second
     if(!this.hot||this.f%15===0){gl.bindFramebuffer(gl.FRAMEBUFFER,GL.T[a].fb);if(!this.rb||this.rb.length!==tw*th*4)this.rb=new Uint8Array(tw*th*4);gl.readPixels(0,0,tw,th,gl.RGBA,gl.UNSIGNED_BYTE,this.rb);let mi=0,mv=0;for(let i=0;i<tw*th;i++){const v=this.rb[i*4];if(v>mv){mv=v;mi=i;}}
@@ -1100,7 +1107,7 @@ const mThermal={id:'thermal',
           v=v*(1-pm)+tb*pm;}
         T[i]=v;}}
     // heat spreads and blurs like a real sensor, and settles over time
-    box5(T,this.tmp,tw,th);box5(T,this.tmp,tw,th);box5(T,this.tmp,tw,th);if(!this.init2){Ts.set(T);this.init2=true;}else for(let i=0;i<n;i++)Ts[i]+=(T[i]-Ts[i])*0.35;
+    box5(T,this.tmp,tw,th);box5(T,this.tmp,tw,th);box5(T,this.tmp,tw,th);if(!this.init2){Ts.set(T);this.init2=true;}else{const k=ez(0.55);for(let i=0;i<n;i++)Ts[i]+=(T[i]-Ts[i])*k;}
     const d=this.img.data;let r=(this.f*9301+49297)>>>0||1;for(let i=0;i<n;i++){let v=Ts[i];v=v<0?0:v>1?1:v;r^=r<<13;r^=r>>>17;r^=r<<5;const g=((r>>>0)%11)-5,li=((v*255)|0)*3,q=i*4;d[q]=lut[li]+g;d[q+1]=lut[li+1]+g;d[q+2]=lut[li+2]+g;d[q+3]=255;}
     this.out.cx.putImageData(this.img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.out,0,0,W,H);
     // a quiet reading: a slim scale on the right and the warmest point, in degrees
@@ -1143,7 +1150,7 @@ const mWord={id:'word',name:'말씀',desc:'화면 가득 흐르는 성경 구절
     this.L=this.cum[N];this.off=[];this.sp=[];const pick=Math.floor(Math.random()*vs.length);for(let r=0;r<this.rows;r++){const v=vs[(pick+r*Math.max(1,Math.floor(vs.length/this.rows)))%vs.length];this.off.push(this.cum[v]+hash2(r,3)*fs*6);this.sp.push(fs*(1.15+0.3*hash2(r,11)));}},
   draw(t,dt){const P=pal();ctx.fillStyle=P.bg;ctx.fillRect(0,0,W,H);if(!this.atlas)return;dt=dt||0.016;
     const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
-    const st=this.step,ns=this.ns,fs=this.fs,lh=this.lh,D=this.D,O=this.O,T=this.T,mg=fs*0.5,kIn=1-Math.pow(0.84,dt*60),kOut=1-Math.pow(0.955,dt*60);
+    const st=this.step,ns=this.ns,fs=this.fs,lh=this.lh,D=this.D,O=this.O,T=this.T,mg=fs*0.5,kIn=1-Math.pow(0.72,dt*60),kOut=1-Math.pow(0.9,dt*60);
     const samp=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
     if((this.f=(this.f||0)+1)%20===1)this.tb=exEl.hidden?null:exEl.getBoundingClientRect();const tb=this.tb;
     const at=this.atlas,cwp=this.cwp,chp=this.chp,acols=this.acols,cum=this.cum,gi=this.gi,kd=this.kd,adv=this.adv,N=this.N,L=this.L;
@@ -1556,7 +1563,7 @@ const mGaze={id:'gaze',name:'시선',desc:'차가운 바닥 위 한색 실루엣
     Object.keys(warm).forEach(k=>{if(!alive[k]){warm[k]=Math.max(0,warm[k]-dt/5);if(warm[k]<=0)delete warm[k];}});
     // the silhouette, averaged over a few frames, and a warmth map that belongs to each person's own body:
     // every cell takes the warmth of the person it is closest to (softly near the seam between two people), never a box
-    for(let i=0;i<n;i++)M[i]=M[i]*0.6+p[i]*0.4;if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
+    {const k=ez(0.65);for(let i=0;i<n;i++)M[i]+=(p[i]-M[i])*k;}if(!this.Mb||this.Mb.length!==n){this.Mb=new Float32Array(n);this.tb=new Float32Array(n);}this.Mb.set(M);blur3(this.Mb,this.tb,w,h);
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(M[i]<0.05||!bodies.length){Wn[i]=0;Uf[i]=0.5;continue;}const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let sw=0,sv=0,su=0;
       for(const tr of bodies){const cx=tr.x+tr.w/2,cy=tr.y+tr.h/2,dx=(px-cx)/Math.max(16,tr.w*0.5),dy=(py-cy)/Math.max(16,tr.h*0.5),g=Math.exp(-(dx*dx+dy*dy)*2.2)+1e-9;sw+=g;sv+=g*(warm[tr.id]||0);su+=g*clamp((py-tr.y)/Math.max(1,tr.h),0,1);}
       Wn[i]=sv/sw;Uf[i]=su/sw;}
@@ -1581,11 +1588,11 @@ function paper(col){ctx.fillStyle=col;ctx.fillRect(0,0,W,H);}
 /* 픽셀: the silhouette as a mosaic of blue blocks, rings and dots at two scales; moving parts shed loose pixels */
 const mPixel={id:'pixel',name:'픽셀',desc:'실루엣이 크고 작은 파란 블록과 점으로 조립된다. 블록은 제자리에서 자라나고 줄어들며, 움직이는 곳은 무늬가 바뀐다',
   init(){this.cols=isTouch?26:40;this.cell=W/this.cols;this.rows=Math.ceil(H/this.cell);this.seed=(Math.random()*1000)|0;const m=this.cols*this.rows;
-    this.q=new Float32Array(m*4);this.full=new Float32Array(m);this.kind=new Float32Array(m);this.rate=new Float32Array(m);for(let i=0;i<m;i++){this.rate[i]=0.07+Math.random()*0.1;this.kind[i]=hash2(i,this.seed);}},
+    this.q=new Float32Array(m*4);this.full=new Float32Array(m);this.kind=new Float32Array(m);this.rate=new Float32Array(m);for(let i=0;i<m;i++){this.rate[i]=0.18+Math.random()*0.14;this.kind[i]=hash2(i,this.seed);}},
   draw(t,dt){const P=pal();paper(P.light?'#f3f4f2':P.bg);const col=P.light?'#1f8be6':P.fg[3];const cell=this.cell,cols=this.cols,rows=this.rows,h=cell/2,Q=this.q,F=this.full,rate=this.rate,kind=this.kind;
     const fill=new Path2D(),ring=new Path2D(),dots=new Path2D(),small=new Path2D();
     for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c,x=c*cell,y=r*cell,cx=x+h,cy=y+h;
-      const ps=[pAt(x+h*0.5,y+h*0.5),pAt(x+h*1.5,y+h*0.5),pAt(x+h*0.5,y+h*1.5),pAt(x+h*1.5,y+h*1.5)],m=(ps[0]+ps[1]+ps[2]+ps[3])/4,rt=rate[i];
+      const ps=[pAt(x+h*0.5,y+h*0.5),pAt(x+h*1.5,y+h*0.5),pAt(x+h*0.5,y+h*1.5),pAt(x+h*1.5,y+h*1.5)],m=(ps[0]+ps[1]+ps[2]+ps[3])/4,rt=ez(rate[i]);
       F[i]+=((m>0.72?1:0)-F[i])*rt;for(let k=0;k<4;k++)Q[i*4+k]+=((ps[k]>0.5&&m<=0.72?1:0)-Q[i*4+k])*rt;
       // motion changes the pattern of a block in place
       if(at(cx,cy).e>0.3&&Math.random()<0.08)kind[i]=Math.random();
@@ -1778,7 +1785,7 @@ const mContour={id:'contour',name:'등고선',desc:'사람이 선 자리가 언�
   draw(t){const P=pal(),w=A.w,h=A.h,pb=this.pb,mem=this.mem,gw=this.gw,gh=this.gh,up=this.up,hf=this.hf;this.fc=(this.fc||0)+1;
     if(this.cache&&(this.fc&1)){paper(P.light?'#f3f0e8':P.bg);this.stroke(this.cache,P);return;}
     pb.set(A.p);blur3(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);box5(pb,this.tmp,w,h);
-    for(let i=0;i<A.n;i++){const v=pb[i]*0.5;mem[i]=mem[i]*0.996>v?mem[i]*0.996:v;}
+    {const hd=Math.pow(0.93,FR);for(let i=0;i<A.n;i++){const v=pb[i]*0.5;mem[i]=mem[i]*hd>v?mem[i]*hd:v;}}
     if(!this.ter||this.ter.length!==A.n)this.ter=new Float32Array(A.n);if((this.f=(this.f||0)+1)%3===1)for(let yy=0;yy<h;yy++){const v=yy/h;for(let xx=0;xx<w;xx++){const u=xx/w;this.ter[yy*w+xx]=0.17*(0.5*Math.sin(u*7.1+t*0.05+Math.sin(v*3.3+t*0.02)*1.3)+0.35*Math.sin(v*9.7-t*0.04+u*2.1)+0.22*Math.sin((u*1.3+v)*13.3+t*0.03));}}
     const mw=w-1.001,mh=h-1.001;
     for(let y=0;y<gh;y++){let gy=(y+0.5)/up-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,v=y/gh;
@@ -1962,9 +1969,9 @@ const mAura={id:'aura',
     // how close is the nearest person: the aura opens up only past a threshold, and eases in and out
     // how close each person is: only whoever has come close blooms; everyone else stays as they are
     if(!this.kk)this.kk={};if(!this.K||this.K.length!==A.n)this.K=new Float32Array(A.n);const K=this.K,ppl=PEOPLE.list,seenK={};let kmax=0;
-    ppl.forEach(q=>{const tg=clamp((q.near-0.35)/0.3,0,1),o=this.kk[q.key]||0,v=o+(tg-o)*0.05;this.kk[q.key]=v;seenK[q.key]=1;if(v>kmax)kmax=v;});for(const key in this.kk)if(!seenK[key]){this.kk[key]*=0.9;if(this.kk[key]<0.01)delete this.kk[key];}
+    ppl.forEach(q=>{const tg=clamp((q.near-0.35)/0.3,0,1),o=this.kk[q.key]||0,v=o+(tg-o)*ez(0.09);this.kk[q.key]=v;seenK[q.key]=1;if(v>kmax)kmax=v;});for(const key in this.kk)if(!seenK[key]){this.kk[key]*=0.9;if(this.kk[key]<0.01)delete this.kk[key];}
     if(ppl.length){for(let y=0;y<h;y++)for(let x=0;x<w;x++){const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let best=1e9,kv=0;for(const q of ppl){const dx=(px-(q.bx+q.bw/2))/Math.max(20,q.bw*0.5),dy=(py-(q.by+q.bh/2))/Math.max(20,q.bh*0.5),d=dx*dx+dy*dy;if(d<best){best=d;kv=this.kk[q.key]||0;}}K[y*w+x]=kv;}box5(K,this.tmp,w,h);box5(K,this.tmp,w,h);}
-    else{let top=h,bot=0;for(let i=0;i<A.n;i++)if(A.p[i]>0.5){const y=(i/w)|0;if(y<top)top=y;if(y>bot)bot=y;}const near=bot>top?clamp(((bot-top)/h-0.2)/0.75,0,1):0;this.k+=(clamp((near-0.35)/0.3,0,1)-this.k)*0.04;K.fill(this.k);kmax=this.k;}
+    else{let top=h,bot=0;for(let i=0;i<A.n;i++)if(A.p[i]>0.5){const y=(i/w)|0;if(y<top)top=y;if(y>bot)bot=y;}const near=bot>top?clamp(((bot-top)/h-0.2)/0.75,0,1):0;this.k+=(clamp((near-0.35)/0.3,0,1)-this.k)*ez(0.08);K.fill(this.k);kmax=this.k;}
     const k=kmax;if(!this.gl(t,K)){const lut=this.lut,cw=this.cv.width,ch=this.cv.height,out=this.img.data,mw=w-1.001,mh=h-1.001,seed=(this.f*7919)>>>0;
     let r=seed||1;const rnd=()=>{r^=r<<13;r^=r>>>17;r^=r<<5;return ((r>>>0)%1000)/1000;};
     for(let y=0;y<ch;y++){let gy=(y+0.5)*h/ch-0.5;gy=gy<0?0:gy>mh?mh:gy;const y0=gy|0,fy=gy-y0,yy=y/ch,base=0.12-0.12*yy+0.02*Math.sin(t*0.3+yy*3);
@@ -1985,8 +1992,8 @@ const mColorDots={id:'colordots',name:'색점',desc:'흰 배경 위에 사람만
     const px=gridColors(this.cols,this.rows,this);
     const cols=this.cols,rows=this.rows,c=this.cell,R=c*0.43,cr=this.cr,cov=this.cov;
     for(let r=0;r<rows;r++)for(let k=0;k<cols;k++){const i=r*cols+k,x=(k+0.5)*c,y=(r+0.5)*c;let m=0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)m+=pAt(x+a*c*0.3,y+b*c*0.3);m/=9;
-      cov[i]+=(m-cov[i])*0.35;const cv=cov[i];if(cv<0.2)continue;
-      const sr=px?px[i*4]:120,sg=px?px[i*4+1]:120,sb=px?px[i*4+2]:120;cr[i*3]+=(sr-cr[i*3])*0.3;cr[i*3+1]+=(sg-cr[i*3+1])*0.3;cr[i*3+2]+=(sb-cr[i*3+2])*0.3;
+      cov[i]+=(m-cov[i])*ez(0.55);const cv=cov[i];if(cv<0.2)continue;
+      const sr=px?px[i*4]:120,sg=px?px[i*4+1]:120,sb=px?px[i*4+2]:120;{const kc=ez(0.42);cr[i*3]+=(sr-cr[i*3])*kc;cr[i*3+1]+=(sg-cr[i*3+1])*kc;cr[i*3+2]+=(sb-cr[i*3+2])*kc;}
       // slightly muted, and paler toward the edge of the body where the dot only half covers it
       const mix=clamp((cv-0.2)/0.6,0,1)*0.92;let rr=cr[i*3]*0.92,gg=cr[i*3+1]*0.92,bb=cr[i*3+2]*0.85;rr=bg[0]+(rr-bg[0])*mix;gg=bg[1]+(gg-bg[1])*mix;bb=bg[2]+(bb-bg[2])*mix;
       ctx.fillStyle='rgb('+(rr|0)+','+(gg|0)+','+(bb|0)+')';ctx.beginPath();ctx.arc(x,y,R,0,TAU);ctx.fill();}
@@ -2026,7 +2033,7 @@ const mStar={id:'star',name:'별',desc:'사람마다 커다란 노란 별이나 
   people(t,dt){const now=performance.now();if((this.f&1)===0)PEOPLE.update();for(const [a,b] of PEOPLE.takeRenames())if(this.st[a]&&!this.st[b]){this.st[b]=this.st[a];delete this.st[a];}
     const seen={};let k=0;PEOPLE.list.forEach(q=>{if(k>=15)return;const tr=q.tr,L=tr?(tr.pose||rigFromSilhouette(tr)):null,g=this.geo(q,L);if(!g)return;k++;seen[q.key]=1;
       let s=this.st[q.key];if(!s)s=this.st[q.key]={moon:(this.cnt++)%2===1,c:g.c.slice(),R:g.R,rel:g.tips.map(v=>v.slice()),lean:g.lean,a:0,ph:Math.random()*TAU};
-      const e=Math.min(1,dt*7),ec=Math.min(1,dt*10);s.c[0]+=(g.c[0]-s.c[0])*ec;s.c[1]+=(g.c[1]-s.c[1])*ec;s.R+=(g.R-s.R)*e;s.lean+=(g.lean-s.lean)*Math.min(1,dt*4);
+      const e=Math.min(1,dt*13),ec=Math.min(1,dt*16);s.c[0]+=(g.c[0]-s.c[0])*ec;s.c[1]+=(g.c[1]-s.c[1])*ec;s.R+=(g.R-s.R)*e;s.lean+=(g.lean-s.lean)*Math.min(1,dt*4);
       for(let i=0;i<5;i++){s.rel[i][0]+=(g.tips[i][0]-s.rel[i][0])*e;s.rel[i][1]+=(g.tips[i][1]-s.rel[i][1])*e;}s.a=Math.min(1,s.a+dt*1.8);s.seen=now;});
     for(const key in this.st){if(seen[key])continue;const s=this.st[key];s.a-=dt*1.1;if(s.a<=0)delete this.st[key];}
     this.alone=k?0:this.alone+dt;},
@@ -2252,7 +2259,7 @@ const mCari={id:'cari',name:'캐리커처',needVideo:true,HOLD:2.5,busy(){return
 /* 뜨개질: the whole screen is one forest-green stockinette fabric, finely knitted. Where a person stands, the very same stitches are
    worked in pink yarn (same gauge, same place, like colourwork in a sweater), with a little fuzz at the edge. Two colours only. As people
    move, each stitch passes from one yarn to the other, one leg after the other, so the shape glides through the fabric */
-const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 코가 사람이 선 자리만 분홍 털실로 바뀐다. 바탕과 같은 크기의 코라서 스웨터에 넣어 뜬 무늬처럼 보이고, 움직이면 코가 한 가닥씩 물들며 무늬가 편물 위를 미끄러지듯 따라온다',
+const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 코가 사람이 선 자리만 분홍 털실로 바뀐다. 바탕과 같은 크기의 코라서 스웨터에 넣어 뜬 무늬처럼 보이고, 움직이면 무늬가 편물 위를 미끄러지듯 따라온다. 둘레에는 같은 코로 뜬 크고 작은 별 무늬가 여기저기 반짝이듯 나타났다 사라진다',
   BASE:'#2f5c38',YARN:['#ee9dc6'],
   shade(c,k){const h=typeof c==='string'?hex(c):c;return 'rgb('+h.map(v=>Math.round(k<=1?v*k:v+(255-v)*(k-1))).join(',')+')';},
   // one stitch: two plump leaning ovals of plied yarn meeting in a V, lit from the upper left, long enough to tuck under the row above
@@ -2275,8 +2282,8 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
       x.beginPath();x.moveTo(x0,y0);x.quadraticCurveTo(x0+Math.cos(an)*l*0.5-Math.sin(an)*bend,y0+Math.sin(an)*l*0.5+Math.cos(an)*bend,x0+Math.cos(an)*l,y0+Math.sin(an)*l);x.stroke();}
     return c;},
   init(){const q=this.q=Math.min(DPR,1.5),f=QF()>0.9?1:QF()>0.6?0.85:0.72,cols=this.cols=Math.round((isTouch?(W<H?48:80):112)*f),cw=this.cw=W/cols,rh=this.rh=cw*0.8;this.rows=Math.ceil(H/rh)+2;this.oy=-rh*0.9;
-    const n=cols*this.rows;this.k=new Float32Array(n);this.tg=new Uint8Array(n);this.an=new Uint8Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
-    this.alone=0;
+    const n=cols*this.rows;this.k=new Float32Array(n);this.tg=new Uint8Array(n);this.an=new Uint8Array(n);this.sm=new Uint8Array(n);this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
+    this.alone=0;this.stars=[];
     const key=[W,H,q,cols].join(',');if(this.key!==key){this.key=key;this.sp={};this.fz={};this.buildBase();
 }},
   // the ground: the same stitches at the same gauge in heathered green, darker toward the corners, a ribbed hem, a few loose fibres
@@ -2287,6 +2294,23 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
     const hemR=Math.max(0,rows-7),hemY=this.oy+hemR*rh+rh*0.3;x.fillStyle='rgba(6,20,10,0.2)';for(let c=0;c<cols;c+=2)x.fillRect(c*cw,hemY,cw,H-hemY);x.fillStyle='rgba(6,20,10,0.16)';x.fillRect(0,hemY-rh*0.25,W,rh*0.3);
     const R=seeded(77);x.lineCap='round';x.strokeStyle=this.shade(B,1.5);for(let i=0;i<Math.round(W*H/2600);i++){const px=R()*W,py=R()*H,an=R()*TAU,l=cw*(0.2+R()*0.5);x.globalAlpha=0.08+R()*0.14;x.lineWidth=0.5+R()*0.5;x.beginPath();x.moveTo(px,py);x.quadraticCurveTo(px+Math.cos(an)*l*0.5+(R()-0.5)*l*0.6,py+Math.sin(an)*l*0.5+(R()-0.5)*l*0.6,px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
     x.globalAlpha=1;const g=x.createRadialGradient(W*0.45,H*0.42,Math.min(W,H)*0.25,W*0.5,H*0.5,Math.hypot(W,H)*0.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,10,4,0.42)');x.fillStyle=g;x.fillRect(0,0,W,H);},
+  // stars are knitted the same way as people: the very stitches of the fabric turn pink in the shape of a small star, the way star
+  // motifs are worked into a winter sweater. Five sizes, from a three-stitch sparkle to an eleven-stitch star
+  STARS:[['.#.','###','.#.'],['..#..','#.#.#','..#..','#####','..#..','#.#.#','..#..'],
+    ['...#...','...#...','.#.#.#.','...#...','#######','...#...','.#.#.#.','...#...','...#...'],
+    ['....#....','....#....','....#....','..#.#.#..','....#....','#########','....#....','..#.#.#..','....#....','....#....','....#....']],
+  // they come and go all over the fabric, many at a time, each on its own clock: a star is knitted outward from its middle, stays a
+  // while, and is taken back in from its tips. Slim rays one stitch wide (a little longer up and down, as stitches are wider than tall).
+  // Never on a person or touching another star
+  twinkle(dt,samp,SM){const cols=this.cols,rows=this.rows,cw=this.cw,rh=this.rh,oy=this.oy,St=this.stars,N=clamp(Math.round(cols*rows/520),8,22),Wt=[0.3,0.34,0.24,0.12];SM.fill(0);
+    while(St.length<N)St.push({on:false,wait:Math.random()*(St.length<4?0.8:5),c:0,r:0,k:0,g:0,age:0,life:0});
+    for(const o of St){if(!o.on){o.wait-=dt;if(o.wait>0)continue;let u=Math.random(),k=0;while(k<3&&u>Wt[k]){u-=Wt[k];k++;}const Pk=this.STARS[k],hr=(Pk.length-1)/2,hc=(Pk[0].length-1)/2;let ok=false,c=0,r=0;
+        for(let tr=0;tr<6&&!ok;tr++){c=Math.round(hc+1+Math.random()*(cols-2*hc-3));r=Math.round(hr+2+Math.random()*(rows-2*hr-6));const x=(c+0.5)*cw,y=oy+r*rh+rh*0.85,ex=(hc+1)*cw,ey=(hr+1)*rh;
+          ok=!(x<W*0.36&&y<H*0.16)&&samp(x,y)<0.08&&samp(x-ex,y)<0.08&&samp(x+ex,y)<0.08&&samp(x,y-ey)<0.08&&samp(x,y+ey)<0.08;if(ok)for(const p of St){if(!p.on)continue;const Pp=this.STARS[p.k];if(Math.abs(p.c-c)<(Pp[0].length+Pk[0].length)/2+2&&Math.abs(p.r-r)<(Pp.length+Pk.length)/2+2){ok=false;break;}}}
+        if(!ok){o.wait=0.3;continue;}o.on=true;o.c=c;o.r=r;o.k=k;o.g=0;o.age=0;o.out=false;o.life=1.6+Math.random()*4.2+k*0.5;}
+      const P2=this.STARS[o.k],hr=(P2.length-1)/2,hc=(P2[0].length-1)/2,gm=hr+1.5;o.age+=dt;if(!o.out&&(o.age>o.life||samp((o.c+0.5)*cw,oy+o.r*rh+rh*0.85)>0.3))o.out=true;o.g+=(o.out?-1:1)*dt*gm/0.34;if(o.g>gm)o.g=gm;
+      if(o.out&&o.g<=0){o.on=false;o.wait=0.5+Math.random()*3.5;continue;}
+      for(let a=0;a<P2.length;a++)for(let b=0;b<P2[0].length;b++){if(P2[a][b]!=='#'||Math.hypot(a-hr,b-hc)>o.g)continue;const rr=o.r+a-hr,cc=o.c+b-hc;if(rr>=0&&rr<rows&&cc>=0&&cc<cols)SM[rr*cols+cc]=1;}}},
   spr(ci,v){const k=ci*4+v;return this.sp[k]||(this.sp[k]=this.stitch(this.YARN[ci],this.cw,this.rh,this.q,31+k*13,false));},
   fzs(ci,v){const k=ci*4+v;return this.fz[k]||(this.fz[k]=this.fuzz(this.YARN[ci],this.cw,this.q,57+k*11));},
   draw(t,dt){dt=Math.min(dt||0.016,0.05);ctx.imageSmoothingEnabled=true;ctx.drawImage(this.base,0,0,W,H);
@@ -2294,10 +2318,10 @@ const mKnit={id:'knit',name:'뜨개질',desc:'촘촘한 짙은 초록 편물의 
     const samp=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;gx=gx<0?0:gx>w-1.001?w-1.001:gx;gy=gy<0?0:gy>h-1.001?h-1.001:gy;const x0=gx|0,y0=gy|0,fx=gx-x0,fy=gy-y0,i=y0*w+x0;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
     // each stitch is one yarn or the other; while it changes, the new colour takes one leg and then the other, starting on the side the
     // pink knitting is on, so the shape glides through the fabric instead of appearing and vanishing
-    const stp=dt/0.2;let any=0;
-    for(let r=0;r<rows;r++){const y=oy+r*rh+rh*0.85;for(let c=0;c<cols;c++){const i=r*cols+c,v=y<0||y>H?0:samp((c+0.5)*cw,y);if(v>0.5)TG[i]=1;else if(v<0.38)TG[i]=0;const tg=TG[i];
+    const SM=this.sm;this.twinkle(dt,samp,SM);const stp=dt/0.14;let any=0;
+    for(let r=0;r<rows;r++){const y=oy+r*rh+rh*0.85;for(let c=0;c<cols;c++){const i=r*cols+c,v=y<0||y>H?0:samp((c+0.5)*cw,y);if(v>0.5)TG[i]=1;else if(v<0.38)TG[i]=0;const tg=TG[i]|SM[i];if(TG[i])any++;
         if(K[i]<=0){if(!tg)continue;AN[i]=c>0&&K[i-1]>0.5||!(c<cols-1&&K[i+1]>0.5)?0:1;}else if(K[i]>=1&&!tg)AN[i]=c>0&&K[i-1]>0.5||!(c<cols-1&&K[i+1]>0.5)?0:1;
-        K[i]=tg?Math.min(1,K[i]+stp):Math.max(0,K[i]-stp);any++;}}
+        K[i]=tg?Math.min(1,K[i]+stp):Math.max(0,K[i]-stp);}}
     // the pink stitches over the green ones, each exactly on its own stitch: the dark between the legs, the stitches from the bottom row
     // up (each row lapping over the one below), and fuzz along the edge
     if(!this.dark)this.dark=this.shade(this.YARN[0],0.6);ctx.fillStyle=this.dark;const on=j=>K[j]>0.5;
@@ -2526,7 +2550,7 @@ function resize(){W=Math.max(1,window.innerWidth);H=Math.max(1,window.innerHeigh
   if(mode){mode.init();fillBg();}}
 let rsT=0;window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(resize,150);});
 window.addEventListener('orientationchange',()=>{clearTimeout(rsT);rsT=setTimeout(resize,300);});
-function loop(now){requestAnimationFrame(loop);if(now-last<(role==='sensor'?14:PERF.cap))return;const iv=now-last,dt=Math.min(0.1,iv/1000)||0.016;last=now;tAcc+=dt;frame++;
+function loop(now){requestAnimationFrame(loop);if(now-last<(role==='sensor'?14:PERF.cap))return;const iv=now-last,dt=Math.min(0.1,iv/1000)||0.016;last=now;tAcc+=dt;frame++;FR=clamp(dt*60,0.5,5);
   mlPlan(now);
   if(role==='sensor'){sensorTick(now);return;}
   const w0=performance.now();
