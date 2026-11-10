@@ -2408,94 +2408,6 @@ const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 �
     // so that drawing never takes more than a fifth of the time)
     const per=Math.min(0.5,Math.max(this.PER,(this.bt||0)*0.0045));if(this.tS<0||t-this.tS>=per||t<this.tS){const b0=performance.now();this.build();this.tS=t;const bd=performance.now()-b0;this.bt=this.bt?this.bt*0.7+bd*0.3:bd;}
     if(!this.empty){ctx.globalCompositeOperation='multiply';ctx.drawImage(this.cv,0,0,W,H);ctx.globalCompositeOperation='source-over';}}};
-/* the bird (a robin): modelled in three dimensions as a signed-distance shape (body, head, beak, eyes, wings folded or spread,
-   tail, legs and toes, each placed by the pose) and ray-traced with soft light, shadow and feather colouring. It is not drawn
-   live: when the mode first opens, every pose it will ever need (looking round, preening, the wing-beat, the landing flare...)
-   is rendered once into a sheet of small pictures, a few per frame, and from then on a bird costs one picture to draw. Without
-   WebGL a plain flat bird is drawn into the same sheet instead */
-const BIRD={st:'idle',S:0,cols:8,atlas:null,done:0,F:{},list:[],
-  SRC:`#version 300 es
-precision highp float;precision highp int;
-in vec2 uv;out vec4 o;uniform vec4 A0,A1,A2,A3;
-mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
-float sdEll(vec3 p,vec3 r){float k0=length(p/r),k1=length(p/(r*r));return k0*(k0-1.0)/max(k1,1e-4);}
-float smin(float a,float b,float k){float h=clamp(0.5+0.5*(b-a)/k,0.0,1.0);return mix(b,a,h)-k*h*(1.0-h);}
-float sdCap(vec3 p,vec3 a,vec3 b,float r1,float r2){vec3 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);return length(pa-ba*h)-mix(r1,r2,h);}
-float h3(vec3 p){p=fract(p*0.3183099+vec3(0.1,0.2,0.3));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
-float vn3(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);return mix(mix(mix(h3(i),h3(i+vec3(1,0,0)),f.x),mix(h3(i+vec3(0,1,0)),h3(i+vec3(1,1,0)),f.x),f.y),mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+vec3(1,1,1)),f.x),f.y),f.z);}
-vec3 gB,gH,gW,gT;float gHd,gBd;
-// distance to the bird, and which part is nearest (0 feathers of body and head, 1 wing, 2 tail, 3 beak, 4 eye, 5 leg)
-vec2 map(vec3 p){float pitch=A0.x,hyaw=A0.y,hpit=A0.z,spread=A0.w,flap=A1.x,sweep=A1.y,fan=A1.z,tang=A1.w,legs=A2.x,vyaw=A2.y,crouch=A2.z,fluff=A2.w,roll=A3.x,tilt=A3.y,ext=A3.z;
- p.xz=rot(vyaw)*p.xz;p.yz=rot(roll)*p.yz;vec3 pw=p,b=p;b.y+=0.07*crouch;b.xy-=vec2(-0.03,-0.2);b.xy=rot(pitch)*b.xy;b.xy+=vec2(-0.03,-0.2);
- float fl=1.0+0.11*fluff;
- float body=sdEll(b,vec3(0.36,0.25,0.24)*fl);body=smin(body,sdEll(b-vec3(0.15,-0.03,0.0),vec3(0.23,0.235,0.225)*fl),0.08);body=smin(body,sdEll(b-vec3(-0.27,0.03,0.0),vec3(0.2,0.14,0.14)),0.1);
- vec3 hc=mix(vec3(0.35,0.21,0.0),vec3(0.43,0.08,0.0),ext)-vec3(0.03,0.045,0.0)*max(fluff,crouch);
- vec3 h=b-hc;h.xz=rot(hyaw)*h.xz;h.xy=rot(hpit)*h.xy;h.yz=rot(tilt)*h.yz;
- float head=sdEll(h,vec3(0.172,0.162,0.158));float fe=smin(body,head,0.1);float nz=vn3(p*52.0);fe-=0.006*(nz-0.5)+0.004*fluff*nz;
- gB=b;gH=h;gHd=head;gBd=body;vec2 res=vec2(fe,0.0);
- float beak=sdCap(h,vec3(0.12,-0.012,0.0),vec3(0.292,-0.034,0.0),0.043,0.005);if(beak<res.x)res=vec2(beak,3.0);
- float eye=length(vec3(h.x-0.092,h.y-0.034,abs(h.z)-0.122))-0.03;if(eye<res.x)res=vec2(eye,4.0);
- vec3 tl=b-vec3(-0.4,0.035,0.0);tl.xy=rot(-tang)*tl.xy;float ts=clamp(-tl.x/0.46,0.0,1.0),hw=mix(0.05,0.075+0.16*fan,ts);
- float tail=max(max(abs(tl.z)-hw,abs(tl.y)-0.011-0.012*(1.0-ts)),max(tl.x-0.05,-tl.x-0.46))-0.007;gT=tl;if(tail<res.x)res=vec2(tail,2.0);
- float wing;
- if(spread<0.5){vec3 q=vec3(b.x,b.y,abs(b.z));vec3 w1=q-vec3(-0.06,0.055,0.19*fl);w1.xy=rot(0.25)*w1.xy;wing=sdEll(w1,vec3(0.3,0.135,0.06));vec3 w2=q-vec3(-0.37,-0.005,0.125);w2.xy=rot(0.18)*w2.xy;wing=min(wing,sdEll(w2,vec3(0.2,0.05,0.035)));gW=w1;}
- else{vec3 q=vec3(b.x-0.08,b.y-0.1,abs(b.z)-0.13);q.yz=rot(-flap)*q.yz;q.xz=rot(sweep)*q.xz;float sp=clamp(q.z/0.82,0.0,1.0),lead=0.12-0.13*sp*sp,ch=0.31*pow(max(0.0,1.0-pow(sp,2.4)),0.6)+0.015;ch*=1.0+0.045*sin(q.z*64.0);float trail=lead-ch;
-  float d2=max(max(q.x-lead,trail-q.x),max(-q.z-0.03,q.z-0.82));wing=max(d2,abs(q.y)-0.009)-0.007;gW=vec3((lead-q.x)/ch,q.y,q.z);}
- if(wing<res.x)res=vec2(wing,1.0);
- vec3 Hw=vec3(-0.03,-0.2-0.07*crouch,0.075),Fp=vec3(0.03,-0.5,0.075),Ft=Hw+vec3(-0.16,-0.035,0.0),Fe=Hw+vec3(0.17,-0.25,0.0);
- vec3 F=legs<1.0?mix(Fp,Ft,legs):mix(Ft,Fe,legs-1.0);float tz=legs<1.0?mix(1.0,0.35,legs):mix(0.35,1.0,legs-1.0);vec3 K=Hw+vec3(0.025,-0.04,0.0),q2=vec3(pw.x,pw.y,abs(pw.z));
- float leg=sdCap(q2,K,F,0.016,0.012);leg=min(leg,sdCap(q2,F,F+vec3(0.1,-0.028,0.0)*tz,0.011,0.007));leg=min(leg,sdCap(q2,F,F+vec3(0.088,-0.028,0.05)*tz,0.011,0.007));leg=min(leg,sdCap(q2,F,F+vec3(0.088,-0.028,-0.05)*tz,0.011,0.007));leg=min(leg,sdCap(q2,F,F+vec3(-0.07,-0.024,0.0)*tz,0.011,0.007));
- if(leg<res.x)res=vec2(leg,5.0);return res;}
-void main(){vec3 ro=vec3((uv.x*2.0-1.0)-0.08,uv.y*2.0-1.0,2.2),rd=vec3(0.0,0.0,-1.0);float t=0.0;vec2 m=vec2(1.0,-1.0);bool hit=false;
- for(int i=0;i<120;i++){m=map(ro+rd*t);if(m.x<0.0012){hit=true;break;}t+=m.x*0.6;if(t>4.4)break;}if(!hit){o=vec4(0.0);return;}
- vec3 p=ro+rd*t;vec2 e=vec2(0.0025,0.0);vec3 n=normalize(vec3(map(p+e.xyy).x-map(p-e.xyy).x,map(p+e.yxy).x-map(p-e.yxy).x,map(p+e.yyx).x-map(p-e.yyx).x));
- m=map(p);vec3 b=gB,h=gH,w=gW,tl=gT;float hwt=smoothstep(0.03,-0.03,gHd-gBd);
- // plumage: olive-brown above, an orange-red face and breast edged with blue-grey, buff flanks, a pale belly
- vec3 cOr=vec3(0.95,0.34,0.06),cBr=vec3(0.43,0.37,0.30),cBd=vec3(0.27,0.235,0.2),cWh=vec3(0.93,0.91,0.87),cGr=vec3(0.62,0.65,0.69),cBf=vec3(0.80,0.71,0.60),col;
- if(m.y<0.5){float up=smoothstep(-0.03,0.07,b.y-0.02-0.1*b.x);vec3 base=mix(mix(cWh,cBf,smoothstep(-0.2,-0.02,b.y+0.25*(b.x+0.2))),cBr,up);
-  float eb=length((b-vec3(0.2,-0.02,0.0))/vec3(0.25,0.215,0.3)),oB=1.0-smoothstep(0.9,1.04,eb),gBm=1.0-smoothstep(1.0,1.22,eb);
-  float oH=smoothstep(-0.035,0.03,(0.06+0.42*h.x)-h.y)*smoothstep(-0.12,-0.045,h.x),gHm=smoothstep(-0.07,0.03,(0.095+0.42*h.x)-h.y)*smoothstep(-0.16,-0.06,h.x);
-  float om=max(oB,oH*hwt),gm=max(gBm*(1.0-hwt),gHm*hwt);col=mix(base,cBr,hwt);col=mix(col,cGr,gm*0.85);col=mix(col,cOr,om);
-  float mt=vn3(p*vec3(30.0,46.0,30.0));col*=0.9+0.2*mt;col*=0.97+0.06*sin(b.x*90.0+mt*6.0)*(1.0-om);}
- else if(m.y<1.5){if(A0.w<0.5){float st=0.5+0.5*sin(w.y*105.0+sin(w.x*9.0)),cov=smoothstep(0.0,0.12,w.x);col=mix(cBd,cBr*1.12,st*0.75);col=mix(col,cBr*1.05*(0.85+0.3*abs(sin(w.x*46.0)*sin(w.y*52.0))),cov);col=mix(col,cBf,0.45*smoothstep(0.75,1.0,st)*(1.0-cov));}
-  else{float c=w.x,st=0.5+0.5*sin(w.z*78.0+c*2.0);col=mix(cBd,cBr*1.1,st*0.7)*mix(1.08,0.82,c);col=mix(cBr*1.05,col,smoothstep(0.22,0.4,c));col=mix(col,cBf*0.9,0.35*smoothstep(0.6,1.0,st)*smoothstep(0.3,0.5,c));col=mix(col,vec3(0.74,0.7,0.66),0.5*step(w.y,0.0));}}
- else if(m.y<2.5)col=cBd*(0.9+0.2*sin(tl.z*120.0));
- else if(m.y<3.5)col=vec3(0.22,0.19,0.17);else if(m.y<4.5)col=vec3(0.03);else col=vec3(0.5,0.35,0.29);
- vec3 L=normalize(vec3(-0.5,0.78,0.48)),V=vec3(0.0,0.0,1.0),H2=normalize(L+V);float nl=dot(n,L),wrap=clamp(nl*0.6+0.4,0.0,1.0);
- float sh=1.0,tt=0.02;for(int i=0;i<14;i++){float d=map(p+n*0.006+L*tt).x;sh=min(sh,9.0*d/tt);tt+=clamp(d,0.012,0.06);if(sh<0.02)break;}sh=clamp(sh,0.0,1.0);
- float ao=1.0;for(int i=1;i<=4;i++){float hh=0.022*float(i);ao-=(hh-map(p+n*hh).x)*(0.9/float(i));}ao=clamp(ao,0.25,1.0);
- vec3 lit=col*(vec3(0.44,0.46,0.5)*mix(0.55,1.0,0.5+0.5*n.y)*ao+vec3(1.0,0.96,0.9)*0.82*wrap*mix(0.45,1.0,sh));lit+=col*0.1*max(0.0,-n.y)*vec3(1.0,0.9,0.8);
- lit+=pow(1.0-max(n.z,0.0),3.0)*0.1*vec3(0.9,0.95,1.0)*(0.5+0.5*n.y)*ao;
- if(m.y>3.5&&m.y<4.5)lit=vec3(0.02)+pow(max(dot(n,H2),0.0),90.0)*1.6+pow(1.0-max(n.z,0.0),2.0)*0.12;
- if(m.y>2.5&&m.y<3.5)lit+=pow(max(dot(n,H2),0.0),30.0)*0.25;
- o=vec4(clamp(lit,0.0,1.0),1.0);}`,
-  poses(){const P=[],add=(name,o)=>P.push([name,Object.assign({pitch:0.62,hyaw:0,hpit:0.05,spread:0,flap:0,sweep:0,fan:0,tang:0.1,legs:0,vyaw:0.38,crouch:0,fluff:0,roll:0,tilt:0,ext:0},o)]);
-    add('p0',{hyaw:-0.9});add('p1',{hyaw:-0.4});add('p2',{});add('p3',{hyaw:0.55});add('p4',{hyaw:1.05});add('p5',{hyaw:0.3,hpit:0.45});add('p6',{hyaw:0.25,hpit:-0.5});add('p7',{hyaw:0.7,tilt:0.4});add('p8',{hyaw:0.7,tilt:-0.4});
-    add('preen',{hyaw:-2.3,hpit:-0.25,fluff:0.5});add('fluff',{hyaw:0.3,fluff:1,pitch:0.5});add('flick',{tang:0.55});add('crouch',{pitch:0.32,crouch:1,hpit:0.1});
-    const fa=[1.15,0.8,0.3,-0.3,-0.78,-0.5,0.1,0.75],sw=[0.12,0.04,0,0,0.12,0.5,0.62,0.4];for(let i=0;i<8;i++)add('f'+i,{pitch:0.12,spread:1,flap:fa[i],sweep:sw[i],fan:0.15,tang:0,legs:1,vyaw:0.3,ext:1});
-    add('tuck',{pitch:0.08,legs:1,vyaw:0.3,ext:1,tang:0});
-    add('l0',{pitch:0.75,spread:1,flap:0.95,sweep:0.05,fan:1,tang:-0.45,legs:2,vyaw:0.35,ext:0.4});add('l1',{pitch:0.95,spread:1,flap:0.3,sweep:0,fan:1,tang:-0.5,legs:2,vyaw:0.35,ext:0.3});add('l2',{pitch:0.85,spread:1,flap:0.8,sweep:0.15,fan:0.8,tang:-0.3,legs:2,vyaw:0.35,ext:0.2});
-    add('to',{pitch:0.5,spread:1,flap:1.2,sweep:0.1,fan:0.5,legs:0.4,ext:0.5});return P;},
-  start(){if(this.st!=='idle')return;this.st='bake';const S=this.S=window.BIRD_S||(isTouch?192:DPR>1.4?320:256);this.list=this.poses();this.rows=Math.ceil(this.list.length/this.cols);this.atlas=mkCanvas(S*this.cols,S*this.rows);this.list.forEach((p,i)=>{this.F[p[0]]=i;});this.done=0;
-    try{const cv=this.cv=document.createElement('canvas');cv.width=cv.height=S*2;const gl=this.gl=cv.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,preserveDrawingBuffer:true});if(!gl)throw new Error('no webgl2');
-      const sh=(ty,src)=>{const o=gl.createShader(ty);gl.shaderSource(o,src);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;},pr=this.pr=gl.createProgram();
-      gl.attachShader(pr,sh(gl.VERTEX_SHADER,'#version 300 es\nin vec2 a;out vec2 uv;void main(){uv=a*0.5+0.5;gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,this.SRC));gl.bindAttribLocation(pr,0,'a');gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pr));
-      const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.useProgram(pr);gl.viewport(0,0,S*2,S*2);gl.clearColor(0,0,0,0);
-      this.U=['A0','A1','A2','A3'].map(k=>gl.getUniformLocation(pr,k));}catch(e){console.warn('bird gl',e);this.gl=null;}},
-  // a few pictures of the sheet per frame, until it is full
-  step(ms){if(this.st!=='bake')return;const t0=performance.now(),S=this.S,x=this.atlas.cx;
-    while(this.done<this.list.length){const i=this.done,p=this.list[i][1],ox=(i%this.cols)*S,oy=((i/this.cols)|0)*S;
-      if(this.gl){const gl=this.gl,U=this.U;try{gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform4f(U[0],p.pitch,p.hyaw,p.hpit,p.spread);gl.uniform4f(U[1],p.flap,p.sweep,p.fan,p.tang);gl.uniform4f(U[2],p.legs,p.vyaw,p.crouch,p.fluff);gl.uniform4f(U[3],p.roll,p.tilt,p.ext,0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(this.cv,ox,oy,S,S);}catch(e){this.gl=null;continue;}}
-      else this.flat(x,p,ox,oy,S);
-      this.done++;if(performance.now()-t0>ms)break;}
-    if(this.done>=this.list.length){this.st='ready';if(this.gl){const e=this.gl.getExtension('WEBGL_lose_context');if(e)e.loseContext();}this.gl=null;this.cv=null;}},
-  // the plain bird, for a browser with no WebGL
-  flat(x,p,ox,oy,S){const u=S/2;x.save();x.translate(ox+S*0.54,oy+S*0.5);x.scale(u,-u);x.translate(-0.03,-0.2);x.rotate(p.pitch);x.translate(0.03,0.2);const el=(cx,cy,rx,ry,a,c)=>{x.fillStyle=c;x.beginPath();x.ellipse(cx,cy,rx,ry,a,0,TAU);x.fill();};
-    x.fillStyle='#4a3f35';x.beginPath();x.moveTo(-0.35,0.06);x.lineTo(-0.86,0.02+p.tang*0.4);x.lineTo(-0.84,-0.06+p.tang*0.4);x.lineTo(-0.35,-0.02);x.fill();
-    el(0,0,0.36,0.25,0,'#6e5f4d');el(0.16,-0.04,0.22,0.2,0,'#f1590f');el(0.02,-0.14,0.26,0.1,0,'#ece8de');const hx=p.ext?0.43:0.35,hy=p.ext?0.08:0.21;el(hx,hy,0.17,0.16,0,'#6e5f4d');el(hx+0.05,hy-0.03,0.12,0.11,0,'#f1590f');
-    x.fillStyle='#38302b';x.beginPath();x.moveTo(hx+0.14,hy+0.02);x.lineTo(hx+0.3,hy-0.03);x.lineTo(hx+0.14,hy-0.05);x.fill();el(hx+0.07,hy+0.035,0.028,0.028,0,'#0a0a0a');
-    if(p.spread>0.5){x.fillStyle='#5a4c3f';x.beginPath();x.moveTo(0.2,0.1);x.lineTo(0.0,0.1+0.8*Math.sin(p.flap));x.lineTo(-0.25,0.1+0.55*Math.sin(p.flap));x.lineTo(-0.12,0.08);x.fill();}else el(-0.1,0.04,0.3,0.12,0.25,'#54473b');
-    x.restore();if(p.legs<0.5){x.strokeStyle='#7e5a49';x.lineWidth=S*0.014;x.beginPath();x.moveTo(ox+S*0.53,oy+S*0.62);x.lineTo(ox+S*0.555,oy+S*0.75);x.lineTo(ox+S*0.6,oy+S*0.762);x.stroke();}}};
 const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mCroquis,mContour,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mSmoke,mLumen];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
@@ -2775,7 +2687,7 @@ else if(location.hash==='#solo'&&!EMBEDDED){startCamera(S.facing==='environment'
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 if('serviceWorker' in navigator&&location.protocol==='https:'&&!EMBEDDED){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 setTimeout(()=>{if(role!=='sensor')STACK.load();},4000);
-window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,BIRD,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
