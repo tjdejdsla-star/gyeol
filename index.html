@@ -191,7 +191,9 @@ body.role-sensor #credit{display:none}
     <div class="rows">
       <div class="row"><div class="l">거울 모드<small>좌우를 뒤집어 거울처럼</small></div><label class="switch"><input type="checkbox" id="swMirror"><span></span></label></div>
       <div class="row"><div class="l">카메라 화면<small>꽉 채우기: 화면을 늘 가득 채워요(가장자리는 조금 잘려요) · 전체: 카메라에 찍힌 것을 다 보여 줘요(남는 곳은 비어요)</small></div><div class="seg" id="segFit"><button>꽉 채우기</button><button>전체</button></div></div>
-      <div class="row"><div class="l">멀리 있는 사람<small>지나다니는 사람이 많은 곳: 가까운 사람만 고르면 화면에서 키가 30%보다 작게 보이는(멀리 있는) 사람은 빼요</small></div><div class="seg" id="segNear"><button>모두</button><button>가까운 사람만</button></div></div>
+      <div class="row"><div class="l">인식 거리<small id="rangeNote">카메라에서 이 거리 안에 있는 사람만 인식해요</small></div><div class="seg" id="segRange"><button>모두</button><button>약 5m</button><button>약 3m</button></div></div>
+      <button class="row btnrow" id="btnRangeCal">인식 거리 직접 맞추기 · 누르고 8초 안에 가장 먼 자리에 서기</button>
+      <button class="row btnrow" id="btnRangeDef" style="display:none">인식 거리 기본값으로</button>
       <div class="row"><div class="l">역광 보정<small>밝은 문·창을 등지고 서서 사람이 어둡게 찍히면 자동으로 밝혀요 (화면, 색·명암, 사람 인식 모두)</small></div><div class="seg" id="segBl"><button>자동</button><button>끄기</button></div></div>
       <div class="row"><div class="l">카메라 노출 조정<small>시험 기능 · 되는 카메라만: 카메라 자체가 사람에 맞춰 더 밝게 찍도록 해요</small></div><label class="switch"><input type="checkbox" id="swBlHw"><span></span></label></div>
       <div class="row"><div class="l">자동 전환<small>일정 시간마다 다음 모드로</small></div><div class="seg" id="segAuto"><button>끄기</button><button>20초</button><button>45초</button><button>90초</button></div></div>
@@ -353,7 +355,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반',bl:'auto',blHw:false,near:false,crowd:true};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반',bl:'auto',blHw:false,range:3,rangeH:0,crowd:true};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
 if(S.fitV!==2){S.fit='fill';S.fitV=2;}
@@ -587,6 +589,52 @@ const BL={s:0,tgt:0,rs:0,sub:new Uint32Array(32),all:new Uint32Array(32),nsub:0,
   setEc(v){if(!this.cap||!this.tr||this.hwBad)return;this.ec=v;try{this.tr.applyConstraints({advanced:[{exposureCompensation:v}]}).catch(()=>{this.hwBad=true;});}catch(e){this.hwBad=true;}},
   hw(Ls){if(!S.blHw||!this.cap||this.hwBad)return;const now=performance.now();if(now-(this.hwT||0)<1500)return;this.hwT=now;const c=this.cap,st=(c.step||(c.max-c.min)/20)*2;let v=this.ec;if(Ls<0.26)v=Math.min(c.max,v+st);else if(Ls>0.58)v=Math.max(c.min,v-st);if(v!==this.ec)this.setEc(v);},
   hwOff(){if(this.cap&&this.ec0!=null&&this.ec!==this.ec0)this.setEc(this.ec0);}};
+/* 인식 거리: only people near enough to the camera are recognised. There is no depth in a webcam picture, so distance is read from
+   size: every separate shape of the person field is measured, and one that stands lower than a set part of the picture's height is
+   someone further off than the limit and is wiped out before any filter sees it. (A laptop camera with about 41 degrees of view from
+   top to bottom, a metre off the floor: a 1.5-1.6 m student fills 50-70% of the height at 3 m, 43-53% at 4 m, about 40% at 5 m; so
+   "about 3 m" is 48% and "about 5 m" 36%. Cameras and angles differ, so the limit can be set on the spot: stand where the limit
+   should be and that height, less a little, becomes the limit.) A shape cut off by the bottom of the picture gets no allowance: with
+   the camera tilted up, far people are cut off there too, and someone really close fills the height anyway. A shape that was being
+   shown stays until it is clearly under the limit (85% of it), so nobody at the limit blinks. What the models found on a shape that
+   was left out (skeletons, person boxes, faces) is left out with it, wherever a filter asks for them */
+const RANGE={far:null,kp:null,kn:null,t:0,tall:0,tallS:0,drop:0,pf:1,calT:0,CORE:[0,11,12,23,24],
+  thr(){const b=S.rangeH>0?S.rangeH:0.48;return S.range===0?0:S.range===5?b*0.75:b;},
+  // the field f (w x h cells, of which the camera picture covers ph rows): shapes under the limit are wiped from it, with the faint
+  // fringe around them (ring cells), and remembered in `far`. Runs with the limit off too, only to measure the tallest shape
+  cut(f,w,h,ph,ring){const n=w*h,thr=this.thr(),rows=ph>1?ph:h,need=thr*rows;if(!this.far||this.far.length!==n){this.far=new Uint8Array(n);this.kp=new Uint8Array(n);this.kn=new Uint8Array(n);}
+    const lab=A.lab&&A.lab.length===n?A.lab:(A.lab=new Int32Array(n)),q=A.lq&&A.lq.length===n?A.lq:(A.lq=new Int32Array(n)),far=this.far,kp=this.kp,kn=this.kn;lab.fill(0);far.fill(0);kn.fill(0);let tall=0,drop=0;
+    for(let s0=0;s0<n;s0++){if(lab[s0]||f[s0]<0.35)continue;let hd=0,tl=0,mny=h,mxy=-1,was=0;q[tl++]=s0;lab[s0]=1;
+      while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(y<mny)mny=y;if(y>mxy)mxy=y;if(kp[i])was++;
+        if(x>0&&!lab[i-1]&&f[i-1]>=0.35){lab[i-1]=1;q[tl++]=i-1;}if(x<w-1&&!lab[i+1]&&f[i+1]>=0.35){lab[i+1]=1;q[tl++]=i+1;}if(i>=w&&!lab[i-w]&&f[i-w]>=0.35){lab[i-w]=1;q[tl++]=i-w;}if(i<n-w&&!lab[i+w]&&f[i+w]>=0.35){lab[i+w]=1;q[tl++]=i+w;}}
+      const bh=mxy-mny+1;if(tl>=6&&bh>tall)tall=bh;
+      if(need>0&&bh<need*(was>tl*0.3?0.85:1)){drop++;for(let k=0;k<tl;k++){const i=q[k],x=i%w,y=(i/w)|0;f[i]=0;far[i]=1;
+          for(let dy=-ring;dy<=ring;dy++){const yy=y+dy;if(yy<0||yy>=h)continue;for(let dx=-ring;dx<=ring;dx++){const xx=x+dx;if(xx<0||xx>=w)continue;const j=yy*w+xx;if(!lab[j]&&f[j]<0.35){f[j]=0;far[j]=1;}}}}}
+      else for(let k=0;k<tl;k++)kn[q[k]]=1;}
+    this.kp=kn;this.kn=kp;this.pf=rows/h;this.tall=tall/rows;this.tallS+=(this.tall-this.tallS)*0.3;this.drop=drop;this.t=performance.now();return drop>0;},
+  // the same for a field that arrived from the phone sensor (the monitor's own setting decides, not the phone's)
+  remote(pT,w,h){if(!this.cut(pT,w,h,h,2))return;const pres=A.pres,n=w*h;let k=0;for(let i=0;i<n;i++)if(pT[i]>0.5)pres[k++]=i;A.presN=k;},
+  live(){return !!this.far&&this.far.length===A.n&&this.thr()>0&&performance.now()-this.t<600;},
+  cell(x,y){const w=A.w,gx=Math.floor(x/W*w),gy=Math.floor(y/H*A.h);return gx<0||gy<0||gx>=w||gy>=A.h?-1:gy*w+gx;},
+  // is this spot of the screen on a shape that was left out?
+  hid(x,y){if(!this.live())return false;const i=this.cell(x,y);return i>=0&&this.far[i]===1;},
+  // skeletons (screen coordinates): one whose head, shoulders and hips lie on a left-out shape more than on a kept one goes; so does one
+  // plainly too small by its own measure (trunk and legs), which catches a far person standing against a near one in a single shape
+  poses(L){if(!L||!this.live())return L;const thr=this.thr(),far=this.far,p=A.p,ph=H*this.pf,out=[];
+    for(const lm of L){let f=0,k=0;for(const j of this.CORE){const c=lm[j];if(!c||c.v<0.3)continue;const i=this.cell(c.x,c.y);if(i<0)continue;if(far[i])f++;else if(p[i]>0.5)k++;}
+      if(f>k)continue;const a=lm[11],b=lm[12],c=lm[23],d=lm[24];
+      if(a&&b&&c&&d&&a.v>0.5&&b.v>0.5&&c.v>0.5&&d.v>0.5){let est=Math.hypot((a.x+b.x-c.x-d.x)/2,(a.y+b.y-c.y-d.y)/2)/0.29;const n0=lm[0],e=lm[27],g=lm[28];if(n0&&n0.v>0.5){if(e&&e.v>0.5)est=Math.max(est,(e.y-n0.y)/0.88);if(g&&g.v>0.5)est=Math.max(est,(g.y-n0.y)/0.88);}if(est<ph*thr*0.6)continue;}
+      out.push(lm);}
+    return out.length?out:null;},
+  // person boxes (screen coordinates), by the same two rules
+  boxes(B){if(!B||!this.live())return B;const thr=this.thr(),far=this.far,p=A.p,ph=H*this.pf;
+    return B.filter(b=>{let f=0,k=0;for(let u=0.25;u<0.8;u+=0.25){const i=this.cell(b.x+b.w/2,b.y+b.h*u);if(i<0)continue;if(far[i])f++;else if(p[i]>0.5)k++;}return !(f>k)&&!(b.h<ph*thr*0.6);});},
+  // setting the limit on the spot: a few seconds to walk to the furthest place that should still count, then the tallest shape is measured
+  cal(sec){if(this.calT)return;let k=sec||8;toast(k+'초 뒤에 잽니다 · 인식할 가장 먼 자리에 한 사람만 서 주세요');
+    this.calT=setInterval(()=>{k--;if(k>0){if(k<=5)toast(k+'…');return;}clearInterval(this.calT);this.calT=0;const tl=this.tallS;
+      if(performance.now()-this.t>600||tl<0.08){toast('사람이 보이지 않아요 · 다시 눌러 주세요');return;}S.rangeH=clamp(tl*0.92,0.1,0.9);S.range=3;save();syncCtl();toast('인식 거리를 맞췄어요 · 키가 화면의 '+Math.round(S.rangeH*100)+'% 이상인 사람만');},1000);},
+  ui(){const note=$('#rangeNote'),def=$('#btnRangeDef');if(!note)return;const thr=this.thr();
+    note.textContent=thr>0?'키가 화면 높이의 '+Math.round(thr*100)+'%보다 작게 보이는(더 먼) 사람은 인식하지 않아요'+(S.rangeH>0?' · 직접 맞춘 값':' · 카메라마다 달라서, 아래 버튼으로 맞출 수 있어요'):'거리에 상관없이 보이는 사람을 모두 인식해요';if(def)def.style.display=S.rangeH>0?'':'none';}};
 function analyze(){
   if(A.remote||!A.n) return A.remote;
   const el=source.el; if(!el) return false;
@@ -632,13 +680,8 @@ function analyze(){
     // the pose model knows where arms and legs are: along each visible limb, faint mask becomes solid (no mask at all stays empty, so a
     // late pose never paints a ghost arm)
     limbBoost(cur,w,h,sx,sy,cw,ch,sw,sh);
-    // "near people only": shapes that stand small in the picture (people far off, passing in the background) are left out. A shape cut
-    // by the bottom of the picture is someone close, however little of them shows; and a shape that was showing a moment ago is kept
-    // a little longer than a new one, so nobody flickers at the limit
-    if(S.near){const lab=A.lab&&A.lab.length===n?A.lab:(A.lab=new Int32Array(n)),q=A.lq&&A.lq.length===n?A.lq:(A.lq=new Int32Array(n)),minH=h*0.3;lab.fill(0);
-      for(let s0=0;s0<n;s0++){if(lab[s0]||cur[s0]<0.35)continue;let hd=0,tl=0,mny=h,mxy=-1,mnx=w,mxx=-1,was=0;q[tl++]=s0;lab[s0]=1;while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(y<mny)mny=y;if(y>mxy)mxy=y;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(pr[i]>0.5)was++;
-          if(x>0&&!lab[i-1]&&cur[i-1]>=0.35){lab[i-1]=1;q[tl++]=i-1;}if(x<w-1&&!lab[i+1]&&cur[i+1]>=0.35){lab[i+1]=1;q[tl++]=i+1;}if(i>=w&&!lab[i-w]&&cur[i-w]>=0.35){lab[i-w]=1;q[tl++]=i-w;}if(i<n-w&&!lab[i+w]&&cur[i+w]>=0.35){lab[i+w]=1;q[tl++]=i+w;}}
-        const bh=mxy-mny+1,need=minH*(was>tl*0.5?0.85:1);if(bh>=need||(mxy>=h-2&&mxx-mnx+1>=need*0.3))continue;for(let k2=0;k2<tl;k2++)cur[q[k2]]=0;}}
+    // the distance limit: shapes that stand too small in the picture are people further off than the limit, and are left out
+    if(role!=='sensor')RANGE.cut(cur,w,h,h*Math.min(1,sh/ch),1);
     // anything faint that is joined to a confident body counts as body (a thin raised arm); faint specks on their own do not
     blur3(cur,A.tmp,w,h);
     const hs=A.hs=hyst(cur,w,h,0.55,0.32,A.hs);
@@ -697,7 +740,7 @@ function decodePacket3(buf,dv){const w=dv.getUint16(2),h=dv.getUint16(4),n=w*h;i
   let o=9;for(const c of PK.d){if(o+4>buf.byteLength)return;const len=dv.getUint32(o);o+=4;if(o+len>buf.byteLength)return;rleDec(u8,o,len,c,n);o+=len;}
   const [P8,E8,U8,V8]=PK.d,e=A.e,er=A.er,u=A.u,v=A.v,hot=A.hot,pres=A.pres,pT=remoteTarget();let hotN=0,presN=0;const uz=q=>(q&1?-((q+1)>>1):q>>1)/30;
   for(let i=0;i<n;i++){const ee=E8[i]/255;e[i]=ee;er[i]=ee;const pp=P8[i]/255;pT[i]=pp;u[i]=uz(U8[i]);v[i]=uz(V8[i]);if(ee>0.45)hot[hotN++]=i;if(pp>0.5)pres[presN++]=i;}
-  A.hotN=hotN;A.presN=presN;
+  A.hotN=hotN;A.presN=presN;RANGE.remote(pT,w,h);
   if(fl&1){if(o+n>buf.byteLength)return;const g=A.gray;for(let i=0;i<n;i++)g[i]=u8[o+i];o+=n;}
   if(fl&2){const w2=Math.ceil(w/2),h2=Math.ceil(h/2);o+=w2*h2*3;if(o<=buf.byteLength){const o0=o-w2*h2*3;if(!A.rgb||A.rgb.length!==n*3)A.rgb=new Uint8Array(n*3);const rgb=A.rgb;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const q=o0+((y>>1)*w2+(x>>1))*3,i=(y*w+x)*3;rgb[i]=u8[q];rgb[i+1]=u8[q+1];rgb[i+2]=u8[q+2];}}}
   if(fl&4&&o+4<=buf.byteLength){const len=dv.getUint32(o);o+=4;if(o+len<=buf.byteLength){if(!A.part||A.part.length!==n)A.part=new Uint8Array(n);rleDec(u8,o,len,A.part,n);A.partT=performance.now();}}}
@@ -712,7 +755,7 @@ function decodePacket(buf){
   const u8=new Uint8Array(buf,8), i8=new Int8Array(buf,8+n*3); let hotN=0,presN=0;
   const g=A.gray,e=A.e,er=A.er,p=A.p,u=A.u,v=A.v,hot=A.hot,pres=A.pres;
   const pT=remoteTarget();for(let i=0;i<n;i++){g[i]=u8[i];const ee=u8[n+i]/255;e[i]=ee;er[i]=ee;const pp=u8[2*n+i]/255;pT[i]=pp;u[i]=i8[i]/30;v[i]=i8[n+i]/30;if(ee>0.45)hot[hotN++]=i;if(pp>0.5)pres[presN++]=i;}
-  A.hotN=hotN;A.presN=presN;
+  A.hotN=hotN;A.presN=presN;RANGE.remote(pT,w,h);
   {const w2=Math.ceil(w/2),h2=Math.ceil(h/2);if(dv.getUint8(1)===2&&buf.byteLength>=8+n*5+w2*h2*3){if(!A.rgb||A.rgb.length!==n*3)A.rgb=new Uint8Array(n*3);const c8=new Uint8Array(buf,8+n*5),rgb=A.rgb;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const o=((y>>1)*w2+(x>>1))*3,i=(y*w+x)*3;rgb[i]=c8[o];rgb[i+1]=c8[o+1];rgb[i+2]=c8[o+2];}}}
 }
 
@@ -960,10 +1003,10 @@ function drawFrameTo(cv){ // current camera frame, cropped like the analysis, in
   c.save();if(sx<0||sy<0){c.fillStyle=pal().bg;c.fillRect(0,0,W,H);}if(S.mirror){c.translate(W,0);c.scale(-1,1);}try{c.drawImage(el,sx,sy,cw,ch,0,0,W,H);}catch(e){}c.restore();
 }
 const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,ftime:-1e9,otime:-1e9,pose:null,pres:null,plast:0,ptime:-1e9};
-function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now()-r.t<Math.min(3000,Math.max(500,(FACE.rpIv||0)*2.6))?r.L.map(lm=>lm.map(q=>({x:q[0]*W,y:q[1]*H,v:q[2]}))):null;}
+function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now()-r.t<Math.min(3000,Math.max(500,(FACE.rpIv||0)*2.6))?RANGE.poses(r.L.map(lm=>lm.map(q=>({x:q[0]*W,y:q[1]*H,v:q[2]})))):null;}
   if(!(FACE.pres&&performance.now()-FACE.ptime<poseWin()+100&&FACE.pres.landmarks&&FACE.pres.landmarks.length))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;
   const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw;
-  return FACE.pres.landmarks.map(lm=>lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility};}));}
+  return RANGE.poses(FACE.pres.landmarks.map(lm=>lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility};})));}
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
@@ -982,9 +1025,9 @@ function poseTune(now){if(!FACE.pose||FACE.poseBusy||FACE.pnFixed||!FACE.pose.se
 function runObj(now){if(!FACE.obj||ML.turn!=='obj')return;FACE.olast=now;ML.f=frame;const t0=performance.now();
   try{FACE.ores=FACE.obj.detectForVideo(BL.src(),now+0.5);FACE.otime=now;if(FACE.ores&&FACE.ores.detections&&FACE.ores.detections.length)FACE.oseen=now;}catch(e){FACE.ores=null;}FACE.ocost=(FACE.ocost||20)*0.7+(performance.now()-t0)*0.3;}
 // the person detector's boxes on screen: from this camera, or relayed by the phone sensor
-function objScreen(){const now=performance.now();if(A.remote){const r=FACE.rboxes;return r&&now-r.t<700?r.B.map(b=>({x:b[0]*W,y:b[1]*H,w:b[2]*W,h:b[3]*H,score:b[4]})):null;}
+function objScreen(){const now=performance.now();if(A.remote){const r=FACE.rboxes;return r&&now-r.t<700?RANGE.boxes(r.B.map(b=>({x:b[0]*W,y:b[1]*H,w:b[2]*W,h:b[3]*H,score:b[4]}))):null;}
   const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<objWin()))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw,out=[];
-  r.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k;const y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;if(x+w<0||x>W||y+h<0||y>H)return;out.push({x,y,w,h,score:c.score});});return out;}
+  r.detections.forEach(o=>{const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')return;const bb=o.boundingBox;let x=(bb.originX-sx0)*k;const y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;if(x+w<0||x>W||y+h<0||y>H)return;out.push({x,y,w,h,score:c.score});});return RANGE.boxes(out);}
 // the same boxes painted onto the analysis grid, a little wider than each person (for arms, and for movement since the detector last looked)
 function personBoxMask(sx,sy,cw,ch,w,h,now){const r=FACE.ores;if(!(r&&r.detections&&now-FACE.otime<objWin()))return null;const n=w*h,bm=A.bm&&A.bm.length===n?A.bm:(A.bm=new Uint8Array(n));bm.fill(0);let any=false;
   for(const o of r.detections){const c=o.categories&&o.categories[0];if(!c||c.categoryName!=='person')continue;const bb=o.boundingBox,ex=bb.width*0.15,ey=bb.height*0.06;let x0=(bb.originX-ex-sx)/cw*w,x1=(bb.originX+bb.width+ex-sx)/cw*w;if(S.mirror){const a=w-x1;x1=w-x0;x0=a;}
@@ -1134,7 +1177,7 @@ function boxMotion(tr){const x0=clamp((tr.x/A.sx)|0,0,A.w-1),x1=clamp(((tr.x+tr.
 function mainTrack(){let best=null;TR.tracks.forEach(t=>{if(TR.f-t.seen>2)return;if(!best||t.area>best.area)best=t;});return best;}
 function largestFace(){if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detections&&FACE.res.detections.length))return null;
   const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw)return null;const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw;let best=null;
-  FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;
+  FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;if(RANGE.hid(x+w/2,y+h/2))return;
     let frontal=true;const kp=f.keypoints;if(kp&&kp.length>=3){const ex=(kp[0].x+kp[1].x)/2,nx=kp[2].x,span=Math.abs(kp[1].x-kp[0].x)||1e-3;frontal=Math.abs(nx-ex)/span<0.45;}
     if(!best||w*h>best.w*best.h)best={x,y,w,h,cx:x+w/2,cy:y+h/2,frontal};});
   return best;}
@@ -1837,7 +1880,7 @@ function nearOf(tr){const L=tr.pose,now=performance.now();if(L&&L[11]&&L[12]&&L[
 const PEOPLE={list:[],faces:[],trackFace:{},trackKey:{},renames:[],sm:{},
   faceBoxes(){const out=[];if(!(FACE.state==='ready'&&faceFresh()&&FACE.res.detections))return out;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw)return out;
     const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw;
-    FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;
+    FACE.res.detections.forEach(f=>{const bb=f.boundingBox;let x=(bb.originX-sx0)*k,y=(bb.originY-sy0)*k,w=bb.width*k,h=bb.height*k;if(S.mirror)x=W-x-w;if(RANGE.hid(x+w/2,y+h/2))return;
       let frontal=true;const kp=f.keypoints;if(kp&&kp.length>=3){const ex=(kp[0].x+kp[1].x)/2,span=Math.abs(kp[1].x-kp[0].x)||1e-3;frontal=Math.abs(kp[2].x-ex)/span<0.45;}
       out.push({sx:x,sy:y,sw:w,sh:h,cx:x+w/2,cy:y+h/2,vx:bb.originX,vy:bb.originY,vw:bb.width,vh:bb.height,frontal,score:f.categories&&f.categories[0]?f.categories[0].score:0,kp:kp||[]});});
     return out;},
@@ -2770,10 +2813,12 @@ seg('#segStackDist',i=>{S.stackDist=i;});
 seg('#segFit',i=>{S.fit=i===0?'fill':'full';if(!A.remote)resetAnalysis();sendHello();if(mode){mode.init();fillBg();}toast(S.fit==='full'?'카메라 화면 전체가 보여요':'화면을 꽉 채워요 (가장자리는 잘려요)');});
 seg('#segPerf',i=>{S.perf=i===0?'auto':i-1;if(i===0){PERF.by={};perfSave();}applyPerfMode();});
 const swMirror=$('#swMirror');
-function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segFit',S.fit==='fill'?0:1);segSync('#segBl',S.bl==='off'?1:0);segSync('#segNear',S.near?1:0);segSync('#segCrowd',S.crowd===false?1:0);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
+function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segFit',S.fit==='fill'?0:1);segSync('#segBl',S.bl==='off'?1:0);segSync('#segRange',S.range===0?0:S.range===5?1:2);RANGE.ui();segSync('#segCrowd',S.crowd===false?1:0);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
   swMirror.checked=!!S.mirror;swGpu.checked=S.gpu!==false;swBlHw.checked=!!S.blHw;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
-seg('#segNear',i=>{S.near=i===1;toast(S.near?'가까운 사람만 보여요':'멀리 있는 사람도 모두 보여요');});
+seg('#segRange',i=>{S.range=[0,5,3][i];toast(S.range?'약 '+S.range+'m 안에 있는 사람만 인식해요':'거리에 상관없이 모두 인식해요');});
+$('#btnRangeCal').addEventListener('click',()=>RANGE.cal());
+$('#btnRangeDef').addEventListener('click',()=>{S.rangeH=0;save();syncCtl();toast('인식 거리를 기본값으로 되돌렸어요');});
 seg('#segBl',i=>{S.bl=i===0?'auto':'off';if(S.bl==='off'){BL.tgt=0;BL.hwOff();}save();toast(S.bl==='off'?'역광 보정을 껐어요':'역광이면 자동으로 밝혀요');});
 const swBlHw=$('#swBlHw');swBlHw.addEventListener('change',()=>{S.blHw=swBlHw.checked;save();if(!S.blHw){BL.hwOff();toast('카메라 노출 조정을 껐어요');}else toast(BL.cap&&!BL.hwBad?'카메라 노출도 사람에 맞춰 조정해요':'이 카메라는 노출 조정을 받지 않아요 · 화면 보정만 해요');});
 const swGpu=$('#swGpu');swGpu.addEventListener('change',()=>{S.gpu=swGpu.checked;if(S.gpu&&GL.ok===false&&!GL.gl)GL.ok=null;MODES.forEach(m=>{m.noGL=false;});save();if(mode){mode.init();fillBg();}toast(S.gpu?(GL.on()?'내장 그래픽으로 그려요':'이 기기는 그래픽 가속을 쓸 수 없어 기존 방식으로 그려요'):'그래픽 가속을 껐어요');});
@@ -3016,7 +3061,7 @@ else if(location.hash==='#solo'&&!EMBEDDED){startCamera(S.facing==='environment'
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 if('serviceWorker' in navigator&&location.protocol==='https:'&&!EMBEDDED){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 setTimeout(()=>{if(role!=='sensor')STACK.load();},4000);
-window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,BL,CROWD,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,BL,CROWD,RANGE,poseScreen,objScreen,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->

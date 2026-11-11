@@ -7,7 +7,7 @@ const { chromium } = require('playwright'); const F = require('./lib/fake');
   await p.waitForTimeout(3000); out.firstStays = await n();
   await p.evaluate(() => { window.PPL = () => []; }); await p.waitForTimeout(900);
   await p.evaluate(() => { window.PPL = () => [{ x: 0.52, sc: 0.72, arms: true }]; }); await p.waitForTimeout(3600); out.next = await n();
-  await p.evaluate(() => { window.__gyeol.S.stackDist = 2; window.PPL = () => [{ x: 0.3, sc: 0.5, foot: 0.75 }]; }); await p.waitForTimeout(3600); out.farAllowed = await n();
+  /* 쌓기의 '멀리까지'는 전체 인식 거리 안에서만 통하므로, 이 장면은 인식 거리를 '모두'로 두고 본다 */ await p.evaluate(() => { window.__gyeol.S.range = 0; window.__gyeol.S.stackDist = 2; window.PPL = () => [{ x: 0.3, sc: 0.5, foot: 0.75 }]; }); await p.waitForTimeout(3600); out.farAllowed = await n();
   out.engine = await p.evaluate(() => window.__gyeol.STACK.kind);
   const ok = out.farAlone === 0 && out.first === 1 && out.firstStays === 1 && out.next === 2 && out.farAllowed === 3 && out.engine === 'rapier' && !errors.length;
   console.log(JSON.stringify({ ok, ...out, errors })); await b.close(); process.exit(ok ? 0 : 1); })();

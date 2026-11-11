@@ -21,6 +21,10 @@ node tests/crowd-auto.js   # 붐빌 때 자동 전환이 쌓기 · 시를 건너
 ```
 
 ```bash
+node tests/range.js        # 인식 거리: 먼 사람이 모양·자세·상자 모두에서 빠지는지
+```
+
+```bash
 node tests/real-models.js
 ```
 
