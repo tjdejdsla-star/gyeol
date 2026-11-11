@@ -753,7 +753,7 @@ void main(){vec2 e=1.0/rs;vec4 q=texture(V,uv);vec2 v=q.xy;float T=q.z;
  vec2 g=vec2(cr-cl,cb-ct);g/=length(g)+1e-4;float st=q.w;v+=5.0*c0*vec2(g.y,-g.x)*dt*min(1.0,st);
  // a body is a little warm (most along its bones), so what it is made of keeps leaking upward. Inside a body that is standing
  // still the air is held nearly still, so the smoke there keeps the body's form; a part that moves lets go of its air
- float m=texture(M,uv).r,bm=smoothstep(0.3,0.7,m),ee=smoothstep(0.15,0.5,texture(E,uv).r),kk=texture(K,uv).r;T+=max(0.0,0.085*bm*(0.82+0.36*kk)-T)*min(1.0,dt*2.0);v*=1.0-bm*(1.0-0.85*ee)*min(1.0,dt*1.7);
+ float m=texture(M,uv).r,bm=smoothstep(0.3,0.7,m),ee=smoothstep(0.15,0.5,texture(E,uv).r),kk=texture(K,uv).r;T+=max(0.0,0.085*bm*(0.82+0.36*kk)-T)*min(1.0,dt*2.0);v*=1.0-bm*(0.4+0.6*kk)*(1.0-0.85*ee)*min(1.0,dt*1.7);
  // and whatever moves drags the air with it
  vec2 mo=vec2(texture(MU,uv).r,texture(MV,uv).r);float mv=clamp(length(mo)*1.4,0.0,1.0);v=mix(v,mo*gm,mv*min(1.0,dt*13.0));st=min(1.5,st+smoothstep(0.3,0.75,mv)*dt*6.0);
  if(uv.y>1.0-1.5*e.y)v=vec2(0.0);
@@ -773,12 +773,13 @@ float form(float d,vec2 q,float body,float edge,float low,float kk,float gg){
  float n=vn(q*3.4+vec2(t*0.1,t*0.34))*0.46+vn(q*7.6-vec2(t*0.15,-t*0.5))*0.28+vn(q*17.0+vec2(0.0,t*0.8))*0.16+vn(vec2(q.x*46.0,q.y*20.0)+vec2(t*0.2,t*1.1))*0.1;
  float env=0.55+0.45*smoothstep(0.3,0.65,vn(q*1.2+vec2(t*0.09,-t*0.06)));
  // a thin veil over the whole figure, and a dense heart along the head, the trunk and each limb, so the body reads as a body
- float veil=body*(0.08+0.36*smoothstep(0.3,0.68,n)),core=body*kk*(0.34+0.9*smoothstep(0.28,0.7,n));
+ float veil=body*(0.05+0.34*smoothstep(0.32,0.7,n))*(0.55+0.45*smoothstep(0.0,0.5,kk)),core=body*kk*(0.34+0.9*smoothstep(0.28,0.7,n));
  float tg=max(veil,core)*bd*env*low*mix(0.38,1.0,gg);d+=max(0.0,tg-d)*min(1.0,dt*br);
- return d+edge*smoothstep(0.4,0.7,vn(q*12.0+vec2(t*0.3,-t*0.25)))*be*dt*low*(0.4+0.6*gg);}
+ return d+edge*smoothstep(0.5,0.8,vn(q*9.0+vec2(t*0.3,t*0.7)))*smoothstep(0.3,0.6,vn(q*23.0+vec2(-t*0.4,t*1.1)))*be*dt*low*(0.4+0.6*gg);}
 void main(){vec2 va=texture(Va,uv).xy,vb=texture(Vb,uv).xy;va.y-=up;vb.y-=up;float dr=cub(uv-va*dt/rs).r*fade,dg=cub(uv-vb*dt/rs).g*fade;
- float m=texture(M,uv).r,body=smoothstep(0.4,0.6,m),edge=m*(1.0-m)*4.0,low=smoothstep(1.0,0.97,uv.y);vec2 q=vec2(uv.x*asp,uv.y);
- float kk=texture(K,uv).r,gg=texture(G,uv).r;dr=form(dr,q,body,edge,low,kk,gg);dg=form(dg,q+vec2(31.7,12.3),body,edge,low,kk,gg);
+ vec2 q=vec2(uv.x*asp,uv.y),wp=(vec2(vn(q*7.0+vec2(t*0.15,t*0.55)),vn(q*7.0+vec2(5.3-t*0.12,2.7+t*0.5)))-0.5)*0.03+(vec2(vn(q*19.0+vec2(t*0.3,t*1.0)),vn(q*19.0+vec2(9.1-t*0.25,4.4+t*0.9)))-0.5)*0.014;wp.x/=asp;
+ vec2 um=uv+wp;float m=texture(M,um).r,body=smoothstep(0.36,0.64,m),edge=m*(1.0-m)*4.0,low=smoothstep(1.0,0.97,uv.y);
+ float kk=texture(K,um).r,gg=texture(G,um).r;dr=form(dr,q,body,edge,low,kk,gg);dg=form(dg,q+vec2(31.7,12.3),body,edge,low,kk,gg);
  o=vec4(max(dr,0.0),max(dg,0.0),0.0,1.0);}`,
 // a quarter-size copy of the smoke, each point the average of sixteen
 smDown:`uniform sampler2D D;uniform vec2 rd;void main(){vec2 e=1.0/rd;o=(texture(D,uv+e*vec2(-1.0,-1.0))+texture(D,uv+e*vec2(1.0,-1.0))+texture(D,uv+e*vec2(-1.0,1.0))+texture(D,uv+e*vec2(1.0,1.0)))*0.25;}`,
@@ -800,7 +801,7 @@ void main(){vec4 d=texture(D,uv),b=texture(B,uv);float hz=texture(H,uv).r,f=d.r,
  vec2 e=vec2(0.007/asp*1.78,0.007),g=vec2(dn(uv+vec2(e.x,0.0))-dn(uv-vec2(e.x,0.0)),dn(uv+vec2(0.0,e.y))-dn(uv-vec2(0.0,e.y)));
  float rim=clamp(length(g)*2.6,0.0,1.0)*clamp(dot(g/(length(g)+1e-4),vec2(-0.76,0.65))*0.6+0.45,0.0,1.0)*(1.0-a)*min(1.0,tau*2.6);
  vec3 lit=vec3(1.0,0.965,0.915),shade=vec3(0.31,0.37,0.5),tint=mix(vec3(0.7,0.81,1.0),vec3(1.0),smoothstep(0.05,0.8,a));
- vec3 col=mix(shade,lit,sun)*tint*a+vec3(0.84,0.92,1.0)*rim*0.6+vec3(0.55,0.69,1.0)*((b.r+b.g)*0.07+hz*0.04)*(1.0-a)*0.6;
+ vec3 col=mix(shade,lit,sun)*tint*a+vec3(0.84,0.92,1.0)*rim*0.36+vec3(0.55,0.69,1.0)*((b.r+b.g)*0.07+hz*0.04)*(1.0-a)*0.6;
  vec2 c=uv-vec2(0.5,0.6);vec3 bg=vec3(0.012,0.015,0.026)*max(0.0,1.0-dot(c,c)*1.5);
  col=bg+col+(fract(52.9829189*fract(dot(gl_FragCoord.xy+seed*7.3,vec2(0.06711056,0.00583715))))-0.5)*0.004;o=vec4(col,1.0);}`,
 
@@ -2185,8 +2186,11 @@ const mSmoke={id:'smoke',name:'연기',desc:'사람이 연기로 이루어져 �
     const K=this.K,Kt=this.Kt,G=this.G,stl=this.stl,cov=this.cov,e=A.e;if((this.bf=(this.bf||0)+1)%2===0)TR.update();Kt.fill(0);cov.fill(0);
     for(const tr of TR.tracks){if(TR.f-tr.seen>2)continue;const pp=mCroquis.partsOf(tr);if(!pp)continue;
       const ex=tr.w*0.12+A.sx*2,ey=tr.h*0.12+A.sy*2,x0=clamp(((tr.x-ex)*isx)|0,0,w-1),x1=clamp(((tr.x+tr.w+ex)*isx)|0,0,w-1),y0=clamp(((tr.y-ey)*isy)|0,0,h-1),y1=clamp(((tr.y+tr.h+ey)*isy)|0,0,h-1);
+      // how strong the heart of each bone is at its near end and its far end, and how wide: head and trunk full; an arm starts
+      // at the shoulder already lighter and is almost gone at the hand; a leg likewise, less so
+      const seenK={},prof=pp.S.map(q=>{const k=q[0],far=seenK[k];seenK[k]=1;return k===0?[1,1,0.9]:k===1?[1,1,0.7]:k<4?(far?[0.46,0.1,0.5]:[0.66,0.46,0.55]):(far?[0.66,0.3,0.6]:[0.88,0.66,0.66]);});
       for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(pb[i]<=0.2)continue;cov[i]=1;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let best=Kt[i];
-        for(const q of pp.S){const ax=q[1],ay=q[2],dx=q[3]-ax,dy=q[4]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const e1=px-ax-dx*u,e2=py-ay-dy*u,rc=q[5]*(q[0]===0?0.9:q[0]===1?0.7:0.75),v=Math.exp(-(e1*e1+e2*e2)/(rc*rc)*1.15);if(v>best)best=v;}Kt[i]=best;}}
+        for(let si=0;si<pp.S.length;si++){const q=pp.S[si],pf=prof[si],ax=q[1],ay=q[2],dx=q[3]-ax,dy=q[4]-ay,l2=dx*dx+dy*dy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const e1=px-ax-dx*u,e2=py-ay-dy*u,rc=q[5]*pf[2],v=Math.exp(-(e1*e1+e2*e2)/(rc*rc)*1.15)*(pf[0]+(pf[1]-pf[0])*u);if(v>best)best=v;}Kt[i]=best;}}
     const kk=ez(0.45),up=1-Math.exp(-dt/0.28),dn=1-Math.exp(-dt/0.1);
     for(let x=0;x<w;x++){let bot=-1;for(let y=h-1;y>=0;y--){const i=y*w+x,on=pb[i]>0.5;if(on&&bot<0)bot=y;if(!on&&pb[i]<0.2)bot=bot>=0&&y<bot-2?-1:bot; // (a new body higher up the column starts its own count)
         const kt=cov[i]?Kt[i]:(pb[i]>0.3?0.7:0);K[i]+=(kt-K[i])*kk;
@@ -2203,7 +2207,7 @@ const mSmoke={id:'smoke',name:'연기',desc:'사람이 연기로 이루어져 �
         GL.run('smDiv',GLSRC.smDiv,'smDv',SW,SH,{rs},{V:V()},F);for(let k=0;k<(lv>=2?12:18);k++){GL.run('smJac',GLSRC.smJac,'smP'+c+(1-this.pi[L]),SW,SH,{rs},{P:'smP'+c+this.pi[L],Dv:'smDv'},F);this.pi[L]=1-this.pi[L];}
         GL.run('smGrad',GLSRC.smGrad,V2(),SW,SH,{rs},{V:V(),P:'smP'+c+this.pi[L]},F);this.vi[L]=1-this.vi[L];}
       const Va='smVa'+this.vi[0],Vb=two?'smVb'+this.vi[1]:Va,fd=Math.exp(-d/2.1);
-      GL.run('smAdvD',GLSRC.smAdvD,'smD'+(1-this.di),DW,DH,{rs,rd,dt:d,fade:fd,t,asp,up,bd:0.85,br:3.0,be:1.1},{D:'smD'+this.di,Va,Vb,M:'smM',K:'smK',G:'smG'},F);this.di=1-this.di;
+      GL.run('smAdvD',GLSRC.smAdvD,'smD'+(1-this.di),DW,DH,{rs,rd,dt:d,fade:fd,t,asp,up,bd:0.85,br:3.0,be:0.9},{D:'smD'+this.di,Va,Vb,M:'smM',K:'smK',G:'smG'},F);this.di=1-this.di;
       GL.run('smDown',GLSRC.smDown,'smB',BW,BH,{rd},{D:'smD'+this.di},F);
       GL.run('smHaze',GLSRC.smHaze,'smH'+(1-this.hi),HW,HH,{rs,rh:[HW,HH],dt:d,fade:Math.exp(-d/2.8),feed:(1-fd)*0.42,up,spread:Math.min(0.5,d*24)},{H:'smH'+this.hi,B:'smB',Va,Vb},F);this.hi=1-this.hi;
       const sz=GL.size();GL.run('smOut',GLSRC.smOut,null,sz[0],sz[1],{seed:(t*60%977)*0.618,asp},{D:'smD'+this.di,B:'smB',H:'smH'+this.hi});GL.show();return true;}catch(e){this.noGL=true;console.warn('smoke gl',e);return false;}},
