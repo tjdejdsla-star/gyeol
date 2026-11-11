@@ -30,6 +30,10 @@ node tests/stack-fill.js   # 쌓기 · 차오르는 색이 옆 사람에게 번�
 ```
 
 ```bash
+node tests/bubble.js       # 비눗방울 · 손 내밀기 인식과 손바닥 위치
+```
+
+```bash
 node tests/real-models.js
 ```
 

@@ -1010,7 +1010,7 @@ const FACE={state:'idle',det:null,res:null,last:0,obj:null,ores:null,olast:0,fti
 function poseScreen(){if(A.remote){const r=FACE.rpose;return r&&performance.now()-r.t<Math.min(3000,Math.max(500,(FACE.rpIv||0)*2.6))?RANGE.poses(r.L.map(lm=>lm.map(q=>({x:q[0]*W,y:q[1]*H,v:q[2]})))):null;}
   if(!(FACE.pres&&performance.now()-FACE.ptime<poseWin()+100&&FACE.pres.landmarks&&FACE.pres.landmarks.length))return null;const d2=srcDims(),sw=d2[0],sh=d2[1];if(!sw||!sh)return null;
   const cc=camCrop(sw,sh,W/H),cw=cc[2],ch=cc[3],sx0=cc[0],sy0=cc[1],k=W/cw;
-  return RANGE.poses(FACE.pres.landmarks.map(lm=>lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility};})));}
+  return RANGE.poses(FACE.pres.landmarks.map(lm=>lm.map(q=>{let x=(q.x*sw-sx0)*k;if(S.mirror)x=W-x;return {x,y:(q.y*sh-sy0)*k,v:q.visibility==null?1:q.visibility,z:q.z==null?null:q.z*sw*k};})));}
 const faceFresh=()=>!!(FACE.res&&performance.now()-FACE.ftime<500),objFresh=()=>!!(FACE.ores&&performance.now()-FACE.otime<500),poseFresh=()=>!!(FACE.pres&&performance.now()-FACE.ptime<500);
 // run the on-device face / person detectors for the modes that use them, every frame they are due
 function runDetectors(){if(EMBEDDED||!(source.kind==='camera'||source.kind==='file')||!video.videoWidth||!mode)return;
@@ -1692,7 +1692,7 @@ function drawVideo(src){const c=coverCrop(src.vw,src.vh),g=BL.graded(src,c);
   if(c[0]<0||c[1]<0){ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);}ctx.save();if(src.mirror){ctx.translate(W,0);ctx.scale(-1,1);}try{ctx.drawImage(src.el,c[0],c[1],c[2],c[3],0,0,W,H);}catch(e){}ctx.restore();return c;}
 function noVideo(msg){ctx.fillStyle='#101114';ctx.fillRect(0,0,W,H);ctx.font='500 '+Math.max(14,W/64)+'px '+SANS;ctx.fillStyle='rgba(255,255,255,0.75)';ctx.textAlign='center';ctx.fillText(msg||'카메라 화면을 기다리는 중이에요…',W/2,H/2);ctx.textAlign='left';}
 
-/* 비눗방울: raise your arms over your head and bubbles come pouring out of your hands, rat-a-tat, in the direction the arm points; they
+/* 비눗방울: hold a hand out (up, to the side, or toward the screen) and bubbles come pouring out of its palm, rat-a-tat, the way the arm points; they
    slow, drift and wobble, catch rainbow light on their skins, and burst the moment they touch somebody else. Over the real camera picture */
 // arms held out, read from the shape of the people alone. Every place inside the shape knows how far it is from the edge; thick
 // places (deep inside: trunks, heads) are bodies, thin places are limbs. From every body the shape is walked outward through its thin parts, and
@@ -1715,7 +1715,7 @@ const ARMS={d:null,r:null,g:null,src:null,q:null,
       const sx=s0%w,sy=(s0/w)|0;if(y>sy+rb*0.45)continue; // hanging down, or a leg
       out.push({x:(x+0.5)*A.sx,y:(y+0.5)*A.sy,sx:(sx+0.5)*A.sx,sy:(sy+0.5)*A.sy,r:rb*A.sx,len:v*A.sx});}
     return out;}};
-const mBubble={id:'bubble',name:'비눗방울',needVideo:true,desc:'팔을 쭉 뻗으면(옆으로든 위로든) 손끝에서 팔이 향한 쪽으로 비눗방울이 두두두 뿜어져 나가고, 다른 사람에게 닿으면 톡 터진다. 실제 화면 그대로',
+const mBubble={id:'bubble',name:'비눗방울',needVideo:true,desc:'손을 들거나, 옆으로 뻗거나, 손바닥을 화면 쪽으로 내밀면 그 손바닥에서 비눗방울이 두두두 뿜어져 나가고, 다른 사람에게 닿으면 톡 터진다. 실제 화면 그대로',
   init(){this.b=[];this.fx=[];this.guns=[];this.tips=null;this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);},
   sprite(){if(this.sp)return this.sp;const S2=160,c=mkCanvas(S2,S2),x=c.cx,m=S2/2,r=S2/2-4;
     let g=x.createRadialGradient(m,m,r*0.55,m,m,r);g.addColorStop(0,'rgba(255,255,255,0.0)');g.addColorStop(0.82,'rgba(205,232,255,0.10)');g.addColorStop(1,'rgba(255,255,255,0.42)');x.fillStyle=g;x.beginPath();x.arc(m,m,r,0,TAU);x.fill();
@@ -1727,29 +1727,52 @@ const mBubble={id:'bubble',name:'비눗방울',needVideo:true,desc:'팔을 쭉 �
   draw(t,dt){dt=Math.min(dt||0.016,0.05);const R=Math.random,src=videoSrc();if(src)drawVideo(src);else{const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#cfe9ff');g.addColorStop(1,'#fdf3ff');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
     const w=A.w,h=A.h,pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
     const pS=(x,y)=>{let gx=x*w/W-0.5,gy=y*h/H-0.5;if(gx<0||gy<0||gx>w-1.001||gy>h-1.001)return 0;const a=gx|0,b=gy|0,fx=gx-a,fy=gy-b,i=b*w+a;return (pb[i]*(1-fx)+pb[i+1]*fx)*(1-fy)+(pb[i+w]*(1-fx)+pb[i+w+1]*fx)*fy;};
-    // an arm held out: each outstretched hand fires a stream of bubbles along the arm, from that person (who is not hit by their own bubbles).
+    // A hand held out fires a stream of bubbles from its palm, from that person (who is not hit by their own bubbles). "Held out" is read
+    // from the skeleton, generously. With the trunk as the line from between the shoulders to between the hips, and the body's size d
+    // (shoulder width, or part of the trunk when the person stands sideways), a hand counts when any of these holds:
+    //   raised   the wrist is above the shoulders (a lifted hand, a wave beside the head)
+    //   straight the arm is long, well off the vertical and pointing out from the body (the old rule: an arm stretched out; arms folded
+    //            across the chest used to pass it and no longer do)
+    //   away     the wrist is a body's width or more out from the trunk line, on its own side (an arm half lifted to the side; one that
+    //            hangs is about 0.6 d out, a hand on a hip less; a hand below the hips has to be further out, 1.3 d)
+    //   front    the wrist is clearly nearer the camera than its shoulder, at about shoulder height (a palm shown to the screen: the arm
+    //            is foreshortened in the picture, so this is read from the model's depth; a phone held at the chest is lower and is not it)
+    // The first two fire at once. The last two are weaker evidence and must hold for a moment first, so a swinging arm or a jump
+    // in the depth does nothing. A wrist the model cannot see is carried on from the elbow, and then only a raised or plainly stretched
+    // arm counts (elbows out with hands on hips or behind the back must not).
+    // The palm: from the wrist 0.6 of the way to the knuckles (index and little finger) when the model gives them, else 0.22 of the
+    // forearm further on along it. Never the fingertips.
     // Hands come from the pose model where it sees a person, and from the shape alone for everyone it misses (crowds, people half
     // hidden, a model that is slow or absent). Each hand keeps its own emitter, matched from frame to frame by where it is, and an
     // emitter lives on for a moment when its hand drops out, so the stream does not stutter while the models catch up
     const PL=poseScreen()||[],cand=[],boxes=[];PL.forEach(L=>{const ok=k=>L[k]&&L[k].v>0.25;if(!L[11]||!L[12])return;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.forEach(q=>{if(q&&q.v>0.3){x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);}});if(x1<x0)return;
-      // the size of this body: shoulders, or the trunk when the person stands sideways and the shoulders overlap
-      const smx=(L[11].x+L[12].x)/2,smy=(L[11].y+L[12].y)/2;let d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y);if(ok(23)&&ok(24))d=Math.max(d,Math.hypot((L[23].x+L[24].x)/2-smx,(L[23].y+L[24].y)/2-smy)*0.6);d=Math.max(d,W*0.03);
-      const ny=L[0]?L[0].y:smy-d*0.7,own={x0:x0-d*0.6,y0:y0-d*0.6,x1:x1+d*0.6,y1:H+d};boxes.push([x0-d*0.5,y0-d*0.8,x1+d*0.5,y1+d*0.5]);
-      for(const [wj,ej,sj] of [[15,13,11],[16,14,12]]){const sq=L[sj],e=L[ej];if(!sq)continue;let wq=L[wj];
-        if(!(wq&&wq.v>=0.25)){if(e&&e.v>=0.3)wq={x:e.x+(e.x-sq.x)*0.85,y:e.y+(e.y-sq.y)*0.85};else continue;} // wrist hidden: carry on along the upper arm
-        const ux=wq.x-sq.x,uy=wq.y-sq.y,ul=Math.hypot(ux,uy)||1;if(!(wq.y<ny-d*0.15||(ul>d*0.95&&uy<ul*0.72)))continue;
-        const side=wq.x>smx?1:-1;let ax=0,ay=0;if(e&&e.v>0.3){ax=wq.x-e.x;ay=wq.y-e.y;const l=Math.hypot(ax,ay)||1;ax/=l;ay/=l;}let dx=ux/ul*0.75+ax*0.45+side*0.12,dy=uy/ul*0.75+ay*0.45;{const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;}
-        cand.push({x:wq.x,y:wq.y,dx,dy,d,own});}});
+      // the size of this body (shoulders, or the trunk when the person stands sideways and the shoulders overlap) and the line of its trunk
+      const smx=(L[11].x+L[12].x)/2,smy=(L[11].y+L[12].y)/2;let d=Math.hypot(L[11].x-L[12].x,L[11].y-L[12].y),tx=0,ty=1,tl=0;if(ok(23)&&ok(24)){const hx=(L[23].x+L[24].x)/2-smx,hy=(L[23].y+L[24].y)/2-smy;tl=Math.hypot(hx,hy);if(tl>1){tx=hx/tl;ty=hy/tl;}d=Math.max(d,tl*0.6);}d=Math.max(d,W*0.03);if(!tl)tl=d*1.4;
+      const own={x0:x0-d*0.6,y0:y0-d*0.6,x1:x1+d*0.6,y1:H+d};boxes.push([x0-d*0.5,y0-d*0.8,x1+d*0.5,y1+d*0.5]);
+      for(const [wj,ej,sj,pj,ij] of [[15,13,11,17,19],[16,14,12,18,20]]){const sq=L[sj],e=L[ej],eo=!!e&&e.v>=0.3;if(!sq)continue;let wq=L[wj],seen=true;
+        if(!(wq&&wq.v>=0.25)){if(eo){wq={x:e.x+(e.x-sq.x)*0.85,y:e.y+(e.y-sq.y)*0.85};seen=false;}else continue;} // wrist hidden: carry on along the upper arm
+        // along: how far down the trunk the wrist is (0 at the shoulders); out: how far out from the trunk line on the arm's own side (an arm folded across the body is negative)
+        const ux=wq.x-sq.x,uy=wq.y-sq.y,ul=Math.hypot(ux,uy)||1,rx=wq.x-smx,ry=wq.y-smy,along=rx*tx+ry*ty,wo=rx*ty-ry*tx,so=(sq.x-smx)*ty-(sq.y-smy)*tx,out=Math.abs(so)<d*0.2?Math.abs(wo):so>0?wo:-wo,
+          raised=along<-d*0.1,straight=ul>d*0.95&&uy<ul*(seen?0.72:0.5)&&out>d*0.6,away=seen&&out>d*(along>tl*1.05?1.3:1),front=seen&&wq.z!=null&&sq.z!=null&&sq.z-wq.z>d*1.2&&along<d*0.45;
+        if(!(raised||straight||away||front))continue;
+        let px,py;const pk=L[pj],ik=L[ij],kp=seen&&!!pk&&pk.v>=0.3,ki=seen&&!!ik&&ik.v>=0.3;
+        if(kp||ki){let hx=(kp&&ki?(pk.x+ik.x)/2:ki?ik.x:pk.x)-wq.x,hy=(kp&&ki?(pk.y+ik.y)/2:ki?ik.y:pk.y)-wq.y;const hl=Math.hypot(hx,hy),mx=d*0.55;if(hl>mx){hx*=mx/hl;hy*=mx/hl;}px=wq.x+hx*0.6;py=wq.y+hy*0.6;}
+        else if(eo){px=wq.x+(wq.x-e.x)*0.22;py=wq.y+(wq.y-e.y)*0.22;}else{px=wq.x+ux/ul*d*0.16;py=wq.y+uy/ul*d*0.16;}
+        // which way they go: along the forearm (steadied a little by the whole arm); for a palm pushed at the camera the arm points
+        // at the viewer and says nothing, so up and outward, spread wide
+        const side=wq.x>smx?1:-1;let dx=ux/ul,dy=uy/ul,fl=0,sp=0.8;if(eo&&seen){const fx=wq.x-e.x,fy=wq.y-e.y;fl=Math.hypot(fx,fy);if(fl>d*0.3){dx=fx/fl*0.8+dx*0.3;dy=fy/fl*0.8+dy*0.3;}}dx+=side*0.1;
+        if(front&&(fl<d*0.55||!(raised||straight||away))){dx=side*0.5;dy=-0.87;sp=1.5;}{const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;}
+        cand.push({x:px,y:py,dx,dy,d,own,sp,weak:!(raised||straight)});}});
     if((this.af=(this.af||0)+1)%2===0||!this.tips)this.tips=ARMS.find(pb,w,h);
     for(const a of this.tips){let covered=false;for(const b of boxes)if(a.sx>b[0]&&a.sx<b[2]&&a.sy>b[1]&&a.sy<b[3]){covered=true;break;}if(covered)continue;
-      let dx=a.x-a.sx,dy=a.y-a.sy;const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;const d=Math.max(a.r*2,W*0.03);cand.push({x:a.x,y:a.y,dx,dy,d,own:{x0:a.sx-d*1.6,y0:Math.min(a.y,a.sy)-d*1.6,x1:a.sx+d*1.6,y1:H+d}});}
+      let dx=a.x-a.sx,dy=a.y-a.sy;const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;const d=Math.max(a.r*2,W*0.03);cand.push({x:a.x-dx*d*0.25,y:a.y-dy*d*0.25,dx,dy,d,sp:0.8,weak:false,own:{x0:a.sx-d*1.6,y0:Math.min(a.y,a.sy)-d*1.6,x1:a.sx+d*1.6,y1:H+d}});}
     const G=this.guns;for(const gq of G)gq.hit=false;
-    for(const c of cand){let best=null,bd=c.d*1.6;for(const gq of G){if(gq.hit)continue;const dd=Math.hypot(gq.x-c.x,gq.y-c.y);if(dd<bd){bd=dd;best=gq;}}if(!best){best={acc:0.6,x:c.x,y:c.y,dx:c.dx,dy:c.dy};G.push(best);}
-      const k=ez(0.5);best.x+=(c.x-best.x)*k;best.y+=(c.y-best.y)*k;best.dx+=(c.dx-best.dx)*k;best.dy+=(c.dy-best.dy)*k;best.d=c.d;best.own=c.own;best.hit=true;best.ttl=0.45;}
-    for(let gi=G.length-1;gi>=0;gi--){const gq=G[gi];if(!gq.hit){gq.ttl-=dt;if(gq.ttl<=0){G.splice(gi,1);continue;}}
-      gq.acc+=dt*15;const dl=Math.hypot(gq.dx,gq.dy)||1,dx=gq.dx/dl,dy=gq.dy/dl,d=gq.d;
-      while(gq.acc>=1){gq.acc-=1;if(this.b.length>=260){this.pop(this.b.shift());}const a=Math.atan2(dy,dx)+(R()-0.5)*0.8,v=W*(0.35+R()*0.45),r=Math.max(7,Math.min(W,H)*(0.012+R()*R()*0.05));
-        this.b.push({x:gq.x+dx*d*0.2,y:gq.y+dy*d*0.2,vx:Math.cos(a)*v,vy:Math.sin(a)*v,r,ph:R()*TAU,own:gq.own,t:0,life:6+R()*5});}}
+    for(const c of cand){let best=null,bd=c.d*1.6;for(const gq of G){if(gq.hit)continue;const dd=Math.hypot(gq.x-c.x,gq.y-c.y);if(dd<bd){bd=dd;best=gq;}}if(!best){best={acc:0.6,x:c.x,y:c.y,dx:c.dx,dy:c.dy,sp:c.sp,on:c.weak?0:1};G.push(best);}
+      const k=ez(0.5);best.x+=(c.x-best.x)*k;best.y+=(c.y-best.y)*k;best.dx+=(c.dx-best.dx)*k;best.dy+=(c.dy-best.dy)*k;best.sp+=(c.sp-best.sp)*k;best.on=c.weak?Math.min(1,best.on+dt/0.18):1;best.d=c.d;best.own=c.own;best.hit=true;best.ttl=0.45;}
+    for(let gi=G.length-1;gi>=0;gi--){const gq=G[gi];if(!gq.hit){gq.ttl-=dt;if(gq.on<1)gq.on=Math.max(0,gq.on-dt*3);if(gq.ttl<=0){G.splice(gi,1);continue;}}
+      if(gq.on<1)continue;gq.acc+=dt*15;const dl=Math.hypot(gq.dx,gq.dy)||1,dx=gq.dx/dl,dy=gq.dy/dl,d=gq.d;
+      while(gq.acc>=1){gq.acc-=1;if(this.b.length>=260){this.pop(this.b.shift());}const a=Math.atan2(dy,dx)+(R()-0.5)*gq.sp,v=W*(0.35+R()*0.45),r=Math.max(7,Math.min(W,H)*(0.012+R()*R()*0.05));
+        this.b.push({x:gq.x+dx*d*0.05,y:gq.y+dy*d*0.05,vx:Math.cos(a)*v,vy:Math.sin(a)*v,r,ph:R()*TAU,own:gq.own,t:0,life:6+R()*5});}}
     // bubbles slow down, drift and bob; they burst on someone else's body, at the edges, or when their time is up
     const B=this.b;for(let i=B.length-1;i>=0;i--){const q=B[i];q.t+=dt;const dr=Math.pow(0.22,dt);q.vx=q.vx*dr+Math.sin(t*0.7+q.ph)*W*0.01*dt;q.vy=q.vy*dr+H*0.13*dt+Math.cos(t*0.9+q.ph)*H*0.006*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;
       const o=q.own,mine=q.x>o.x0&&q.x<o.x1&&q.y>o.y0&&q.y<o.y1;let hit=false;if(!mine&&q.t>0.12){hit=pS(q.x,q.y)>0.5;for(let k=0;k<4&&!hit;k++){const a=k/4*TAU+0.4;if(pS(q.x+Math.cos(a)*q.r*0.8,q.y+Math.sin(a)*q.r*0.8)>0.55)hit=true;}}
@@ -1758,7 +1781,7 @@ const mBubble={id:'bubble',name:'비눗방울',needVideo:true,desc:'팔을 쭉 �
     ctx.globalAlpha=1;for(let i=this.fx.length-1;i>=0;i--){const f=this.fx[i];f.t+=dt;if(f.drop){if(f.t>0.4){this.fx.splice(i,1);continue;}f.x+=f.vx*dt;f.y+=f.vy*dt;f.vy+=H*0.8*dt;ctx.globalAlpha=1-f.t/0.4;ctx.fillStyle='rgba(235,248,255,0.9)';ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,TAU);ctx.fill();}
       else{if(f.t>0.22){this.fx.splice(i,1);continue;}const k=f.t/0.22;ctx.globalAlpha=1-k;ctx.strokeStyle='rgba(255,255,255,0.95)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x,f.y,f.r*(1+k*0.7),0,TAU);ctx.stroke();}}
     ctx.globalAlpha=1;
-    if(!B.length){const fz=Math.max(14,Math.min(22,W/60));ctx.font='600 '+fz+'px '+SANS+','+EMOJI_FONT;ctx.textAlign='center';const msg='🫧 팔을 쭉 뻗어 보세요',tw=ctx.measureText(msg).width,by=H-fz*2.6-(isTouch?56:0);
+    if(!B.length){const fz=Math.max(14,Math.min(22,W/60));ctx.font='600 '+fz+'px '+SANS+','+EMOJI_FONT;ctx.textAlign='center';const msg='🫧 손을 들거나 손바닥을 내밀어 보세요',tw=ctx.measureText(msg).width,by=H-fz*2.6-(isTouch?56:0);
       ctx.fillStyle='rgba(0,0,0,0.38)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1,fz*1.05);else ctx.rect(W/2-tw/2-fz,by-fz*1.05,tw+fz*2,fz*2.1);ctx.fill();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(msg,W/2,by);ctx.textAlign='left';ctx.textBaseline='alphabetic';}}};
 
 
