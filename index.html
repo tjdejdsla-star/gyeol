@@ -91,6 +91,8 @@ body.role-sensor .ui{display:none}
 .seg.wide{display:flex;width:100%}
 .seg.wide button{flex:1}
 #modeList .l small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dur{flex:none;min-width:46px;padding:6px 9px;border-radius:999px;background:var(--fill);font-size:12px;font-weight:600;color:var(--label2);white-space:nowrap}
+.dur.on{color:var(--blue)}
 .switch{position:relative;width:51px;height:31px;flex:none}
 .switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
 .switch span{position:absolute;inset:0;border-radius:16px;background:var(--fill);transition:background .2s}
@@ -219,7 +221,7 @@ body.role-sensor #credit{display:none}
   <div class="group"><h4>필터 켜고 끄기</h4>
     <div class="rows" id="modeList"></div>
     <div class="rows" style="margin-top:8px"><button class="row btnrow" id="btnAllOn">모든 필터 켜기</button></div>
-    <p class="foot">끈 필터는 아래 막대, 자동 전환, 화면 밀기, 키보드에서 모두 빠져요. 다시 켜면 돌아와요. 하나 이상은 켜 두어야 해요.</p>
+    <p class="foot">끈 필터는 아래 막대, 자동 전환, 화면 밀기, 키보드에서 모두 빠져요. 다시 켜면 돌아와요. 하나 이상은 켜 두어야 해요.<br><b>기본 · 2배 · 3배 · 5배</b> 단추: 자동 전환을 켰을 때 그 필터만 더 오래 보여 줘요(누를 때마다 바뀜). 자동 전환이 45초이고 3배면 그 필터는 135초 동안 나와요.</p>
   </div>
   <div class="group"><h4>전시 제목</h4>
     <div class="rows"><div class="row"><input id="exIn" type="text" autocomplete="off" spellcheck="false" aria-label="전시 제목" style="flex:1;min-width:0;font:inherit;font-size:15px;background:transparent;border:0;color:var(--label);padding:4px 0"></div></div>
@@ -355,9 +357,11 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반',bl:'auto',blHw:false,range:3,rangeH:0,crowd:true};
+const DEF={off:['shapes','pixel','stained','mosaic','cshadow','ink'],offV:2,dur:{},title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반',bl:'auto',blHw:false,range:3,rangeH:0,crowd:true};
 const S=Object.assign({},DEF);
-try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
+let SAVED=null;try{SAVED=JSON.parse(localStorage.getItem('gyeol.settings')||'null');if(SAVED)Object.assign(S,SAVED);}catch(e){}
+// filters that stay off until they are switched on: also on a device whose saved settings are older than that decision (once)
+if(SAVED&&!(SAVED.offV>=2)){S.off=Array.from(new Set((Array.isArray(SAVED.off)?SAVED.off:[]).concat(DEF.off)));S.offV=2;}if(!S.dur||typeof S.dur!=='object')S.dur={};
 if(S.fitV!==2){S.fit='fill';S.fitV=2;}
 function save(){try{localStorage.setItem('gyeol.settings',JSON.stringify(S));}catch(e){}}
 const trailAlpha=()=>lerp(0.4,0.025,(S.trail-1)/9);
@@ -1430,6 +1434,10 @@ const mStack={id:'stack',name:'쌓기',still:true,HOLD:2,busy(){return this.hold
   // person's box across the whole frame, bridging hairline gaps, so a group that touches comes out as a single piece
   // while someone holds still, their shape is remembered as a short running average: an arm the model drops now and then stays,
   // a speck that shows up once does not (the same on a local camera and a phone sensor)
+  // the places that belong to the one being measured (their shape, widened a little), so that the rising colour fills that shape only
+  gkeep(vis,cells){const w=A.w,h=A.h,n=w*h;if(!this.gk||this.gk.length!==n){this.gk=new Uint8Array(n);this.gt=new Uint8Array(n);}const t=this.gt,k=this.gk;let v=vis;if(!v){v=k;k.fill(0);for(let c=0;c<cells.length;c++)k[cells[c]]=1;}
+    for(let y=0;y<h;y++){const o=y*w;for(let x=0;x<w;x++){let on=0;for(let d=-2;d<=2&&!on;d++){const xx=x+d;if(xx>=0&&xx<w&&v[o+xx])on=1;}t[o+x]=on;}}
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){let on=0;for(let d=-2;d<=2&&!on;d++){const yy=y+d;if(yy>=0&&yy<h&&t[yy*w+x])on=1;}k[y*w+x]=on;}},
   accum(cand){const n=A.n;if(!this.accP||this.accP.length!==n){this.accP=new Float32Array(n);this.accP.set(A.p);}const ap=this.accP,p=A.p;for(let i=0;i<n;i++)ap[i]+=(p[i]-ap[i])*0.15;},
   resetAcc(){if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);if(this.hiN){this.hi.fill(0);this.hiN=0;}},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
@@ -1500,7 +1508,17 @@ const mStack={id:'stack',name:'쌓기',still:true,HOLD:2,busy(){return this.hold
       for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(m[i])continue;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u;if(ex*ex+ey*ey<r*r)m[i]=1;}}
     return m;},
   // everyone who could be taken right now, each with how long they have stood still
-  cands(HOLD,FAR){const w=A.w,h=A.h,n=w*h,on=this.on,tch=this.tch,lk=this.lock,clk=this.clk,K=this.comps(),lab=this.lab,T=this.anchors(),byId={},out=[],minC=Math.max(20,n*0.005);this.cmI=0;for(const c of K)byId[c.id]=c;
+  // Several skeletons in one shape. Every place inside somebody's body (their skeleton, its parts barely widened) belongs to the
+  // skeleton it is nearest to, measured against the thickness of that part. A person's room is their skeleton widened generously
+  // (loose clothes, hair, a bag) less the places that are inside someone else's body: so it stops where the next person begins,
+  // and a passer-by takes from it no more than the places they actually cover. (It used to be the widened skeleton and nothing
+  // else, which took in half of whoever stood next to them: the rising colour, and the piece, spread onto the neighbour)
+  owners(T,k){const w=A.w,h=A.h,n=w*h;if(!this.ow||this.ow.length!==n){this.ow=new Int16Array(n);this.ob=new Float32Array(n);}const ow=this.ow,ob=this.ob;ow.fill(-1);ob.fill(0);
+    T.forEach((tk,a)=>{tk.oi=-1;if(this.clk-tk.tLast>1)return;const pp=mCroquis.partsOf({pose:tk.L});if(!pp)return;tk.oi=a;
+      for(const q of pp.S){const r=q[5]*k+A.sx,ax=q[1],ay=q[2],dx=q[3]-ax,dy=q[4]-ay,l2=dx*dx+dy*dy,x0=clamp(Math.floor((Math.min(ax,q[3])-r)/A.sx),0,w-1),x1=clamp(Math.ceil((Math.max(ax,q[3])+r)/A.sx),0,w-1),y0=clamp(Math.floor((Math.min(ay,q[4])-r)/A.sy),0,h-1),y1=clamp(Math.ceil((Math.max(ay,q[4])+r)/A.sy),0,h-1);
+        for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u,d2=ex*ex+ey*ey;if(d2>=r*r)continue;const v=1-Math.sqrt(d2)/r;if(v>ob[i]){ob[i]=v;ow[i]=a;}}}});},
+  ownMask(tk){const m=this.capMask(tk.L,1.9);if(!m)return m;const n=A.n,ow=this.ow,a=tk.oi;for(let i=0;i<n;i++)if(m[i]&&ow[i]>=0&&ow[i]!==a)m[i]=0;return m;},
+  cands(HOLD,FAR){const w=A.w,h=A.h,n=w*h,on=this.on,tch=this.tch,lk=this.lock,clk=this.clk,K=this.comps(),lab=this.lab,T=this.anchors(),byId={},out=[],minC=Math.max(20,n*0.005);this.cmI=0;for(const c of K)byId[c.id]=c;this.owners(T,1.15);
     const labAt=(x,y)=>{const cx=clamp((x/A.sx)|0,0,w-1),cy=clamp((y/A.sy)|0,0,h-1);for(let r=0;r<=2;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){const xx=cx+dx,yy=cy+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const l=lab[yy*w+xx];if(l)return l;}return 0;};
     // which shape each remembered person is in; a shape in which someone has just moved or arrived is not judged by its outline
     for(const tk of T){tk.c=null;if(clk-tk.tLast>1.5)continue;const c=byId[labAt(tk.x,tk.y)];if(!c)continue;tk.c=c;c.tr++;if(tk.tLast-tk.t0<1)c.young=true;}
@@ -1509,7 +1527,7 @@ const mStack={id:'stack',name:'쌓기',still:true,HOLD:2,busy(){return this.hold
       // their own body (the room close round the skeleton) must itself have been there all that time: someone walking in a line of
       // people has a trunk that looks covered throughout, but a head and legs that have only just arrived
       const mt=this.capMask(tk.L,1.2);if(!mt)continue;let ct=0,lt=0;const need=Math.min(hold,HOLD)*0.8;for(let i=0;i<n;i++)if(mt[i]&&on[i]){ct++;if(clk-tch[i]>=need)lt++;}if(ct<minC*0.6)continue;
-      const m=this.capMask(tk.L,1.9);let cov=0,lkd=0,mnx=w,mxx=-1,mny=h,mxy=-1;const cells=[];for(let i=0;i<n;i++){if(!m[i]||!on[i])continue;cov++;cells.push(i);if(lk[i]>0)lkd++;const x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;}
+      const m=tk.oi>=0?this.ownMask(tk):this.capMask(tk.L,1.9);let cov=0,lkd=0,mnx=w,mxx=-1,mny=h,mxy=-1;const cells=[];for(let i=0;i<n;i++){if(!m[i]||!on[i])continue;cov++;cells.push(i);if(lk[i]>0)lkd++;const x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;}
       const nose=tk.L[0];out.push({x:mnx*A.sx,y:mny*A.sy,w:(mxx-mnx+1)*A.sx,h:(mxy-mny+1)*A.sy,cells,hold:lt>=ct*0.78?hold:Math.min(hold,HOLD*0.9),st:lkd>cov*0.5?'done':c.close&&nose&&nose.y<H*0.08?'close':'hold',cap:m,limit:!(c.ts>=1.2&&!c.young),fresh:clk-tk.tLast<Math.max(0.25,piv*1.8),tk});}
     for(const c of K){if(c.tr)continue;out.push({x:c.x,y:c.y,w:c.w,h:c.h,cells:c.cells,hold:Math.max(0,c.ts-0.2),st:c.locked>c.n*0.5?'done':c.close?'close':'hold',cap:null,limit:false,fresh:true,tk:null});}
     return out;},
@@ -1539,15 +1557,17 @@ const mStack={id:'stack',name:'쌓기',still:true,HOLD:2,busy(){return this.hold
     this.live=upsampleMask(pb,w,h,2,0.38,0.62,[214,205,192],this.live);ctx.imageSmoothingEnabled=true;
     const rw=W-ww,vs=Math.min(rw/W*0.96,1),vx=ww+(rw-W*vs)/2,vy=H-H*vs;if(out)ctx.drawImage(this.liveFar,vx,vy,W*vs,H*vs);ctx.drawImage(this.live,vx,vy,W*vs,H*vs);
     if(this.hold>0.05&&this.hiN>2){const HW=w*this.K,HH=h*this.K;if(this.f%3===0||!this.liveHi){this.disp=hyst(this.hi,HW,HH,0.5,0.22,this.disp);if(!this.dtmp||this.dtmp.length!==HW*HH)this.dtmp=new Float32Array(HW*HH);blur3(this.disp,this.dtmp,HW,HH);
-      this.liveHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,[214,205,192],this.liveHi);this.fillHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,hex(this.col||'#8fa382'),this.fillHi);}ctx.drawImage(this.liveHi,vx,vy,W*vs,H*vs);}else{this.liveHi=null;}
+      this.liveHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,[214,205,192],this.liveHi);let fd=this.disp;const gk=this.gk;if(gk&&gk.length===n&&this.gb){if(!this.dm||this.dm.length!==HW*HH)this.dm=new Float32Array(HW*HH);fd=this.dm;const K=this.K,d=this.disp;for(let y=0;y<HH;y++){const o=y*HW,lo=((y/K)|0)*w;for(let x=0;x<HW;x++)fd[o+x]=gk[lo+((x/K)|0)]?d[o+x]:0;}}
+      this.fillHi=upsampleMask(fd,HW,HH,1,0.4,0.6,hex(this.col||'#8fa382'),this.fillHi);}ctx.drawImage(this.liveHi,vx,vy,W*vs,H*vs);}else{this.liveHi=null;}
     // the one being measured: of those standing still (near enough, not yet taken), the one who has stood still longest
     this.occupancy(dt);this.cool=Math.max(0,(this.cool||0)-dt);const bodies=this.cands(HOLD,FAR);let cand=null;for(const b of bodies)if(b.st==='hold'&&b.hold>=0.35&&(!cand||b.hold>cand.hold))cand=b;
     const state=cand?'hold':bodies.some(b=>b.st==='done')?'done':bodies.some(b=>b.st==='close')?'close':live.some(t=>t.stS!=='far')||bodies.length?'move':live.length?'far':'none';
     // the same body as a moment ago? (its patch still covers where the middle of it was) If not, start its picture afresh
     if(cand){const c=this.hc,same=c&&cand.x<=c[0]&&cand.x+cand.w>=c[0]&&cand.y<=c[1]&&cand.y+cand.h>=c[1];if(!same){this.gb=null;this.col=null;if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);}this.hc=[cand.x+cand.w/2,cand.y+cand.h/2];}else this.hc=null;
     this.hold=cand?Math.min(HOLD,cand.hold):0;if(this.hold>0.05&&cand)this.accum(cand);else this.resetAcc();
-    if(this.hold>0.05&&cand){if(!this.col)this.col=STACK.color();const pr=Math.min(1,this.hold/HOLD),rgb=hex(this.col);const g=(this.f&3)===0||!this.gb?this.group(cand):null;if(g)this.gb=[g.mnx*A.sx,g.mny*A.sy,(g.mxx-g.mnx+1)*A.sx,(g.mxy-g.mny+1)*A.sy];
-      const gb=this.gb||[cand.x,cand.y,cand.w,cand.h];this.fill=upsampleMask(pb,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]*1.3+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);if(this.liveHi&&this.fillHi)ctx.drawImage(this.fillHi,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
+    if(this.hold>0.05&&cand){if(!this.col)this.col=STACK.color();const pr=Math.min(1,this.hold/HOLD),rgb=hex(this.col);const fresh=(this.f&3)===0||!this.gb||!this.gk||this.gk.length!==n,g=fresh?this.group(cand):null;if(g)this.gb=[g.mnx*A.sx,g.mny*A.sy,(g.mxx-g.mnx+1)*A.sx,(g.mxy-g.mny+1)*A.sy];if(fresh)this.gkeep(g?g.vis:null,cand.cells);
+      // the colour rises inside this person's own shape only (it used to be everything inside their box, so it climbed up a neighbour too)
+      const gb=this.gb||[cand.x,cand.y,cand.w,cand.h],gk=this.gk;if(!this.fm||this.fm.length!==n)this.fm=new Float32Array(n);const fm=this.fm;for(let i=0;i<n;i++)fm[i]=gk[i]?pb[i]:0;this.fill=upsampleMask(fm,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]*1.3+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);if(this.liveHi&&this.fillHi)ctx.drawImage(this.fillHi,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
     // taken one at a time, with a breath between, so a row of students standing still pile up one after another instead of all at once
     if(cand&&cand.hold>=HOLD&&cand.fresh&&ok&&this.cool<=0){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.hc=null;this.resetAcc();this.cool=0.9;
       if(c){const pc=STACK.make(c.m,c.gw,c.gh,c.col,k);if(pc){STACK.people+=c.ppl;this.lastPpl=c.ppl;STACK.fly.push({pc,t:0,sx:vx+c.sx*vs,sy:vy+c.sy*vs,sw:c.sw*vs,sh:c.sh*vs});this.msg=2.4;}}}
@@ -2782,6 +2802,8 @@ const CROWD={v:0,on:false,t:0,prev:null,col:null,runs:0,occ:0,flux:0,
     const ow=occ/w,flux=un>n*0.01?ch/un:0,many=runs>=4||(runs>=3&&ow>=0.4)||ow>=0.65,b=many&&flux>=0.3?1:(cnt>n*0.02&&flux>=0.6?0.7:0);
     this.runs=runs;this.occ=ow;this.flux=flux;this.v+=(b-this.v)*(1-Math.exp(-dt/10));if(this.on?this.v<0.25:this.v>0.55)this.on=!this.on;}};
 let lastSwitch=0;
+// how many times the usual stay this filter gets when filters change by themselves (set per filter in the settings)
+function durOf(m){const d=m&&S.dur?+S.dur[m.id]:0;return d>1?Math.min(10,d):1;}
 function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor')setPerf(perfFor(mode),false);if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();wantVideo();fillBg();lastSwitch=performance.now();window.__modeF=frame;save();syncChips();
   const b=modesEl.children[S.mode];if(b&&b.scrollIntoView)try{b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}catch(e){}}
 function isOn(i){const m=MODES[i];return !!m&&!(S.off||[]).includes(m.id);}
@@ -3038,16 +3060,20 @@ function loop(now){requestAnimationFrame(loop);if(now-last<(role==='sensor'?14:P
   fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps'+(PERF.lv===1?' · 보통':PERF.lv===2?' · 가볍게':'')+(mode&&mode.gl&&!mode.noGL&&S.gpu!==false&&GL.ok?' · 그래픽':'')+((A.remote?BL.rs:BL.s)>=0.3?' · 역광 보정':'')+(S.auto&&S.crowd!==false&&CROWD.on?' · 붐빔':'');fpsN=0;fpsT=now;}
   if((frame&3)===0)meterEl.style.width=Math.round(A.level*100)+'%';
   CROWD.tick(now);
-  if(S.auto&&mode&&!(mode.busy&&mode.busy())&&(now-lastSwitch>S.auto*1000||(S.crowd!==false&&CROWD.on&&mode.still&&now-lastSwitch>6000)))nextMode(1,true);}
+  if(S.auto&&mode&&!(mode.busy&&mode.busy())&&(now-lastSwitch>S.auto*1000*durOf(mode)||(S.crowd!==false&&CROWD.on&&mode.still&&now-lastSwitch>6000)))nextMode(1,true);}
 
 /* ---------- boot ---------- */
 S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=clamp(S.trailp|0,0,2);applyPresets();S.pal=clamp(S.pal|0,0,PALETTES.length-1);S.sens=clamp(S.sens|0,1,10);S.trail=clamp(S.trail|0,1,10);S.gain=clamp(S.gain|0,1,10);
-const modeList=$('#modeList'),modeSw=[];
+const modeList=$('#modeList'),modeSw=[],modeDur=[];
 MODES.forEach((m,i)=>{const row=document.createElement('div');row.className='row';const l=document.createElement('div');l.className='l';l.textContent=m.name+(KEYS[i]?'  ·  '+KEYS[i]:'');const sm=document.createElement('small');sm.textContent=m.desc;l.appendChild(sm);
-  const sw=document.createElement('label');sw.className='switch';const inp=document.createElement('input');inp.type='checkbox';inp.setAttribute('aria-label',m.name+' 켜기');sw.appendChild(inp);sw.appendChild(document.createElement('span'));row.appendChild(l);row.appendChild(sw);modeList.appendChild(row);modeSw.push(inp);
+  const sw=document.createElement('label');sw.className='switch';const inp=document.createElement('input');inp.type='checkbox';inp.setAttribute('aria-label',m.name+' 켜기');sw.appendChild(inp);sw.appendChild(document.createElement('span'));
+  // how long this filter stays when filters change by themselves: the usual time, or 2, 3 or 5 times as long
+  const du=document.createElement('button');du.className='dur';const duS=()=>{const d=durOf(m);du.textContent=d>1?d+'배':'기본';du.classList.toggle('on',d>1);du.setAttribute('aria-label',m.name+' 머무는 시간 '+(d>1?d+'배':'기본'));};duS();modeDur.push(duS);
+  du.addEventListener('click',()=>{const o=[1,2,3,5],d=o[(o.indexOf(durOf(m))+1)%o.length];if(d>1)S.dur[m.id]=d;else delete S.dur[m.id];save();duS();lastSwitch=performance.now();toast(m.name+' · 자동 전환 때 '+(d>1?d+'배 오래':'기본 시간만큼')+' 보여요');});
+  row.appendChild(l);row.appendChild(du);row.appendChild(sw);modeList.appendChild(row);modeSw.push(inp);
   inp.addEventListener('change',()=>{const off=new Set(S.off||[]);if(inp.checked)off.delete(m.id);else{if(MODES.filter((q,j)=>isOn(j)).length<=1){inp.checked=true;toast('필터는 하나 이상 켜 두어야 해요');return;}off.add(m.id);}
     S.off=Array.from(off);save();syncModes();if(!isOn(S.mode))nextMode(1);toast(m.name+(inp.checked?' 켬':' 끔'));});});
-function syncModeList(){modeSw.forEach((inp,i)=>{inp.checked=isOn(i);});}
+function syncModeList(){modeSw.forEach((inp,i)=>{inp.checked=isOn(i);});modeDur.forEach(f=>f());}
 $('#btnAllOn').addEventListener('click',()=>{S.off=[];save();syncModes();syncModeList();toast('모든 필터를 켰어요');});
 S.off=(S.off||[]).filter(id=>MODES.some(m=>m.id===id));if(MODES.every((m,i)=>!isOn(i)))S.off=[];
 syncModes();syncModeList();

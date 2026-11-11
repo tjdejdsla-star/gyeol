@@ -25,6 +25,11 @@ node tests/range.js        # 인식 거리: 먼 사람이 모양·자세·상자
 ```
 
 ```bash
+node tests/filters.js      # 기본으로 꺼 두는 필터 여섯 개, 필터별 머무는 시간
+node tests/stack-fill.js   # 쌓기 · 차오르는 색이 옆 사람에게 번지지 않는지
+```
+
+```bash
 node tests/real-models.js
 ```
 
