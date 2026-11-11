@@ -1270,7 +1270,7 @@ function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h)
     while(hd<tl){const i=q[hd++],x=i%w;if(x>0&&on[i-1]&&!lab[i-1]){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&on[i+1]&&!lab[i+1]){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&on[i-w]&&!lab[i-w]){lab[i-w]=id;q[tl++]=i-w;}if(i<w*h-w&&on[i+w]&&!lab[i+w]){lab[i+w]=id;q[tl++]=i+w;}}
     if(tl>bestN){bestN=tl;best=id;}}for(let i=0;i<w*h;i++)if(lab[i]!==best)on[i]=0;}
 const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 쨍한 색 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
-  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.hc=null;this.cool=0;this.dw=null;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
+  init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.hc=null;this.cool=0;this.on=null;this.at=[];this.pst=-1;this.pcl=null;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
   // how far back someone may stand and still be taken: the height they would have with the whole body in view, as a share of the screen
   farH(){return [0.8,0.6,0.42][S.stackDist==null?1:S.stackDist]*H;},
@@ -1300,31 +1300,84 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
   resetAcc(){if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);if(this.hiN){this.hi.fill(0);this.hiN=0;}},
   // everyone joined to this person (arms over shoulders, holding hands, leaning in) is one shape: the silhouette is followed out from the
   // person's box across the whole frame; weaker parts (a thin raised arm) are kept as long as they connect to the body
-  group(tr){const w=A.w,h=A.h,n=w*h,p=this.accP&&this.accP.length===n?this.accP:A.p;if(!this.gv||this.gv.length!==n){this.gv=new Uint8Array(n);this.gq=new Int32Array(n);}const vis=this.gv,q=this.gq;
-    vis.fill(0);let hd=0,tl=0;const BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null,dw=this.dw&&this.dw.length===n?this.dw:null,E=A.e;
-    // start from the places that have themselves been still (the person, not whoever is brushing past), then follow the shape out
-    // through whatever is joined to it and is not moving: a thin raised arm stays, a passer-by touching the shoulder does not
-    if(tr.cells){for(let k=0;k<tr.cells.length;k++){const i=tr.cells[k];if(!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}}
-    else{const x0=clamp((tr.x/A.sx)|0,0,w-1),x1=clamp(((tr.x+tr.w)/A.sx)|0,0,w-1),y0=clamp((tr.y/A.sy)|0,0,h-1),y1=clamp(((tr.y+tr.h)/A.sy)|0,0,h-1);for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(p[i]>0.5&&!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}}
+  group(cand){const w=A.w,h=A.h,n=w*h,p=this.accP&&this.accP.length===n?this.accP:A.p;if(!this.gv||this.gv.length!==n){this.gv=new Uint8Array(n);this.gq=new Int32Array(n);}const vis=this.gv,q=this.gq;
+    vis.fill(0);let hd=0,tl=0;const BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null,on=this.on,tch=this.tch,clk=this.clk,E=A.e,cap=cand.cap||null,lim=cand.limit&&cap;
+    // start from the person's own places, then follow the shape out through whatever is joined to it and has been there a moment:
+    // a friend leaning in stays, a passer-by brushing the shoulder (places covered only just now) does not. A hand the person is
+    // waving is new too, but it lies along their own skeleton, so it stays. When other people are moving in the same blob, the
+    // shape is kept to the room round this person's skeleton
+    for(let k=0;k<cand.cells.length;k++){const i=cand.cells[k];if(!vis[i]&&!(BAD&&BAD[i])){vis[i]=1;q[tl++]=i;}}
     let mnx=w,mxx=-1,mny=h,mxy=-1;while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(vis[j]||p[j]<=0.28||(BAD&&BAD[j]))continue;if(dw?!(dw[j]>=0.12||(A.p[j]<=0.5&&E[j]<=0.4)):E[j]>0.4)continue;vis[j]=1;q[tl++]=j;}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const j=yy*w+xx;if(vis[j]||p[j]<=0.28||(BAD&&BAD[j]))continue;if(lim&&!cap[j])continue;
+        if(on[j]){if(clk-tch[j]<0.35&&!(cap&&cap[j]))continue;}else if(E[j]>0.4)continue;vis[j]=1;q[tl++]=j;}}
     return mxx<0?null:{vis,mnx,mxx,mny,mxy};},
-  // how long each place has held still. This is kept for places on the screen, not for people the tracker is following, so it does
-  // not care how many people there are, whether they overlap, or whether the tracker loses someone and finds them again under a
-  // new number: a place that has had a body on it and no movement keeps counting, a place where something moves counts back down
-  // (quickly, not at once, so a classmate walking in front does not wipe the count). The same map remembers who has been taken:
-  // those places stay marked until the person walks off, moves a lot, or a while has passed
-  dwell(dt){const n=A.n,p=A.p,e=A.e;if(!this.dw||this.dw.length!==n){this.dw=new Float32Array(n);this.lock=new Float32Array(n);this.emp=new Float32Array(n);}const dw=this.dw,lk=this.lock,em=this.emp,BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null;
-    for(let i=0;i<n;i++){if(p[i]>0.5&&!(BAD&&BAD[i])){if(e[i]<0.3)dw[i]=Math.min(30,dw[i]+dt);else dw[i]=Math.max(0,dw[i]-dt*2.5);if(dw[i]>0.4)em[i]=0;else if(dw[i]<=0){em[i]+=dt;if(em[i]>0.8)lk[i]=0;}if(lk[i]>0)lk[i]=Math.max(0,lk[i]-dt);}
-      else{dw[i]=Math.max(0,dw[i]-dt*4);em[i]+=dt;if(em[i]>0.5)lk[i]=0;}}},
-  // the bodies that are standing still right now: each connected patch of places that have been still for a moment. How long a body
-  // has held still is the time most of it (three fifths) has been still for, so a waving hand or a fringe of flicker does not hold it back
-  bodies(){const w=A.w,h=A.h,n=w*h,dw=this.dw,p=A.p,lk=this.lock;if(!this.lab||this.lab.length!==n){this.lab=new Uint8Array(n);this.bq=new Int32Array(n);this.bv=new Float32Array(n);}const lab=this.lab,q=this.bq,bv=this.bv,out=[],minC=Math.max(20,n*0.005),T0=0.3;lab.fill(0);
-    for(let s0=0;s0<n;s0++){if(lab[s0]||dw[s0]<T0||p[s0]<=0.5)continue;let hd=0,tl=0;q[tl++]=s0;lab[s0]=1;let mnx=w,mxx=-1,mny=h,mxy=-1,locked=0;
-      while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;if(lk[i]>0)locked++;bv[hd-1]=dw[i];
-        if(x>0){const j=i-1;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}if(x<w-1){const j=i+1;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}if(y>0){const j=i-w;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}if(y<h-1){const j=i+w;if(!lab[j]&&dw[j]>=T0&&p[j]>0.5){lab[j]=1;q[tl++]=j;}}}
-      if(tl<minC)continue;const vals=bv.subarray(0,tl).slice().sort(),hold=vals[Math.floor(tl*0.4)],bh=(mxy-mny+1);
-      out.push({x:mnx*A.sx,y:mny*A.sy,w:(mxx-mnx+1)*A.sx,h:bh*A.sy,cells:q.slice(0,tl),hold,st:locked>tl*0.5?'done':mny<=0&&bh>h*0.8?'close':'hold'});}
+  /* Who is standing still. Two witnesses, neither of which is "nothing is changing here" (that is true of the inside of anybody
+     in plain clothes, however fast they walk, which is how people merely passing used to get taken):
+     1. the skeleton. Each person the pose model sees is remembered by where the middle of their shoulders is and how big they
+        are. Seen again within a third of a body's width of the same spot, at the same size, they have stood still since they
+        were first seen there; seen further off (a step sideways) or at another size (a step toward the camera), their time starts
+        again. Nothing has to follow people from frame to frame for this: a person who stands still is simply found in the same
+        place each time. Someone standing still among others who walk past, behind or in front, is still found standing still.
+     2. the outline, for people the pose model does not see. Every place remembers when it last changed between covered and not
+        covered. A shape has stood still for as long as (nearly) all of it has been covered and (nearly) nothing next to it has
+        been uncovered: walking, coming closer, swaying, or a line of people going by all keep changing a large part of the outline.
+        It is the stricter witness (anyone brushing against the shape restarts it), and it is not heard at all for a shape in which
+        the pose model has just seen someone move or arrive.
+     The same map of places remembers who has been taken, until they walk off or a while has passed */
+  occupancy(dt){const n=A.n,p=A.p;if(!this.on||this.on.length!==n){this.on=new Uint8Array(n);this.tch=new Float32Array(n).fill(-100);this.pend=new Float32Array(n);this.lock=new Float32Array(n);this.clk=0;this.at=[];}
+    const on=this.on,tch=this.tch,pend=this.pend,lk=this.lock,BAD=this.badOn&&this.bad&&this.bad.length===n?this.bad:null,clk=(this.clk+=dt);
+    // covered or not, with a little stickiness (in strength and in time), so the edge of a still body does not flicker
+    for(let i=0;i<n;i++){const raw=BAD&&BAD[i]?0:(on[i]?(p[i]>0.4?1:0):(p[i]>0.6?1:0));if(raw!==on[i]){pend[i]+=dt;if(pend[i]>=0.13){on[i]=raw;tch[i]=clk;pend[i]=0;}}else pend[i]=0;
+      if(lk[i]>0){if(on[i])lk[i]=Math.max(0,lk[i]-dt);else if(clk-tch[i]>0.5)lk[i]=0;}}},
+  anchors(){const P=poseScreen(),stamp=A.remote?(FACE.rpose?FACE.rpose.t:0):FACE.ptime,clk=this.clk,T=this.at;
+    if(P&&P.length&&stamp!==this.pst){this.pst=stamp;const iv=clk-(this.pcl==null?clk:this.pcl);this.pcl=clk;if(iv>0.01&&iv<2)this.pIv=this.pIv?this.pIv*0.8+iv*0.2:iv;const pu=this.pu=(this.pu||0)+1,gapMax=Math.max(0.8,3.5*(this.pIv||0.1)),C=[];
+      for(const L of P){const a=L[11],b=L[12];if(!a||!b||a.v<0.35||b.v<0.35)continue;const x=(a.x+b.x)/2,y=(a.y+b.y)/2,hl=L[23],hr=L[24];if(x<W*0.03||x>W*0.97||y<0||y>H)continue;   // (half out of the picture: not somebody to take)
+        // size: the shoulders, or the trunk when the person is turned and the shoulders narrow (so turning on the spot is not "coming closer")
+        let u=Math.hypot(a.x-b.x,a.y-b.y);if(hl&&hr&&hl.v>0.35&&hr.v>0.35)u=Math.max(u,Math.hypot((hl.x+hr.x)/2-x,(hl.y+hr.y)/2-y)*0.6);C.push({x,y,u:Math.max(u,W*0.03),L,k:-1});}
+      // each sighting goes first to a remembered person who was also seen last time and is near (the one it has been all along),
+      // nearest pairs first; only then to one not seen for a while. So someone walking past a person who is standing still, or
+      // through a spot somebody else has just left, stays themselves and does not take that place over
+      const pairs=[];C.forEach((c,ci)=>T.forEach((tk,ti)=>{const rr=c.u/tk.u0;if(rr<0.7||rr>1.43)return;const d=Math.hypot(c.x-tk.ox,c.y-tk.oy),r=Math.max(0.3*tk.u0,W*0.012);if(d<r*4)pairs.push([tk.pu===pu-1?0:1,d,ci,ti,r]);}));pairs.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+      const used=new Set();for(const [st,d,ci,ti,r] of pairs){const c=C[ci],tk=T[ti];if(c.k>=0||used.has(ti))continue;
+        if(d<=r&&Math.abs(c.u/tk.u0-1)<=0.13){   // the same spot, the same size: still standing (unless the spot was unwatched too long to say it is the same person)
+          if(clk-tk.tLast>gapMax){tk.ox=c.x;tk.oy=c.y;tk.u0=c.u;tk.t0=clk;tk.n=1;}else{tk.n++;tk.ox+=(c.x-tk.ox)*0.03;tk.oy+=(c.y-tk.oy)*0.03;}}
+        // moved. If the remembered person had stood there a good while, this may be somebody else crossing in front of them: they are
+        // left as they are (to be seen again, or forgotten) and the mover is remembered separately. Otherwise the time starts again
+        else if(tk.tLast-tk.t0>=0.6&&tk.n>=4)continue;else{tk.ox=c.x;tk.oy=c.y;tk.u0=c.u;tk.t0=clk;tk.n=1;}
+        c.k=ti;used.add(ti);tk.x=c.x;tk.y=c.y;tk.L=c.L;tk.tLast=clk;tk.pu=pu;}
+      for(const c of C)if(c.k<0)T.push({ox:c.x,oy:c.y,x:c.x,y:c.y,u0:c.u,t0:clk,tLast:clk,n:1,L:c.L,pu});}
+    for(let i=T.length-1;i>=0;i--)if(clk-T[i].tLast>2.5)T.splice(i,1);return T;},
+  // the shapes on the screen, each with the time its outline has held still: of everything that changed in and next to the shape
+  // (places newly covered, places just left), the time before which no more than a fifth of the shape's size had changed
+  comps(){const w=A.w,h=A.h,n=w*h,on=this.on,tch=this.tch,lk=this.lock,clk=this.clk;if(!this.lab||this.lab.length!==n){this.lab=new Int32Array(n);this.bq=new Int32Array(n);this.ag=new Float32Array(n*2);this.tv=new Int32Array(n);this.dq=new Int32Array(n);this.dd=new Uint8Array(n);this.tvs=0;}
+    const lab=this.lab,q=this.bq,ag=this.ag,tv=this.tv,dq=this.dq,dd=this.dd,out=[],minC=Math.max(20,n*0.005),R=Math.max(4,Math.round(w*0.06)),TM=this.HOLD+1.5;lab.fill(0);let id=0;
+    for(let s0=0;s0<n;s0++){if(lab[s0]||!on[s0])continue;id++;let hd=0,tl=0;q[tl++]=s0;lab[s0]=id;let mnx=w,mxx=-1,mny=h,mxy=-1,locked=0;
+      while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;if(lk[i]>0)locked++;
+        if(x>0){const j=i-1;if(!lab[j]&&on[j]){lab[j]=id;q[tl++]=j;}}if(x<w-1){const j=i+1;if(!lab[j]&&on[j]){lab[j]=id;q[tl++]=j;}}if(y>0){const j=i-w;if(!lab[j]&&on[j]){lab[j]=id;q[tl++]=j;}}if(y<h-1){const j=i+w;if(!lab[j]&&on[j]){lab[j]=id;q[tl++]=j;}}}
+      if(tl<minC)continue;let na=0,dh=0,dl=0;const st=++this.tvs,tryOff=(j,dep)=>{if(!on[j]&&tv[j]!==st&&clk-tch[j]<TM){tv[j]=st;dd[j]=dep;dq[dl++]=j;}};
+      for(let k=0;k<tl;k++){const i=q[k],x=i%w,y=(i/w)|0;ag[na++]=clk-tch[i];if(x>0)tryOff(i-1,1);if(x<w-1)tryOff(i+1,1);if(y>0)tryOff(i-w,1);if(y<h-1)tryOff(i+w,1);}
+      while(dh<dl){const i=dq[dh++],x=i%w,y=(i/w)|0,dep=dd[i];ag[na++]=clk-tch[i];if(dep>=R)continue;if(x>0)tryOff(i-1,dep+1);if(x<w-1)tryOff(i+1,dep+1);if(y>0)tryOff(i-w,dep+1);if(y<h-1)tryOff(i+w,dep+1);}
+      const idx=Math.floor(tl*0.2);let ts=30;if(na>idx){const a=ag.subarray(0,na);a.sort();ts=Math.min(30,a[idx]);}
+      out.push({id,x:mnx*A.sx,y:mny*A.sy,w:(mxx-mnx+1)*A.sx,h:(mxy-mny+1)*A.sy,cells:q.slice(0,tl),n:tl,ts,locked,close:mny<=0&&(mxy-mny+1)>h*0.8,tr:0,young:false});}
+    return out;},
+  // the room round one skeleton (its bones, with space for hair, clothes and bags), as a map of places
+  capMask(L,k){const pp=mCroquis.partsOf({pose:L});if(!pp)return null;const w=A.w,h=A.h,n=w*h,pool=this.cmP||(this.cmP=[]),ix=this.cmI=(this.cmI||0)+1;let m=pool[ix-1];if(!m||m.length!==n)m=pool[ix-1]=new Uint8Array(n);m.fill(0);
+    for(const q of pp.S){const r=q[5]*k+A.sx,ax=q[1],ay=q[2],dx=q[3]-ax,dy=q[4]-ay,l2=dx*dx+dy*dy,x0=clamp(Math.floor((Math.min(ax,q[3])-r)/A.sx),0,w-1),x1=clamp(Math.ceil((Math.max(ax,q[3])+r)/A.sx),0,w-1),y0=clamp(Math.floor((Math.min(ay,q[4])-r)/A.sy),0,h-1),y1=clamp(Math.ceil((Math.max(ay,q[4])+r)/A.sy),0,h-1);
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=y*w+x;if(m[i])continue;const px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;let u=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0;u=u<0?0:u>1?1:u;const ex=px-ax-dx*u,ey=py-ay-dy*u;if(ex*ex+ey*ey<r*r)m[i]=1;}}
+    return m;},
+  // everyone who could be taken right now, each with how long they have stood still
+  cands(HOLD,FAR){const w=A.w,h=A.h,n=w*h,on=this.on,tch=this.tch,lk=this.lock,clk=this.clk,K=this.comps(),lab=this.lab,T=this.anchors(),byId={},out=[],minC=Math.max(20,n*0.005);this.cmI=0;for(const c of K)byId[c.id]=c;
+    const labAt=(x,y)=>{const cx=clamp((x/A.sx)|0,0,w-1),cy=clamp((y/A.sy)|0,0,h-1);for(let r=0;r<=2;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){const xx=cx+dx,yy=cy+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;const l=lab[yy*w+xx];if(l)return l;}return 0;};
+    // which shape each remembered person is in; a shape in which someone has just moved or arrived is not judged by its outline
+    for(const tk of T){tk.c=null;if(clk-tk.tLast>1.5)continue;const c=byId[labAt(tk.x,tk.y)];if(!c)continue;tk.c=c;c.tr++;if(tk.tLast-tk.t0<1)c.young=true;}
+    const piv=clamp(this.pIv||0.1,0.05,0.6);
+    for(const tk of T){const c=tk.c;if(!c||clk-tk.tLast>1||tk.n<2)continue;const hold=Math.min(clk-tk.t0,tk.tLast-tk.t0+piv*1.2);if(hold<0.25||this.bodyH({pose:tk.L})<FAR*0.94)continue;
+      // their own body (the room close round the skeleton) must itself have been there all that time: someone walking in a line of
+      // people has a trunk that looks covered throughout, but a head and legs that have only just arrived
+      const mt=this.capMask(tk.L,1.2);if(!mt)continue;let ct=0,lt=0;const need=Math.min(hold,HOLD)*0.8;for(let i=0;i<n;i++)if(mt[i]&&on[i]){ct++;if(clk-tch[i]>=need)lt++;}if(ct<minC*0.6)continue;
+      const m=this.capMask(tk.L,1.9);let cov=0,lkd=0,mnx=w,mxx=-1,mny=h,mxy=-1;const cells=[];for(let i=0;i<n;i++){if(!m[i]||!on[i])continue;cov++;cells.push(i);if(lk[i]>0)lkd++;const x=i%w,y=(i/w)|0;if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y<mny)mny=y;if(y>mxy)mxy=y;}
+      const nose=tk.L[0];out.push({x:mnx*A.sx,y:mny*A.sy,w:(mxx-mnx+1)*A.sx,h:(mxy-mny+1)*A.sy,cells,hold:lt>=ct*0.78?hold:Math.min(hold,HOLD*0.9),st:lkd>cov*0.5?'done':c.close&&nose&&nose.y<H*0.08?'close':'hold',cap:m,limit:!(c.ts>=1.2&&!c.young),fresh:clk-tk.tLast<Math.max(0.25,piv*1.8),tk});}
+    for(const c of K){if(c.tr)continue;out.push({x:c.x,y:c.y,w:c.w,h:c.h,cells:c.cells,hold:Math.max(0,c.ts-0.2),st:c.locked>c.n*0.5?'done':c.close?'close':'hold',cap:null,limit:false,fresh:true,tk:null});}
     return out;},
   capture(tr,col){const g=this.group(tr);if(!g)return null;const w=A.w,h=A.h,vis=g.vis,gx0=g.mnx-2,gy0=g.mny-2,gw=g.mxx-g.mnx+5,gh=g.mxy-g.mny+5;
     const keep=new Uint8Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const cx=gx0+x,cy=gy0+y;let k=0;for(let dy=-2;dy<=2&&!k;dy++)for(let dx=-2;dx<=2;dx++){const xx=cx+dx,yy=cy+dy;if(xx>=0&&yy>=0&&xx<w&&yy<h&&vis[yy*w+xx]){k=1;break;}}keep[y*gw+x]=k;}
@@ -1334,9 +1387,10 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     // weak but connected parts become solid, edges softened; then one solid piece: specks that do not touch the body are dropped
     m=hyst(m,mw2,mh2,0.5,0.22);{const tb=new Float32Array(m.length);blur3(m,tb,mw2,mh2);}
     const on=new Uint8Array(mw2*mh2);for(let i=0;i<on.length;i++)on[i]=m[i]>0.4?1:0;keepLargest(on,mw2,mh2);for(let i=0;i<on.length;i++)if(m[i]>0.4&&!on[i])m[i]=0;
-    // these places are taken now; and how many people the shape holds: the people the tracker has standing inside it (at least one)
+    // these places are taken now; and how many people the shape holds: those remembered as standing still inside it (at least one)
     if(this.lock&&this.lock.length===w*h)for(let i=0;i<w*h;i++)if(vis[i])this.lock[i]=12;
-    let ppl=0;TR.tracks.forEach(t=>{if(TR.f-t.seen<=2&&t.stS!=='far'){const cx=clamp((t.sx/A.sx)|0,0,w-1),cy=clamp((t.sy/A.sy)|0,0,h-1);if(vis[cy*w+cx])ppl++;}});
+    let ppl=0;const cl=this.clk;(this.at||[]).forEach(t=>{if(cl-t.tLast<1.5&&t.tLast-t.t0>=this.HOLD*0.5){const cx=clamp((t.x/A.sx)|0,0,w-1),cy=clamp((t.y/A.sy)|0,0,h-1);if(vis[cy*w+cx])ppl++;}});
+    if(!ppl)TR.tracks.forEach(t=>{if(TR.f-t.seen<=2&&t.stS!=='far'){const cx=clamp((t.sx/A.sx)|0,0,w-1),cy=clamp((t.sy/A.sy)|0,0,h-1);if(vis[cy*w+cx])ppl++;}});
     return {m,gw:mw2,gh:mh2,sx:gx0*A.sx,sy:gy0*A.sy,sw:gw*A.sx,sh:gh*A.sy,col,ppl:Math.max(1,ppl)};},
   draw(t,dt){dt=dt||0.016;if((this.f=(this.f||0)+1)%2===0)TR.update();const ok=STACK.ensure(),ww=this.wellW(),k=ww/STACK.viewW,fy=H;
     ctx.fillStyle='#ede8df';ctx.fillRect(0,0,W,H);
@@ -1352,16 +1406,16 @@ const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK
     const rw=W-ww,vs=Math.min(rw/W*0.96,1),vx=ww+(rw-W*vs)/2,vy=H-H*vs;if(out)ctx.drawImage(this.liveFar,vx,vy,W*vs,H*vs);ctx.drawImage(this.live,vx,vy,W*vs,H*vs);
     if(this.hold>0.05&&this.hiN>2){const HW=w*this.K,HH=h*this.K;if(this.f%3===0||!this.liveHi){this.disp=hyst(this.hi,HW,HH,0.5,0.22,this.disp);if(!this.dtmp||this.dtmp.length!==HW*HH)this.dtmp=new Float32Array(HW*HH);blur3(this.disp,this.dtmp,HW,HH);
       this.liveHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,[214,205,192],this.liveHi);this.fillHi=upsampleMask(this.disp,HW,HH,1,0.4,0.6,hex(this.col||'#8fa382'),this.fillHi);}ctx.drawImage(this.liveHi,vx,vy,W*vs,H*vs);}else{this.liveHi=null;}
-    // the one being measured: of the bodies standing still (near enough, not yet taken), the one that has held still longest
-    this.dwell(dt);this.cool=Math.max(0,(this.cool||0)-dt);const bodies=this.bodies();let cand=null;for(const b of bodies)if(b.st==='hold'&&(!cand||b.hold>cand.hold))cand=b;
-    const state=cand?'hold':bodies.some(b=>b.st==='done')?'done':bodies.some(b=>b.st==='close')?'close':live.some(t=>t.stS!=='far')?'move':live.length?'far':'none';
+    // the one being measured: of those standing still (near enough, not yet taken), the one who has stood still longest
+    this.occupancy(dt);this.cool=Math.max(0,(this.cool||0)-dt);const bodies=this.cands(HOLD,FAR);let cand=null;for(const b of bodies)if(b.st==='hold'&&b.hold>=0.35&&(!cand||b.hold>cand.hold))cand=b;
+    const state=cand?'hold':bodies.some(b=>b.st==='done')?'done':bodies.some(b=>b.st==='close')?'close':live.some(t=>t.stS!=='far')||bodies.length?'move':live.length?'far':'none';
     // the same body as a moment ago? (its patch still covers where the middle of it was) If not, start its picture afresh
     if(cand){const c=this.hc,same=c&&cand.x<=c[0]&&cand.x+cand.w>=c[0]&&cand.y<=c[1]&&cand.y+cand.h>=c[1];if(!same){this.gb=null;this.col=null;if(this.accP&&this.accP.length===A.n)this.accP.set(A.p);}this.hc=[cand.x+cand.w/2,cand.y+cand.h/2];}else this.hc=null;
     this.hold=cand?Math.min(HOLD,cand.hold):0;if(this.hold>0.05&&cand)this.accum(cand);else this.resetAcc();
     if(this.hold>0.05&&cand){if(!this.col)this.col=STACK.color();const pr=Math.min(1,this.hold/HOLD),rgb=hex(this.col);const g=(this.f&3)===0||!this.gb?this.group(cand):null;if(g)this.gb=[g.mnx*A.sx,g.mny*A.sy,(g.mxx-g.mnx+1)*A.sx,(g.mxy-g.mny+1)*A.sy];
       const gb=this.gb||[cand.x,cand.y,cand.w,cand.h];this.fill=upsampleMask(pb,w,h,2,0.38,0.62,rgb,this.fill);const by=gb[1]+gb[3]+A.sy,top=by-(gb[3]*1.3+A.sy*2)*pr;ctx.save();ctx.beginPath();ctx.rect(vx+(gb[0]-A.sx*2)*vs,vy+top*vs,(gb[2]+A.sx*4)*vs,(by-top+2)*vs);ctx.clip();ctx.drawImage(this.fill,vx,vy,W*vs,H*vs);if(this.liveHi&&this.fillHi)ctx.drawImage(this.fillHi,vx,vy,W*vs,H*vs);ctx.restore();}else this.gb=null;
     // taken one at a time, with a breath between, so a row of students standing still pile up one after another instead of all at once
-    if(cand&&cand.hold>=HOLD&&ok&&this.cool<=0){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.hc=null;this.resetAcc();this.cool=0.9;
+    if(cand&&cand.hold>=HOLD&&cand.fresh&&ok&&this.cool<=0){const c=this.capture(cand,this.col||STACK.color());this.col=null;this.hold=0;this.hc=null;this.resetAcc();this.cool=0.9;
       if(c){const pc=STACK.make(c.m,c.gw,c.gh,c.col,k);if(pc){STACK.people+=c.ppl;this.lastPpl=c.ppl;STACK.fly.push({pc,t:0,sx:vx+c.sx*vs,sy:vy+c.sy*vs,sw:c.sw*vs,sh:c.sh*vs});this.msg=2.4;}}}
     // the pile
     if(ok)STACK.step(dt,k);const flying=new Set(STACK.fly.map(f=>f.pc));

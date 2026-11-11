@@ -13,6 +13,7 @@ node tests/smoke.js
 ```bash
 node tests/stack.js
 node tests/stack-crowd.js   # 쌓기 · 사람이 많거나 겹칠 때
+node tests/stack-pass.js    # 쌓기 · 스쳐 지나가는 사람은 안 찍히는지
 ```
 
 ```bash
