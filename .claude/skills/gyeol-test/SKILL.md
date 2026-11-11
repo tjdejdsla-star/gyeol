@@ -32,3 +32,7 @@ python3 -m http.server 8766
 - 헤드리스 Chromium의 WebGL은 소프트웨어(SwiftShader)라서 `window.GLFORCE = true`를 넣어야 그래픽 경로가 켜진다. fps 숫자는 실제 기기보다 훨씬 낮으니 비교용으로만 본다.
 - 중계 서버(0.peerjs.com)는 이 환경에서 막혀 있어 실제 2대 연결은 시험할 수 없다. `display-sim.js`의 BroadcastChannel 흉내로 대신한다.
 - 스크린샷은 `tests/shots/`(커밋 안 함)에 저장된다. 사람이 볼 화면은 deviceScaleFactor 2로 찍는다.
+
+## 가짜 카메라의 한계
+- 크롬의 가짜 카메라는 움직이는 시험 무늬를 보여 주므로, 화면 변화량(`A.e`)과 흐름(`A.u`,`A.v`)은 가짜 사람과 무관합니다. 움직임에 반응하는 기능을 시험할 때는 이 값을 직접 넣어 주세요.
+- 역광 보정은 `--use-file-for-fake-video-capture`에 어둡게 만든 영상(가운데 사람은 어둡고 둘레는 밝게)을 넣고 `tests/real-models.js`처럼 실제 모델로 봅니다. `__gyeol.BL.s`가 보정 세기입니다.
