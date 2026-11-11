@@ -17,6 +17,10 @@ node tests/stack-pass.js    # 쌓기 · 스쳐 지나가는 사람은 안 찍히
 ```
 
 ```bash
+node tests/crowd-auto.js   # 붐빌 때 자동 전환이 쌓기 · 시를 건너뛰는지 (약 2분)
+```
+
+```bash
 node tests/real-models.js
 ```
 

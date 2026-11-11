@@ -195,6 +195,7 @@ body.role-sensor #credit{display:none}
       <div class="row"><div class="l">역광 보정<small>밝은 문·창을 등지고 서서 사람이 어둡게 찍히면 자동으로 밝혀요 (화면, 색·명암, 사람 인식 모두)</small></div><div class="seg" id="segBl"><button>자동</button><button>끄기</button></div></div>
       <div class="row"><div class="l">카메라 노출 조정<small>시험 기능 · 되는 카메라만: 카메라 자체가 사람에 맞춰 더 밝게 찍도록 해요</small></div><label class="switch"><input type="checkbox" id="swBlHw"><span></span></label></div>
       <div class="row"><div class="l">자동 전환<small>일정 시간마다 다음 모드로</small></div><div class="seg" id="segAuto"><button>끄기</button><button>20초</button><button>45초</button><button>90초</button></div></div>
+      <div class="row"><div class="l">붐빌 때 건너뛰기<small>자동 전환을 켰을 때: 지나가는 사람이 계속 많으면 가만히 서 있어야 하는 필터(쌓기 · 시)는 건너뛰어요. 한산해지면 다시 나와요</small></div><div class="seg" id="segCrowd"><button>켜기</button><button>끄기</button></div></div>
       <div class="row"><div class="l">그래픽 가속<small>노트북·태블릿 내장 그래픽으로 무거운 모드를 그려요</small></div><label class="switch"><input type="checkbox" id="swGpu"><span></span></label></div>
       <div class="row"><div class="l">화면 품질<small>느린 노트북·태블릿은 자동으로 가볍게</small></div><div class="seg" id="segPerf"><button>자동</button><button>선명</button><button>보통</button><button>가볍게</button></div></div>
     </div>
@@ -352,7 +353,7 @@ PALETTES.forEach(P=>{
 const pal=()=>PALETTES[S.pal];
 
 /* ---------- settings ---------- */
-const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반',bl:'auto',blHw:false,near:false};
+const DEF={off:[],title:'숭의여자중학교 동아리 전시회',verses:'',mode:0,pal:0,sens:6,trail:6,gain:5,react:1,trailp:1,mirror:true,auto:0,debug:false,facing:'user',detect:'motion',stackDist:1,perf:'auto',fit:'fill',fitV:2,credit:'제작 · 종합미술반',bl:'auto',blHw:false,near:false,crowd:true};
 const S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem('gyeol.settings')||'{}'));}catch(e){}
 if(S.fitV!==2){S.fit='fill';S.fitV=2;}
@@ -758,6 +759,16 @@ const GLSRC={
 // fading tail, running along a ray toward one far point off to the left, in four depths (few, broad and slow in front; many, fine and
 // fast behind). The rays lean and sway a little so nothing is ruler-straight, and bend slightly round a body. Behind them a faint
 // drift of cloud and a few still stars. A person is not a cut-out but a body of light: white-hot inside, with no edge, only glow.
+// ink on paper: the grid is read a little off by the paper's own unevenness, so every edge wanders
+// along the fibres. The figure and the brush ink (r) are black and break into dry streaks at their edges; wet ink (g) is a grey fringe with
+// a darker line where the pigment stops; the dried wash (b) is paler still
+ink:`uniform sampler2D I,N;uniform float asp;
+void main(){vec2 p=vec2(uv.x*asp,uv.y);vec4 n1=texture(N,p*1.9),n2=texture(N,p*7.3+0.37),n3=texture(N,p*vec2(3.1,23.0)+0.11);
+  vec2 ws=vec2(1.0/asp,1.0),wf=(n2.ba-0.5)*0.016;vec4 s=texture(I,uv+((n1.rg-0.5)*0.05+wf)*ws);float b=texture(I,uv+((n1.rg-0.5)*0.012+wf*0.6)*ws).r,d=s.g,f=s.b,tooth=n2.r*0.6+n1.b*0.4;
+  float body=smoothstep(0.34,0.62,b+(n3.a-0.5)*0.42+(n2.g-0.5)*0.2)*(0.86+0.14*n1.a)*0.95;
+  float wet=(smoothstep(0.012,0.1,d)*0.13+smoothstep(0.085,0.15,d)*(1.0-smoothstep(0.15,0.32,d))*0.15+smoothstep(0.15,0.95,d)*0.3)*(0.82+0.36*tooth);
+  float wsh=smoothstep(0.015,0.55,f)*0.2*(0.7+0.6*tooth),k=1.0-(1.0-body)*(1.0-wet)*(1.0-wsh);
+  o=vec4(mix(vec3(1.0),vec3(0.07,0.075,0.09),clamp(k,0.0,0.96)),1.0);}`,
 lumen:`uniform sampler2D M,G;uniform vec2 F,rz;uniform float t,fl,act,asp,gseed,gz,cv;
 float h(vec2 p){uvec2 q=uvec2(ivec2(floor(p)))*uvec2(1597334673u,3812015801u);uint n=(q.x^q.y)*1597334673u;return float(n)*(1.0/4294967295.0);}
 float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(h(i),h(i+vec2(1.0,0.0)),f.x),mix(h(i+vec2(0.0,1.0)),h(i+vec2(1.0,1.0)),f.x),f.y);}
@@ -1349,7 +1360,7 @@ function hyst(src,w,h,hiT,loT,out){const n=w*h;if(!out||out.length!==n)out=new F
 function keepLargest(on,w,h){const lab=new Int32Array(w*h),q=new Int32Array(w*h);let best=0,bestN=0,id=0;for(let s0=0;s0<w*h;s0++){if(!on[s0]||lab[s0])continue;id++;let hd=0,tl=0;q[tl++]=s0;lab[s0]=id;
     while(hd<tl){const i=q[hd++],x=i%w;if(x>0&&on[i-1]&&!lab[i-1]){lab[i-1]=id;q[tl++]=i-1;}if(x<w-1&&on[i+1]&&!lab[i+1]){lab[i+1]=id;q[tl++]=i+1;}if(i>=w&&on[i-w]&&!lab[i-w]){lab[i-w]=id;q[tl++]=i-w;}if(i<w*h-w&&on[i+w]&&!lab[i+w]){lab[i+w]=id;q[tl++]=i+w;}}
     if(tl>bestN){bestN=tl;best=id;}}for(let i=0;i<w*h;i++)if(lab[i]!==best)on[i]=0;}
-const mStack={id:'stack',name:'쌓기',HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 쨍한 색 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
+const mStack={id:'stack',name:'쌓기',still:true,HOLD:2,busy(){return this.hold>0.3||STACK.fly.length>0||this.msg>0;},desc:'앞에 2초 멈춰 서면 그 모습이 쨍한 색 조각이 되어 왼쪽으로 떨어지고, 통통 튀며 쌓인다. 여럿이 있어도 멈춘 사람 기준으로 찍히고, 새로고침 전까지 모두 남는다',
   init(){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);this.hold=0;this.hc=null;this.cool=0;this.on=null;this.at=[];this.pst=-1;this.pcl=null;this.msg=0;this.live=null;this.fill=null;STACK.ensure();},
   wellW(){return Math.round(W*(W>H?0.42:0.6));},
   // how far back someone may stand and still be taken: the height they would have with the whole body in view, as a share of the screen
@@ -1929,7 +1940,7 @@ const POET={sdk:null,loading:null,
     const p=pool[(Math.random()*pool.length)|0]||P[0];POET.lastTitle=p.t;return {title:p.t,lines:p.l.slice(),by:'local'};}
 };
 const POEM_IDLE=['가만히 서 있으면','당신을 위한 시가','이곳에 쓰입니다','STAND STILL','AND A POEM','WILL BE WRITTEN'];
-const mPoem={id:'poem',name:'시',fullFrame:true,busy(){return this.state!=='idle';},desc:'앞에 가만히 서 있으면 그 사람의 실루엣을 보고 Claude가 짧은 시를 쓴다. 시는 몸의 윤곽을 따라 흐르고, 다리 사이와 바깥으로 흘러나온다',
+const mPoem={id:'poem',name:'시',still:true,fullFrame:true,busy(){return this.state!=='idle';},desc:'앞에 가만히 서 있으면 그 사람의 실루엣을 보고 Claude가 짧은 시를 쓴다. 시는 몸의 윤곽을 따라 흐르고, 다리 사이와 바깥으로 흘러나온다',
   init(){this.state='idle';this.hold=0;this.lastPos=null;this.poem=null;this.shown=0;this.f=0;this.snap=null;this.snapBox=null;this.sil=mkCanvas(2,2);this.tmp=new Float32Array(A.n);this.cool=0;},
   capture(tr){ // freeze the silhouette around this person: a blue-ready mask for the screen and a black-on-white PNG for Claude
     const pad=Math.max(tr.w,tr.h)*0.05,x0=Math.max(0,tr.x-pad),y0=Math.max(0,tr.y-pad),x1=Math.min(W,tr.x+tr.w+pad),y1=Math.min(H,tr.y+tr.h+pad);
@@ -2589,7 +2600,285 @@ const mCroquis={id:'croquis',name:'스케치 2',desc:'윤곽선 없이 무른 �
     // so that drawing never takes more than a fifth of the time)
     const per=Math.min(0.5,Math.max(this.PER,(this.bt||0)*0.0045));if(this.tS<0||t-this.tS>=per||t<this.tS){const b0=performance.now();this.build();this.tS=t;const bd=performance.now()-b0;this.bt=this.bt?this.bt*0.7+bd*0.3:bd;this.load=clamp((this.load||1)*(this.bt>26?1.07:this.bt<14?0.97:1),1,1.9);}
     if(!this.empty){ctx.globalCompositeOperation='multiply';ctx.drawImage(this.cv,0,0,W,H);ctx.globalCompositeOperation='source-over';}}};
-const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mCroquis,mContour,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mSmoke,mLumen];
+// the separate shapes in a field on the analysis grid, and how near each one stands (just above 0: far off ... 1: close), judged by
+// how tall it is in the picture; a shape cut off by the bottom of the picture is taken to go on below it. Every place of a shape
+// (and the soft fringe one cell round it) gets its shape's value; everywhere else is 0
+function shapeDepth(pb,w,h,out){const n=w*h;let L=shapeDepth.L;if(!L||L.length!==n){L=shapeDepth.L=new Uint8Array(n);shapeDepth.q=new Int32Array(n);}const q=shapeDepth.q;L.fill(0);if(!out||out.length!==n)out=new Float32Array(n);out.fill(0);
+  for(let s0=0;s0<n;s0++){if(L[s0]||pb[s0]<=0.3)continue;let hd=0,tl=0,mny=h,mxy=-1;q[tl++]=s0;L[s0]=1;
+    while(hd<tl){const i=q[hd++],x=i%w,y=(i/w)|0;if(y<mny)mny=y;if(y>mxy)mxy=y;if(x>0&&!L[i-1]&&pb[i-1]>0.3){L[i-1]=1;q[tl++]=i-1;}if(x<w-1&&!L[i+1]&&pb[i+1]>0.3){L[i+1]=1;q[tl++]=i+1;}if(y>0&&!L[i-w]&&pb[i-w]>0.3){L[i-w]=1;q[tl++]=i-w;}if(y<h-1&&!L[i+w]&&pb[i+w]>0.3){L[i+w]=1;q[tl++]=i+w;}}
+    let f=(mxy-mny+1)/h;if(mxy>=h-2)f=Math.max(f,(h-mny)/h*1.2);const nr=Math.max(0.001,Math.min(1,(f-0.3)/0.5));
+    for(let k=0;k<tl;k++){const i=q[k],x=i%w;out[i]=nr;if(x>0&&!out[i-1])out[i-1]=nr;if(x<w-1&&!out[i+1])out[i+1]=nr;if(i>=w&&!out[i-w])out[i-w]=nr;if(i<n-w&&!out[i+w])out[i+w]=nr;}}
+  return out;}
+/* 색 그림자: a white wall lit by three lamps, one red, one green, one blue, standing apart. Together they make white. Whoever walks
+   in front blocks each lamp in a different place, so every person throws three shadows: where the red lamp is hidden the wall is
+   left cyan, where the green one is hidden magenta, where the blue one is hidden yellow; where two shadows cross, one lamp alone is
+   left and the wall is red, green or blue; where all three cross it is dark. It is worked out the way it happens: each lamp's light
+   is laid down with that lamp's shadows cut out of it, and the three are added. The nearer a person stands to the lamps (the larger
+   they are in the picture) the further apart and the softer their shadows fall. The more people, the more colours */
+const mCShadow={id:'cshadow',name:'색 그림자',desc:'빨강·초록·파랑 세 조명이 비추는 흰 벽. 앞을 지나가면 조명마다 다른 자리에 그림자가 져서 한 사람에게서 청록·자홍·노랑 세 그림자가 어긋나게 생기고, 그림자가 겹친 곳은 빨강·초록·파랑, 셋이 다 겹친 곳은 어두워진다. 가까이 올수록 그림자가 더 벌어지고, 사람이 많을수록 색이 풍성해진다',
+  COL:['#ff3b30','#28dc5a','#285aff'],
+  init(){const n=A.n;this.pb=new Float32Array(n);this.tmp=new Float32Array(n);this.nr=new Float32Array(n);this.F=[new Float32Array(n),new Float32Array(n),new Float32Array(n)];this.mk=[null,null,null];this.lc=[null,null,null];
+    const key=[W,H].join(',');if(this.key===key)return;this.key=key;const m=Math.min(W,H),q=Math.min(DPR,1.5),B=this.wall=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx,R=seeded(12);x.scale(q,q);x.fillStyle='#f8f5ee';x.fillRect(0,0,W,H);
+    // a painted plaster wall: faint mottling, the fine tooth of the paint, and a little falling-off of the light toward the corners
+    for(let k=0;k<60;k++){const px=R()*W,py=R()*H,r=m*(0.08+R()*0.22),g=x.createRadialGradient(px,py,0,px,py,r);g.addColorStop(0,R()<0.5?'rgba(255,255,255,0.10)':'rgba(120,112,100,0.035)');g.addColorStop(1,'rgba(128,128,128,0)');x.fillStyle=g;x.fillRect(px-r,py-r,r*2,r*2);}
+    for(let k=0;k<Math.round(W*H/200);k++){const px=R()*W,py=R()*H;x.fillStyle=R()<0.5?'rgba(255,255,255,'+(0.1+R()*0.2)+')':'rgba(90,84,74,'+(0.02+R()*0.045)+')';x.fillRect(px,py,0.7+R()*1.5,0.7+R()*1.5);}
+    const g=x.createRadialGradient(W/2,H*0.46,m*0.4,W/2,H*0.46,Math.hypot(W,H)*0.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(40,36,30,0.16)');x.fillStyle=g;x.fillRect(0,0,W,H);},
+  draw(t,dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,tmp=this.tmp,F=this.F,m=Math.min(W,H);if(pb.length!==n){this.init();return;}
+    pb.set(A.p);blur3(pb,tmp,w,h);const nr=this.nr=shapeDepth(pb,w,h,this.nr);
+    // people in three depths: far (close to the wall: sharp shadows, hardly apart), middle, near (soft, wide apart)
+    for(let i=0;i<n;i++){const v=pb[i],d=nr[i];F[0][i]=d<0.34?v:0;F[1][i]=d>=0.34&&d<0.67?v:0;F[2][i]=d>=0.67?v:0;}
+    box5(F[2],tmp,w,h);blur3(F[1],tmp,w,h);this.mk[0]=upsampleMask(F[0],w,h,2,0.4,0.6,[0,0,0],this.mk[0]);this.mk[1]=upsampleMask(F[1],w,h,2,0.32,0.66,[0,0,0],this.mk[1]);this.mk[2]=upsampleMask(F[2],w,h,2,0.24,0.72,[0,0,0],this.mk[2]);
+    const cw=Math.max(2,Math.round(W/2)),ch=Math.max(2,Math.round(H/2)),s=cw/W,Rr=Math.hypot(W,H)*0.6,SP=[0.012,0.03,0.062];
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.imageSmoothingEnabled=true;
+    for(let L=0;L<3;L++){let c=this.lc[L];if(!c||c.width!==cw||c.height!==ch)c=this.lc[L]=mkCanvas(cw,ch);const x=c.cx;x.setTransform(s,0,0,s,0,0);x.globalCompositeOperation='source-over';x.globalAlpha=1;
+      // where this lamp stands (left, middle, right; they sway a little) decides where its pool of light falls and which way its shadows lean
+      const side=L-1,lx=side*(0.9+0.12*Math.sin(t*0.21+L*2.1)),ly=0.22+0.1*Math.sin(t*0.17+L*1.3),px=W*(0.5-side*0.09+0.05*Math.sin(t*0.13+L*2.4)),py=H*(0.46+0.05*Math.cos(t*0.11+L*1.7)),g=x.createRadialGradient(px,py,Rr*0.42,px,py,Rr);g.addColorStop(0,this.COL[L]);g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,W,H);
+      x.imageSmoothingEnabled=true;for(let d=0;d<3;d++){const o=SP[d]*W;x.globalAlpha=d===0?0.96:d===1?0.94:0.9;x.drawImage(this.mk[d],-lx*o,ly*o*0.6,W,H);}x.globalAlpha=1;
+      ctx.globalCompositeOperation=L?'lighter':'source-over';ctx.drawImage(c,0,0,W,H);}
+    ctx.globalCompositeOperation='lighter';ctx.fillStyle='rgb(30,27,38)';ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation='multiply';ctx.drawImage(this.wall,0,0,W,H);ctx.globalCompositeOperation='source-over';}};
+/* 창호지 그림자: a paper door seen from the dark side, a warm lamp burning in the room behind it. People pass between the lamp and the
+   paper and are seen only as shadows on it: whoever is close to the paper is dark and sharp, whoever is further back is pale and
+   blurred. In front of the paper is the wooden lattice of the door. A bamboo outside throws its own faint shadow across one corner
+   and stirs, so the door is never still */
+const mHanji={id:'hanji',name:'창호지 그림자',desc:'따뜻한 등불이 비치는 한지 문. 사람은 문 너머의 그림자로만 보이는데, 문에 가까울수록 짙고 또렷하고 멀수록 옅고 흐리다. 앞에는 나무 문살이 있고, 한쪽 구석에는 대나무 그림자가 바람에 가만히 흔들린다',
+  init(){const n=A.n;this.pb=new Float32Array(n);this.pd=new Float32Array(n);this.cf=new Float32Array(n);this.tmp=new Float32Array(n);this.nr=new Float32Array(n);this.soft=null;this.core=null;
+    const key=[W,H].join(',');if(this.key===key)return;this.key=key;const m=Math.min(W,H),q=Math.min(DPR,1.5),R=seeded(33);
+    // the paper: lit from behind, brightest where the lamp is; long fibres, bits of bark, uneven thickness
+    const B=this.paper=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx;x.scale(q,q);let g=x.createRadialGradient(W*0.5,H*0.44,m*0.05,W*0.5,H*0.44,Math.hypot(W,H)*0.62);g.addColorStop(0,'#fbeecb');g.addColorStop(0.35,'#f0d9a9');g.addColorStop(0.75,'#d9b57c');g.addColorStop(1,'#b58a55');x.fillStyle=g;x.fillRect(0,0,W,H);
+    for(let k=0;k<70;k++){const px=R()*W,py=R()*H,r=m*(0.06+R()*0.2),gg=x.createRadialGradient(px,py,0,px,py,r);gg.addColorStop(0,R()<0.5?'rgba(255,246,220,0.11)':'rgba(120,84,40,0.06)');gg.addColorStop(1,'rgba(128,100,60,0)');x.fillStyle=gg;x.fillRect(px-r,py-r,r*2,r*2);}
+    x.lineCap='round';for(let k=0;k<Math.round(W*H/1500);k++){const px=R()*W,py=R()*H,an=R()*TAU,l=m*(0.02+R()*R()*0.16),bend=(R()-0.5)*l*0.5,ex=px+Math.cos(an)*l,ey=py+Math.sin(an)*l;x.strokeStyle=R()<0.62?'rgba(255,250,232,'+(0.08+R()*0.2)+')':'rgba(112,80,40,'+(0.04+R()*0.1)+')';x.lineWidth=0.5+R()*1.1;x.beginPath();x.moveTo(px,py);x.quadraticCurveTo((px+ex)/2-Math.sin(an)*bend,(py+ey)/2+Math.cos(an)*bend,ex,ey);x.stroke();}
+    for(let k=0;k<Math.round(W*H/26000);k++){const px=R()*W,py=R()*H,an=R()*TAU,l=1.5+R()*5;x.strokeStyle='rgba(96,64,30,'+(0.2+R()*0.3)+')';x.lineWidth=0.8+R()*1.4;x.beginPath();x.moveTo(px,py);x.lineTo(px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
+    // the lattice of the door: leaves side by side, each a frame with upright slats and three bands of cross slats
+    const Lc=this.lat=mkCanvas(Math.round(W*q),Math.round(H*q)),y=Lc.cx;y.scale(q,q);const NP=W>H*1.25?4:W>H*0.8?3:2,pw=W/NP,fw=Math.max(8,m*0.022),bt=Math.max(3,m*0.0075),rail=Math.max(10,m*0.03),sill=Math.max(16,H*0.055);
+    const bar=(bx,by,bw,bh)=>{const vert=bh>bw,gr=vert?y.createLinearGradient(bx,0,bx+bw,0):y.createLinearGradient(0,by,0,by+bh);gr.addColorStop(0,'#4a3526');gr.addColorStop(0.25,'#33241a');gr.addColorStop(1,'#1e140e');y.fillStyle=gr;y.fillRect(bx,by,bw,bh);
+      y.strokeStyle='rgba(20,12,6,0.35)';y.lineWidth=0.6;for(let k=0;k<Math.max(1,Math.round((vert?bw:bh)/4));k++){const o=(R()*0.8+0.1)*(vert?bw:bh);y.beginPath();if(vert){y.moveTo(bx+o,by);y.lineTo(bx+o+(R()-0.5)*1.5,by+bh);}else{y.moveTo(bx,by+o);y.lineTo(bx+bw,by+o+(R()-0.5)*1.5);}y.stroke();}};
+    for(let p=0;p<NP;p++){const x0=p*pw,ix0=x0+fw,ix1=x0+pw-fw,iy0=rail,iy1=H-sill,iw=ix1-ix0,ih=iy1-iy0,NV=Math.max(3,Math.round(iw/(m*0.085)))-1,gap=iw/(NV+1);
+      for(let k=1;k<=NV;k++)bar(ix0+gap*k-bt/2,iy0,bt,ih);
+      for(const [c0,nb] of [[0.13,3],[0.5,4],[0.87,3]]){const y0=iy0+ih*c0-gap*(nb-1)/2;for(let k=0;k<nb;k++)bar(ix0,y0+gap*k-bt/2,iw,bt);}
+      bar(x0,0,pw,rail);bar(x0,H-sill,pw,sill);bar(x0,0,fw,H);bar(x0+pw-fw,0,fw,H);}
+    y.fillStyle='rgba(0,0,0,0.5)';for(let p=1;p<NP;p++)y.fillRect(p*pw-0.75,0,1.5,H);
+    // a bamboo outside, kept small so that it comes out soft when it is laid on the paper
+    const bs=0.25,bw2=Math.round(W*bs),bh2=Math.round(H*bs),Bm=this.bam=mkCanvas(bw2,bh2),z=Bm.cx;z.scale(bs,bs);z.fillStyle=z.strokeStyle='rgb(70,50,30)';z.lineCap='round';
+    const leaf=(lx,ly,an,ln)=>{const ex=lx+Math.cos(an)*ln,ey=ly+Math.sin(an)*ln,nx=-Math.sin(an)*ln*0.11,ny=Math.cos(an)*ln*0.11;z.beginPath();z.moveTo(lx,ly);z.quadraticCurveTo((lx+ex)/2+nx,(ly+ey)/2+ny,ex,ey);z.quadraticCurveTo((lx+ex)/2-nx,(ly+ey)/2-ny,lx,ly);z.fill();};
+    for(let k=0;k<3;k++){const bx=W*(0.86+k*0.06+R()*0.02),lean=-(0.16+R()*0.14),top=H*(0.12+R()*0.2),N=7+((R()*3)|0);let px=bx,py=H*1.05;z.lineWidth=m*(0.012-0.002*k);
+      for(let j=1;j<=N;j++){const u=j/N,nx2=bx+lean*(H*1.05-top)*u*u,ny2=H*1.05+(top-H*1.05)*u;z.beginPath();z.moveTo(px,py);z.lineTo(nx2,ny2);z.stroke();z.beginPath();z.arc(nx2,ny2,z.lineWidth*0.75,0,TAU);z.fill();
+        if(j>2){const nl=3+((R()*4)|0),side=R()<0.5?-1:1;for(let l=0;l<nl;l++)leaf(nx2,ny2,(side>0?0.25:Math.PI-0.25)+side*(l/nl-0.4)*1.5+(R()-0.5)*0.3,m*(0.07+R()*0.09));}px=nx2;py=ny2;z.lineWidth*=0.9;}}},
+  draw(t,dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,pd=this.pd,cf=this.cf,tmp=this.tmp,m=Math.min(W,H);if(pb.length!==n){this.init();return;}
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.paper,0,0,W,H);
+    // the lamp behind: it breathes and now and then wavers, as a flame does
+    const fl=0.5+0.5*Math.sin(t*1.7)*Math.sin(t*0.93+1)+0.25*Math.sin(t*7.3)*Math.max(0,Math.sin(t*0.41)),lg=ctx.createRadialGradient(W*0.5,H*0.44,0,W*0.5,H*0.44,m*0.9);lg.addColorStop(0,'rgba(255,236,190,'+(0.16+0.07*fl).toFixed(3)+')');lg.addColorStop(1,'rgba(255,236,190,0)');ctx.globalCompositeOperation='lighter';ctx.fillStyle=lg;ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation='multiply';
+    // the bamboo: its whole shadow leans a little to and fro about its foot
+    ctx.save();ctx.translate(W*0.92,H*1.05);ctx.rotate(0.018*Math.sin(t*0.6)+0.008*Math.sin(t*1.43+1));ctx.transform(1,0,0.02*Math.sin(t*0.5+2),1,0,0);ctx.translate(-W*0.92,-H*1.05);ctx.globalAlpha=0.3;ctx.drawImage(this.bam,0,0,W,H);ctx.restore();
+    // the people: everybody throws a wide soft shadow; the nearer to the paper, the more of a dark sharp heart it has
+    pb.set(A.p);blur3(pb,tmp,w,h);const nr=this.nr=shapeDepth(pb,w,h,this.nr);for(let i=0;i<n;i++){const v=pb[i],d=nr[i];cf[i]=v*(0.3+0.7*d);pd[i]=v*(0.42+0.58*d);}blur3(pd,tmp,w,h);blur3(pd,tmp,w,h);
+    this.soft=upsampleMask(pd,w,h,2,0.06,0.72,[66,44,28],this.soft);this.core=upsampleMask(cf,w,h,3,0.4,0.62,[40,26,16],this.core);
+    ctx.globalAlpha=0.5;ctx.drawImage(this.soft,0,0,W,H);ctx.globalAlpha=0.8;ctx.drawImage(this.core,0,0,W,H);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    ctx.drawImage(this.lat,0,0,W,H);}};
+/* 2도 인쇄: a poster printed on a stencil duplicator in two inks, fluorescent pink and blue, on off-white paper. Each ink is printed
+   from its own drum, never quite in register, and each lays down as a speckle of grains rather than a flat film; where the two
+   overprint they make violet. People are printed in both inks: the blue from where they are now, the pink from where they were a
+   moment ago and a little out of register, so someone standing still is violet with a thin pink and blue fringe, and someone
+   walking pulls the two colours apart. Behind them is the poster itself: a pink sun, blue ground lines, a few cut shapes */
+const mRiso={id:'riso',name:'2도 인쇄',desc:'형광 분홍과 파랑, 두 가지 잉크로 찍은 리소그래프 포스터. 잉크는 알갱이로 성기게 묻고 두 판이 살짝 어긋나며, 겹친 곳은 보라가 된다. 사람은 두 잉크로 함께 찍히는데 분홍 판이 한 박자 늦어서, 가만히 서면 보라에 가는 색 테두리가 생기고 걸어가면 두 색이 벌어진다',
+  PINK:[255,72,176],BLUE:[30,108,210],
+  init(){const n=A.n,m=Math.min(W,H);this.pb=new Float32Array(n);this.tmp=new Float32Array(n);this.hist=[];for(let k=0;k<9;k++)this.hist.push(new Float32Array(n));this.hi=0;this.mb=null;this.mp=null;this.lay=[null,null];
+    // grain: where each ink did not take. Two different tiles, so the two inks speckle independently
+    if(!this.gr){this.gr=[0,1].map(sd=>{const c=mkCanvas(256,256),im=c.cx.createImageData(256,256),d=im.data,r=seeded(101+sd*7);for(let i=0;i<d.length;i+=4){const u=r();d[i]=d[i+1]=d[i+2]=0;d[i+3]=u<0.3?255:u<0.5?(0.5-u)/0.2*255:0;}c.cx.putImageData(im,0,0);return c;});}
+    const key=[W,H].join(',');if(this.key===key)return;this.key=key;const q=Math.min(DPR,1.5),R=seeded(8),P=this.paper=mkCanvas(Math.round(W*q),Math.round(H*q)),x=P.cx;x.scale(q,q);x.fillStyle='#f3efe4';x.fillRect(0,0,W,H);
+    for(let k=0;k<Math.round(W*H/180);k++){const px=R()*W,py=R()*H;x.fillStyle=R()<0.5?'rgba(255,255,255,'+(0.12+R()*0.22)+')':'rgba(96,88,72,'+(0.02+R()*0.05)+')';x.fillRect(px,py,0.7+R()*1.5,0.7+R()*1.5);}
+    // the poster, one plate for each ink (flat shapes; the grain is put on when it is printed)
+    const plate=()=>{const c=mkCanvas(Math.round(W*q),Math.round(H*q));c.cx.scale(q,q);return c;},pk=this.platePink=plate(),bl=this.plateBlue=plate(),a=pk.cx,b=bl.cx,cp='rgb('+this.PINK+')',cb='rgb('+this.BLUE+')';
+    a.fillStyle=cp;a.beginPath();a.arc(W*0.66,H*0.4,m*0.3,0,TAU);a.fill();                                                               // the sun
+    b.strokeStyle=cb;b.lineWidth=Math.max(2,m*0.006);for(let k=0;k<9;k++){const yy=H*(0.8+k*0.026);b.beginPath();b.moveTo(0,yy);for(let px=0;px<=W;px+=W/40)b.lineTo(px,yy+Math.sin(px/W*TAU*1.5+k*0.5)*m*0.008);b.stroke();}   // the ground
+    b.fillStyle=cb;b.globalAlpha=0.55;b.beginPath();b.arc(W*0.66,H*0.4,m*0.3,Math.PI*0.08,Math.PI*0.92);b.fill();b.globalAlpha=1;       // half of the sun overprinted
+    const tri=(c,col,px,py,r,an)=>{c.fillStyle=col;c.beginPath();for(let k=0;k<3;k++){const aa=an+k*TAU/3;c.lineTo(px+Math.cos(aa)*r,py+Math.sin(aa)*r);}c.closePath();c.fill();};
+    tri(a,cp,W*0.14,H*0.24,m*0.06,0.3);tri(b,cb,W*0.2,H*0.3,m*0.045,1.2);b.fillStyle=cb;b.beginPath();b.arc(W*0.9,H*0.16,m*0.035,0,TAU);b.fill();a.fillStyle=cp;a.fillRect(W*0.06,H*0.6,m*0.11,m*0.022);
+    a.strokeStyle=cp;a.lineWidth=Math.max(2,m*0.008);a.lineCap='round';a.beginPath();for(let k=0;k<=24;k++){const px=W*0.3+k/24*m*0.2,py=H*0.14+Math.sin(k*0.9)*m*0.016;if(k)a.lineTo(px,py);else a.moveTo(px,py);}a.stroke();
+    // printed once: each plate has its grain knocked out and goes down on the paper, the pink a little out of register
+    const gz=1.6*q,reg=m*0.006*q;[[pk,0,0.62,reg*1.2,-reg*0.7],[bl,1,0.5,0,0]].forEach(([c,k,al,ox,oy])=>{const y=c.cx;y.setTransform(1,0,0,1,0,0);y.globalCompositeOperation='destination-out';y.globalAlpha=al;y.scale(gz,gz);y.fillStyle=y.createPattern(this.gr[k],'repeat');y.fillRect(0,0,c.width/gz+1,c.height/gz+1);
+      x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='multiply';x.globalAlpha=k?0.95:0.9;x.drawImage(c,ox,oy);});x.globalAlpha=1;x.globalCompositeOperation='source-over';this.platePink=this.plateBlue=null;},
+  draw(t,dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,m=Math.min(W,H);if(pb.length!==n){this.init();return;}
+    pb.set(A.p);blur3(pb,this.tmp,w,h);const H9=this.hist,N=H9.length;this.acc=(this.acc||0)+dt;if(this.acc>0.035){this.acc=0;this.hi=(this.hi+1)%N;H9[this.hi].set(pb);}const old=H9[(this.hi+1)%N];
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.paper,0,0,W,H);
+    // where anybody is, now or a moment ago (nothing is printed outside that)
+    let x0=w,x1=-1,y0=h,y1=-1;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(pb[i]>0.2||old[i]>0.2){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}}if(x1<0)return;
+    this.mb=upsampleMask(pb,w,h,3,0.44,0.56,this.BLUE,this.mb);this.mp=upsampleMask(old,w,h,3,0.44,0.56,this.PINK,this.mp);
+    const ps=0.75,cw=Math.round(W*ps),ch=Math.round(H*ps),reg=m*0.006,pad=3,bx=Math.max(0,(x0-pad)*A.sx),by=Math.max(0,(y0-pad)*A.sy),bw=Math.min(W,(x1+1+pad)*A.sx)-bx,bh=Math.min(H,(y1+1+pad)*A.sy)-by,sh=Math.floor(t*8)*37%256;
+    // each ink in turn: the people in that ink, the grain knocked out, then printed (the pink plate a moment late and a little out of place)
+    for(let k=0;k<2;k++){let c=this.lay[k];if(!c||c.width!==cw||c.height!==ch)c=this.lay[k]=mkCanvas(cw,ch);const x=c.cx,sx=bx*ps,sy=by*ps,sw=bw*ps,shh=bh*ps;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='copy';x.globalAlpha=1;x.imageSmoothingEnabled=true;x.drawImage(k?this.mb:this.mp,0,0,cw,ch);
+      x.globalCompositeOperation='destination-out';x.globalAlpha=k?0.5:0.62;x.fillStyle=x.createPattern(this.gr[k],'repeat');x.translate(-(k?sh:255-sh),-(k?97:31));x.fillRect(sx+(k?sh:255-sh),sy+(k?97:31),sw,shh);x.setTransform(1,0,0,1,0,0);
+      const ox=k?0:reg*(1.2+0.5*Math.sin(t*0.31)),oy=k?0:reg*(-0.7+0.5*Math.cos(t*0.23));ctx.globalCompositeOperation='multiply';ctx.globalAlpha=k?0.95:0.9;ctx.drawImage(c,sx,sy,sw,shh,bx+ox,by+oy,bw,bh);}
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';}};
+/* 눈: a blue evening, lights far off, snow coming down. The people are dark figures in it. Snow settles on whatever holds still: it
+   builds up on heads and shoulders and outstretched arms, and comes off in a puff when they move. Flakes fall in three depths
+   (small and slow far off, behind the people; large and soft close by, in front of them) and are caught up in the wake of anyone
+   who walks through. Snow lies along the ground as well */
+const mSnow={id:'snow',name:'눈',desc:'푸른 저녁, 멀리 불빛이 번지고 눈이 내린다. 사람은 어두운 실루엣으로 서 있고, 가만히 있으면 머리와 어깨에 눈이 소복이 쌓였다가 움직이면 후두둑 털려 떨어진다. 걸어가면 눈발이 그 뒤로 휘말린다',
+  init(){const n=A.n,w=A.w,m=Math.min(W,H),f=QF()>0.9?1:QF()>0.6?0.75:0.55;this.pb=new Float32Array(n);this.tmp=new Float32Array(n);this.top=new Float32Array(w).fill(-1);this.ref=new Float32Array(w).fill(-1);this.acc=new Float32Array(w);this.at=new Float32Array(w);this.fig=null;this.rim=null;
+    const R=Math.random;this.fl=[];for(const [cnt,z] of [[220,0],[150,1],[46,2]])for(let k=0;k<Math.round(cnt*f);k++)this.fl.push({x:R()*W,y:R()*H,z,r:(z===0?0.7+R()*0.9:z===1?1.3+R()*1.5:3+R()*4)*m/720,ph:R()*TAU,sp:0.7+R()*0.6});this.cl=[];
+    if(!this.dot){const c=this.dot=mkCanvas(32,32),x=c.cx,g=x.createRadialGradient(16,16,0,16,16,16);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(0.35,'rgba(255,255,255,0.8)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,32,32);}
+    const key=[W,H].join(',');if(this.key===key)return;this.key=key;const q=Math.min(DPR,1.5),B=this.bg=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx,Rs=seeded(41);x.scale(q,q);
+    let g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#141d33');g.addColorStop(0.55,'#25344f');g.addColorStop(1,'#3d4d69');x.fillStyle=g;x.fillRect(0,0,W,H);
+    // far lights out of focus (warm windows, a few coloured ones), and a pale glow low in the sky
+    g=x.createRadialGradient(W*0.5,H*0.95,0,W*0.5,H*0.95,m*0.9);g.addColorStop(0,'rgba(150,170,205,0.28)');g.addColorStop(1,'rgba(150,170,205,0)');x.fillStyle=g;x.fillRect(0,0,W,H);
+    x.globalCompositeOperation='lighter';const LC=['255,196,120','255,214,160','255,170,130','250,150,170','170,205,255'];this.lights=[];for(let k=0;k<26;k++){const px=Rs()*W,py=H*(0.3+Rs()*0.42),r=m*(0.012+Rs()*Rs()*0.05),c=LC[(Rs()*LC.length)|0],a=0.1+Rs()*0.22;this.lights.push({x:px,y:py,r,c,a,ph:Rs()*TAU,sp:0.4+Rs()*1.2});
+      const gg=x.createRadialGradient(px,py,0,px,py,r);gg.addColorStop(0,'rgba('+c+','+a+')');gg.addColorStop(0.7,'rgba('+c+','+(a*0.7).toFixed(3)+')');gg.addColorStop(1,'rgba('+c+',0)');x.fillStyle=gg;x.beginPath();x.arc(px,py,r,0,TAU);x.fill();}x.globalCompositeOperation='source-over';
+    // the snow on the ground: two soft drifts, the nearer one lighter
+    const drift=(base,amp,col,sd)=>{x.fillStyle=col;x.beginPath();x.moveTo(0,H);for(let px=0;px<=W;px+=W/60)x.lineTo(px,H*(base+amp*Math.sin(px/W*TAU*1.1+sd)+amp*0.45*Math.sin(px/W*TAU*2.7+sd*2.1)));x.lineTo(W,H);x.closePath();x.fill();};
+    drift(0.9,0.012,'#8fa3c2',1.3);drift(0.945,0.01,'#c3d0e6',4.1);const gs=x.createLinearGradient(0,H*0.93,0,H);gs.addColorStop(0,'rgba(232,240,252,0)');gs.addColorStop(1,'rgba(232,240,252,0.7)');x.fillStyle=gs;x.fillRect(0,H*0.93,W,H*0.07);},
+  draw(t,dt){const w=A.w,h=A.h,n=A.n,pb=this.pb,m=Math.min(W,H),top=this.top,ref=this.ref,acc=this.acc,at=this.at;if(pb.length!==n||top.length!==w){this.init();return;}
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
+    // the far lights glimmer
+    ctx.globalCompositeOperation='lighter';for(const L of this.lights){const a=L.a*0.5*(0.5+0.5*Math.sin(t*L.sp+L.ph));if(a<0.01)continue;ctx.globalAlpha=a;ctx.drawImage(this.dot,L.x-L.r,L.y-L.r,L.r*2,L.r*2);}ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    pb.set(A.p);blur3(pb,this.tmp,w,h);
+    // the wind: a slow lean, with gusts
+    const wind=m*(0.03*Math.sin(t*0.23)+0.02*Math.sin(t*0.61+1)),fall=m*0.11,isx=1/A.sx,isy=1/A.sy,u=A.u,v=A.v,e=A.e,FL=this.fl;
+    const flake=(f,front)=>{ctx.globalAlpha=f.z===0?0.5:f.z===1?0.85:0.5;const r=f.r*(f.z===2?1.6:1.15);ctx.drawImage(this.dot,f.x-r,f.y-r,r*2,r*2);};
+    // the top of whatever is there, column by column; it holds snow only while it holds still
+    for(let gx=0;gx<w;gx++){let y=-1;for(let gy=0;gy<h;gy++){const q=pb[gy*w+gx];if(q>0.5){const o=gy>0?pb[(gy-1)*w+gx]:0;y=(gy-(q-0.5)/Math.max(1e-3,q-o)+0.5)*A.sy;break;}}
+      if(y<0||y>H*0.9){if(acc[gx]>0.5)this.shed(gx,top[gx],acc[gx],0);top[gx]=-1;ref[gx]=-1;acc[gx]=0;at[gx]=0;continue;}
+      if(ref[gx]<0){ref[gx]=y;at[gx]=0;}else{const d=Math.abs(y-ref[gx]);ref[gx]+=(y-ref[gx])*ez(0.1);if(d>A.sy*1.4){if(acc[gx]>0.5)this.shed(gx,top[gx],acc[gx],y-top[gx]);acc[gx]=0;at[gx]=0;ref[gx]=y;}else at[gx]+=dt;}top[gx]=top[gx]<0?y:top[gx]+(y-top[gx])*ez(0.5);}
+    // it settles: a little more each moment on what has stood a while (less on a steep place, where it slides off), and it evens itself out
+    const maxD=m*0.055;for(let gx=0;gx<w;gx++){if(top[gx]<0||at[gx]<0.6)continue;const l=gx>0&&top[gx-1]>=0?top[gx-1]:top[gx],r=gx<w-1&&top[gx+1]>=0?top[gx+1]:top[gx],slope=Math.abs(r-l)/(2*A.sx),hold=1/(1+slope*slope*1.6);acc[gx]=Math.min(maxD*hold,acc[gx]+dt*m*0.0085*hold);}
+    for(let gx=1;gx<w-1;gx++)if(acc[gx]>0&&top[gx-1]>=0&&top[gx+1]>=0)acc[gx]+=((acc[gx-1]+acc[gx+1])*0.5-acc[gx])*0.15;
+    // flakes: far ones first (they pass behind everyone)
+    for(const f of FL){const k=f.z===0?0.55:f.z===1?1:1.7;let vx=wind*k+Math.sin(t*f.sp+f.ph)*m*0.012*k,vy=fall*k*f.sp;
+      if(f.z>0&&f.x>0&&f.x<W&&f.y>0&&f.y<H){const gi=((f.y*isy)|0)*w+((f.x*isx)|0);if(e[gi]>0.2){vx+=u[gi]*A.sx*14*e[gi];vy+=v[gi]*A.sy*14*e[gi];}
+        // a middle flake that comes down on somebody stays there
+        if(f.z===1){const gx=(f.x*isx)|0;if(top[gx]>=0&&f.y>=top[gx]-acc[gx]&&f.y<top[gx]+A.sy*2&&at[gx]>0.3){f.y=-10-Math.random()*H*0.2;f.x=Math.random()*W;continue;}}}
+      f.x+=vx*dt;f.y+=vy*dt;if(f.y>H+10){f.y=-10;f.x=Math.random()*W;}if(f.x<-20)f.x+=W+40;else if(f.x>W+20)f.x-=W+40;if(f.z===0)flake(f);}
+    ctx.globalAlpha=1;
+    // the people: dark against the evening, a little of the sky's light along their upper edges
+    this.fig=upsampleMask(pb,w,h,3,0.4,0.6,[16,22,38],this.fig);ctx.globalAlpha=0.94;ctx.drawImage(this.fig,0,0,W,H);ctx.globalAlpha=1;
+    // the snow lying on them: a soft rounded cap along each stretch of the top edge, thickest where it has lain longest, white on
+    // top and bluish underneath
+    for(let gx=0;gx<w;){if(acc[gx]<0.6||top[gx]<0){gx++;continue;}let e2=gx;while(e2+1<w&&acc[e2+1]>=0.6&&top[e2+1]>=0&&Math.abs(top[e2+1]-top[e2])<A.sy*4)e2++;if(e2-gx<1){gx=e2+1;continue;}
+      const X=k=>(k+0.5)*A.sx,N2=e2-gx,P=[];let yt=1e9,yb=-1e9;for(let k=gx;k<=e2;k++){const a=Math.min(1,(k-gx+0.5)/2.4),b=Math.min(1,(e2-k+0.5)/2.4),edge=Math.sin(a*1.5708)*Math.sin(b*1.5708),y=top[k]-acc[k]*edge-1.5*edge;P.push([X(k),y]);if(y<yt)yt=y;if(top[k]>yb)yb=top[k];}
+      ctx.beginPath();ctx.moveTo(X(gx)-A.sx*0.8,top[gx]+2);ctx.lineTo(P[0][0],P[0][1]);for(let k=1;k<P.length-1;k++)ctx.quadraticCurveTo(P[k][0],P[k][1],(P[k][0]+P[k+1][0])/2,(P[k][1]+P[k+1][1])/2);ctx.lineTo(P[N2][0],P[N2][1]);ctx.lineTo(X(e2)+A.sx*0.8,top[e2]+2);
+      for(let k=e2;k>=gx;k--)ctx.lineTo(X(k),top[k]+3);ctx.closePath();const sg=ctx.createLinearGradient(0,yt,0,yb+3);sg.addColorStop(0,'#fbfdff');sg.addColorStop(0.55,'#eef3fb');sg.addColorStop(1,'#bccbe4');ctx.fillStyle=sg;ctx.fill();gx=e2+1;}
+    // near flakes, and the snow that has just been shaken off, in front of everything
+    for(const f of FL)if(f.z>0)flake(f);
+    const C=this.cl;for(let i=C.length-1;i>=0;i--){const c=C[i];c.vy+=m*1.3*dt;c.vx*=Math.pow(0.4,dt);c.x+=c.vx*dt;c.y+=c.vy*dt;c.t+=dt;if(c.y>H*0.97||c.t>2.5){C.splice(i,1);continue;}ctx.globalAlpha=Math.max(0,0.9-c.t*0.35);ctx.drawImage(this.dot,c.x-c.r,c.y-c.r,c.r*2,c.r*2);}
+    ctx.globalAlpha=1;},
+  // snow coming off one column: a few clumps and a puff of powder, thrown the way the body moved
+  shed(gx,y,amt,dy){if(y<0||this.cl.length>260)return;const m=Math.min(W,H),k=Math.min(4,1+(amt/(m*0.012))|0),x=(gx+0.5)*A.sx;for(let j=0;j<k;j++)this.cl.push({x:x+(Math.random()-0.5)*A.sx,y:y-amt*Math.random(),vx:(Math.random()-0.5)*m*0.16,vy:-Math.random()*m*0.1+Math.min(0,dy)*2,r:(1.2+Math.random()*2.6)*m/720,t:0});}};
+// a field of small irregular pieces filling the screen (the cells of scattered points, evened out once so there are no slivers)
+function shardCells(gx,gy,seed,jit){const cw=W/gx,ch=H/gy,R=seeded(seed),S=[];for(let j=0;j<gy;j++)for(let i=0;i<gx;i++)S.push([(i+0.5+(R()-0.5)*jit)*cw,(j+0.5+(R()-0.5)*jit)*ch]);
+  const clip=(poly,ax,ay,bx,by)=>{const mx=(ax+bx)/2,my=(ay+by)/2,nx=bx-ax,ny=by-ay,out=[];for(let k=0;k<poly.length;k++){const p=poly[k],q=poly[(k+1)%poly.length],dp=(p[0]-mx)*nx+(p[1]-my)*ny,dq=(q[0]-mx)*nx+(q[1]-my)*ny;if(dp<=0)out.push(p);if((dp<0&&dq>0)||(dp>0&&dq<0)){const u=dp/(dp-dq);out.push([p[0]+(q[0]-p[0])*u,p[1]+(q[1]-p[1])*u]);}}return out;};
+  const cellOf=(i,j)=>{const s=S[j*gx+i];let poly=[[Math.max(-2,s[0]-cw*2.4),Math.max(-2,s[1]-ch*2.4)],[Math.min(W+2,s[0]+cw*2.4),Math.max(-2,s[1]-ch*2.4)],[Math.min(W+2,s[0]+cw*2.4),Math.min(H+2,s[1]+ch*2.4)],[Math.max(-2,s[0]-cw*2.4),Math.min(H+2,s[1]+ch*2.4)]];
+    for(let dj=-2;dj<=2&&poly.length>2;dj++)for(let di=-2;di<=2&&poly.length>2;di++){if(!di&&!dj)continue;const a=i+di,b=j+dj;if(a<0||b<0||a>=gx||b>=gy)continue;const o=S[b*gx+a];poly=clip(poly,s[0],s[1],o[0],o[1]);}return poly;};
+  for(let j=0;j<gy;j++)for(let i=0;i<gx;i++){const poly=cellOf(i,j);if(poly.length<3)continue;let cx=0,cy=0;for(const p of poly){cx+=p[0];cy+=p[1];}const s=S[j*gx+i];s[2]=s[0]+(cx/poly.length-s[0])*0.7;s[3]=s[1]+(cy/poly.length-s[1])*0.7;}for(const s of S)if(s.length>2){s[0]=s[2];s[1]=s[3];}
+  const C=[];for(let j=0;j<gy;j++)for(let i=0;i<gx;i++){const poly=cellOf(i,j);if(poly.length<3)continue;const path=new Path2D();let cx=0,cy=0;poly.forEach((p,k)=>{if(k)path.lineTo(p[0],p[1]);else path.moveTo(p[0],p[1]);cx+=p[0];cy+=p[1];});path.closePath();C.push({path,poly,cx:cx/poly.length,cy:cy/poly.length});}
+  return C;}
+/* 자개: a panel of black lacquer inlaid with mother-of-pearl. The whole panel is laid with small pieces of shell that cannot be
+   seen against the lacquer; where a person stands, those pieces show: each one a flake of nacre with its own colour (pink, violet,
+   blue, sea-green, cream) that changes as the light moves, bright when it catches the light and dull when it does not, so a
+   figure glitters in bands as light slides over it. A border of thin shell strips and a branch of plum blossom are inlaid in the
+   panel for good, so it is never bare */
+const mNajeon={id:'najeon',name:'자개',desc:'검은 옻칠 판에 박힌 나전칠기. 사람이 선 자리의 자개 조각들이 드러나 분홍·보라·파랑·청록·크림빛으로 반짝이고, 빛이 지나가는 대로 조각마다 밝아졌다 어두워진다. 판에는 가는 자개 띠 테두리와 매화 가지가 늘 박혀 있다',
+  PAL:[[0,[250,248,238]],[0.14,[255,170,205]],[0.28,[190,160,245]],[0.42,[120,200,250]],[0.56,[110,235,205]],[0.7,[222,245,170]],[0.85,[255,218,190]],[1,[250,248,238]]],
+  init(){const n=A.n,m=Math.min(W,H);this.pb=new Float32Array(n);this.tmp=new Float32Array(n);
+    if(!this.lut){const L=this.lut=[],P=this.PAL;for(let k=0;k<256;k++){const u=k/255;let a=P[0],b=P[P.length-1];for(let q=0;q<P.length-1;q++)if(u>=P[q][0]&&u<=P[q+1][0]){a=P[q];b=P[q+1];break;}const f=(u-a[0])/Math.max(1e-6,b[0]-a[0]);L.push([lerp(a[1][0],b[1][0],f),lerp(a[1][1],b[1][1],f),lerp(a[1][2],b[1][2],f)]);}}
+    const N0=Math.round((isTouch?(W<H?1700:2100):4600)*(QF()>0.9?1:QF()>0.6?0.7:0.5)),gx=Math.max(8,Math.round(Math.sqrt(N0*W/H))),gy=Math.max(6,Math.round(N0/gx)),key=[W,H,gx,gy].join(',');if(this.key===key){for(const c of this.cells)c.k=0;return;}this.key=key;
+    const R=seeded(606),C=this.cells=shardCells(gx,gy,909,0.95);for(const c of C){c.k=0;c.ph=R();c.an=R()*TAU;c.sp=0.6+R()*1.6;c.tone=0.86+R()*0.28;c.pts=[[c.cx,c.cy]];for(let q=0;q<c.poly.length;q+=Math.max(1,Math.floor(c.poly.length/2)))c.pts.push([(c.cx+c.poly[q][0])/2,(c.cy+c.poly[q][1])/2]);}
+    const q=Math.min(DPR,2);
+    // the panel: black lacquer with a breath of brown in it and a long soft reflection
+    const B=this.bg=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx;x.scale(q,q);x.fillStyle='#0a0807';x.fillRect(0,0,W,H);let gr=x.createLinearGradient(0,0,W,H);gr.addColorStop(0,'rgba(70,52,40,0.22)');gr.addColorStop(0.45,'rgba(30,22,18,0)');gr.addColorStop(1,'rgba(52,40,34,0.16)');x.fillStyle=gr;x.fillRect(0,0,W,H);
+    // what is inlaid for good, as a stencil: a double border of strips cut short, corner pieces, and a plum branch with its blossoms
+    const M=this.motif=mkCanvas(Math.round(W*q),Math.round(H*q)),y=M.cx,Rm=seeded(77);y.scale(q,q);y.fillStyle=y.strokeStyle='#fff';y.lineCap='butt';
+    const strips=(x0,y0,x1,y1,wd)=>{const L=Math.hypot(x1-x0,y1-y0),ux=(x1-x0)/L,uy=(y1-y0)/L;let d=0;y.lineWidth=wd;while(d<L){const l=m*(0.012+Rm()*0.022),e=Math.min(L,d+l);y.beginPath();y.moveTo(x0+ux*d,y0+uy*d);y.lineTo(x0+ux*e,y0+uy*e);y.stroke();d=e+Math.max(1.2,m*0.0022);}};
+    for(const [ins,wd] of [[m*0.035,m*0.0045],[m*0.05,m*0.002]]){strips(ins,ins,W-ins,ins,wd);strips(W-ins,ins,W-ins,H-ins,wd);strips(W-ins,H-ins,ins,H-ins,wd);strips(ins,H-ins,ins,ins,wd);}
+    for(const [cx,cy] of [[m*0.0425,m*0.0425],[W-m*0.0425,m*0.0425],[W-m*0.0425,H-m*0.0425],[m*0.0425,H-m*0.0425]]){y.save();y.translate(cx,cy);y.rotate(Math.PI/4);y.fillRect(-m*0.011,-m*0.011,m*0.022,m*0.022);y.restore();}
+    const blossom=(bx,by,r,rot)=>{for(let k=0;k<5;k++){const a=rot+k*TAU/5;y.beginPath();y.ellipse(bx+Math.cos(a)*r*0.62,by+Math.sin(a)*r*0.62,r*0.46,r*0.4,a,0,TAU);y.fill();}y.save();y.globalCompositeOperation='destination-out';y.beginPath();y.arc(bx,by,r*0.2,0,TAU);y.fill();y.restore();y.beginPath();y.arc(bx,by,r*0.1,0,TAU);y.fill();};
+    const branch=(bx,by,an,len,wd,dep)=>{let px=bx,py=by,a=an;const seg=6;y.lineCap='round';for(let k=0;k<seg;k++){a+=(Rm()-0.5)*0.5;const nx=px+Math.cos(a)*len/seg,ny=py+Math.sin(a)*len/seg;y.lineWidth=wd*(1-0.6*k/seg);y.beginPath();y.moveTo(px,py);y.lineTo(nx,ny);y.stroke();
+        if(dep>0&&k>0&&Rm()<0.6)branch(nx,ny,a+(Rm()<0.5?-1:1)*(0.5+Rm()*0.5),len*(0.35+Rm()*0.25),wd*0.6,dep-1);if(k>1&&Rm()<0.55)blossom(nx+(Rm()-0.5)*m*0.02,ny+(Rm()-0.5)*m*0.02,m*(0.011+Rm()*0.011),Rm()*TAU);else if(Rm()<0.4){y.beginPath();y.arc(nx,ny,m*0.0045,0,TAU);y.fill();}px=nx;py=ny;}blossom(px,py,m*0.013,Rm()*TAU);};
+    branch(m*0.06,H-m*0.08,-0.75,m*0.5,m*0.007,2);branch(W-m*0.06,m*0.3,Math.PI+0.5,m*0.3,m*0.005,1);},
+  draw(t,dt){const C=this.cells,w=A.w,h=A.h,pb=this.pb,lut=this.lut,m=Math.min(W,H);if(pb.length!==A.n){this.init();return;}
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.bg,0,0,W,H);
+    // the reflection of a far window sliding over the lacquer
+    const rx=W*(0.5+0.7*Math.sin(t*0.07)),rg=ctx.createLinearGradient(rx-m*0.5,0,rx+m*0.5,H);rg.addColorStop(0,'rgba(190,200,215,0)');rg.addColorStop(0.5,'rgba(190,200,215,0.05)');rg.addColorStop(1,'rgba(190,200,215,0)');ctx.fillStyle=rg;ctx.fillRect(0,0,W,H);
+    // the border and the plum branch: nacre seen through the stencil, its colours sliding slowly (redone a few times a second)
+    const q=Math.min(DPR,1.5),mw=Math.round(W*q),mh=Math.round(H*q);if(!this.mo||this.mo.width!==mw||this.mo.height!==mh){this.mo=mkCanvas(mw,mh);this.mf=0;}
+    if((this.mf=(this.mf||0)+1)%5===1){const o=this.mo.cx;o.setTransform(1,0,0,1,0,0);o.globalCompositeOperation='copy';const sh=(t*0.02)%1,gg=o.createLinearGradient(-mw*0.6+sh*mw*0.6,0,mw*0.9+sh*mw*0.6,mh);for(let r=0;r<3;r++)for(const [u,c] of this.PAL)if(u<1||r===2)gg.addColorStop((r+u)/3,'rgb('+c+')');o.fillStyle=gg;o.fillRect(0,0,mw,mh);o.globalCompositeOperation='destination-in';o.drawImage(this.motif,0,0,mw,mh);}
+    ctx.globalAlpha=0.8+0.1*Math.sin(t*0.6);ctx.drawImage(this.mo,0,0,W,H);ctx.globalAlpha=1;
+    // the pieces under the people. How much of a piece is covered decides how far it shows. Its colour comes from where it lies
+    // (the colours of nacre run in broad bands across the shell, and drift), a little its own; its brightness from its own tilt:
+    // a band of light crosses the figure and each piece flashes as the band passes, and now and then one glints by itself
+    pb.set(A.p);blur3(pb,this.tmp,w,h);const isx=1/A.sx,isy=1/A.sy,kc=ez(0.5),la=0.5+0.25*Math.sin(t*0.05),lx=Math.cos(la),ly=Math.sin(la),lam=TAU/(m*0.28),im=1/m,at=(x,y)=>pb[Math.min(h-1,Math.max(0,y*isy|0))*w+Math.min(w-1,Math.max(0,x*isx|0))];
+    ctx.lineJoin='round';ctx.lineWidth=Math.max(1,m/720);ctx.strokeStyle='rgb(8,6,6)';
+    for(let i=0;i<C.length;i++){const c=C[i],c0=at(c.cx,c.cy);if(c0<0.02&&c.k<0.02){c.k=0;continue;}let cv=c0;for(let p=1;p<c.pts.length;p++)cv+=at(c.pts[p][0],c.pts[p][1]);cv/=c.pts.length;c.k+=(cv-c.k)*kc;if(c.k<0.22)continue;let k=(c.k-0.22)/0.4;k=k>=1?1:k*k*(3-2*k);
+      const u=c.cx*im,v=c.cy*im,band=Math.sin((c.cx*lx+c.cy*ly)*lam-t*0.8+Math.sin(c.an)*1.1),gl=Math.sin(t*c.sp+c.ph*TAU),sheen=Math.min(1,(band>0?band*band:0)*0.85+(gl>0.95?(gl-0.95)*14:0)),
+        hu=0.5+0.34*Math.sin(u*3.1+t*0.06)+0.3*Math.sin(v*4.3-u*1.7+1.7+t*0.045)+(c.ph-0.5)*0.2+sheen*0.1,col=lut[((hu-Math.floor(hu))*255)|0],b=(0.72+0.3*sheen)*c.tone,wh=0.1+sheen*0.4;
+      ctx.globalAlpha=k;ctx.fillStyle='rgb('+Math.min(255,(col[0]+(255-col[0])*wh)*b|0)+','+Math.min(255,(col[1]+(255-col[1])*wh)*b|0)+','+Math.min(255,(col[2]+(255-col[2])*wh)*b|0)+')';ctx.fill(c.path);ctx.stroke(c.path);}
+    ctx.globalAlpha=1;}};
+/* 먹 번짐: ink on hanji. A small grid holds wet ink that creeps through the paper's fibres and dries into a wash;
+   the graphics chip draws it at full sharpness (the processor draws a softer version when it can't) */
+const mInk={id:'ink',name:'먹 번짐',desc:'한지에 먹으로 그린 사람. 사람은 짙은 먹빛 형상이 되고, 한자리에 머물수록 그 가장자리에서 먹물이 종이 결을 따라 옅게 번져 나간다. 떠난 자리에는 옅은 먹 자국이 남았다가 천천히 마르며 사라지고, 빨리 움직이면 먹물이 튄다. 아무도 없을 때는 붓이 혼자 획을 긋고 먹물이 떨어져 번진다',
+  init(){const cells=(isTouch?16000:26000)*(QF()>0.6?1:0.75),gw=this.gw=Math.max(48,Math.round(Math.sqrt(cells*W/H))),gh=this.gh=Math.max(32,Math.round(cells/gw)),n=gw*gh;
+    this.D=new Float32Array(n);this.F=new Float32Array(n);this.B=new Float32Array(n);this.ST=new Float32Array(n);this.T=new Float32Array(n);this.ps=new Float32Array(n);this.px=new Uint8Array(n*4);this.acc=0;this.cov=0;this.wash=0;this.nd=0.5;this.br=null;this.nb=0.1;this.cand=[];this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);
+    // how easily each bit of paper lets ink through: uneven from fibre to fibre, and in broader patches
+    const R=seeded(1212),K=this.K=new Float32Array(n),lw=Math.ceil(gw/5)+2,lh=Math.ceil(gh/5)+2,L=new Float32Array(lw*lh);for(let i=0;i<L.length;i++)L[i]=R();
+    for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const fx=x/5,fy=y/5,x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,s=(L[y0*lw+x0]*(1-tx)+L[y0*lw+x0+1]*tx)*(1-ty)+(L[(y0+1)*lw+x0]*(1-tx)+L[(y0+1)*lw+x0+1]*tx)*ty;K[y*gw+x]=0.22+0.78*(0.55*R()+0.45*s);}
+    const KX=this.KX=new Float32Array(n),KY=this.KY=new Float32Array(n);for(let i=0;i<n;i++){KX[i]=Math.min(K[i],K[Math.min(n-1,i+1)]);KY[i]=Math.min(K[i],K[Math.min(n-1,i+gw)]);}
+    const key=[W,H].join(',');if(this.key===key)return;this.key=key;const m=Math.min(W,H),q=Math.min(DPR,1.5),P=seeded(88),B=this.paper=mkCanvas(Math.round(W*q),Math.round(H*q)),x=B.cx;x.scale(q,q);
+    // the paper: hanji, a little warm, thicker here and thinner there, long fibres and a few bits of bark
+    let g=x.createRadialGradient(W*0.5,H*0.45,m*0.1,W*0.5,H*0.5,Math.hypot(W,H)*0.62);g.addColorStop(0,'#f5efe2');g.addColorStop(0.6,'#ede5d4');g.addColorStop(1,'#d8cdb6');x.fillStyle=g;x.fillRect(0,0,W,H);
+    for(let k=0;k<60;k++){const px=P()*W,py=P()*H,r=m*(0.06+P()*0.2),gg=x.createRadialGradient(px,py,0,px,py,r);gg.addColorStop(0,P()<0.5?'rgba(255,253,244,0.16)':'rgba(120,104,76,0.05)');gg.addColorStop(1,'rgba(128,112,90,0)');x.fillStyle=gg;x.fillRect(px-r,py-r,r*2,r*2);}
+    x.lineCap='round';for(let k=0;k<Math.round(W*H/1900);k++){const px=P()*W,py=P()*H,an=P()*TAU,l=m*(0.02+P()*P()*0.15),bend=(P()-0.5)*l*0.5,ex=px+Math.cos(an)*l,ey=py+Math.sin(an)*l;x.strokeStyle=P()<0.6?'rgba(255,253,246,'+(0.1+P()*0.22)+')':'rgba(110,96,70,'+(0.03+P()*0.07)+')';x.lineWidth=0.5+P()*1;x.beginPath();x.moveTo(px,py);x.quadraticCurveTo((px+ex)/2-Math.sin(an)*bend,(py+ey)/2+Math.cos(an)*bend,ex,ey);x.stroke();}
+    for(let k=0;k<Math.round(W*H/42000);k++){const px=P()*W,py=P()*H,an=P()*TAU,l=1.5+P()*4;x.strokeStyle='rgba(96,76,48,'+(0.14+P()*0.22)+')';x.lineWidth=0.7+P()*1.1;x.beginPath();x.moveTo(px,py);x.lineTo(px+Math.cos(an)*l,py+Math.sin(an)*l);x.stroke();}
+    // far hills in pale wash, one behind another, each fading into the mist below it
+    const hills=(base,amp,al,dep,sd)=>{const r=seeded(sd),N=64,v=[];for(let o=0;o<4;o++){const a=[];for(let i=0;i<=N;i++)a.push(r());v.push(a);}const f0=2.2+r()*1.2,
+        yy=u=>{let s=0,am=0.56,f=f0;for(let o=0;o<4;o++){const p=(u*f+o*7.3)%N,i=p|0,tt=p-i,e=tt*tt*(3-2*tt),nn=v[o][i]*(1-e)+v[o][(i+1)%N]*e;s+=am*(o<2?1-Math.abs(2*nn-1):nn);am*=0.5;f*=2.2;}return base-amp*s;};
+      x.beginPath();x.moveTo(0,H*(base+dep));for(let px=0;px<=W+3;px+=3)x.lineTo(px,H*yy(px/m));x.lineTo(W,H*(base+dep));x.closePath();const gg=x.createLinearGradient(0,H*(base-amp),0,H*(base+dep));gg.addColorStop(0,'rgba(56,62,72,'+al+')');gg.addColorStop(0.3,'rgba(56,62,72,'+al*0.6+')');gg.addColorStop(1,'rgba(56,62,72,0)');x.fillStyle=gg;x.fill();};
+    hills(0.5,0.17,0.1,0.2,5);hills(0.64,0.13,0.14,0.2,6);hills(0.8,0.1,0.19,0.22,7);
+    // the seal
+    const sz=m*0.05,sx=m*0.05,sy=H-m*0.05-sz;x.save();x.translate(sx,sy);x.fillStyle='rgba(184,42,32,0.84)';x.beginPath();const jg=()=>(P()-0.5)*sz*0.035;x.moveTo(sz*0.08+jg(),jg());x.lineTo(sz*0.92+jg(),jg());x.quadraticCurveTo(sz,0,sz+jg(),sz*0.08);x.lineTo(sz+jg(),sz*0.92);x.quadraticCurveTo(sz,sz,sz*0.92,sz+jg());x.lineTo(sz*0.08,sz+jg());x.quadraticCurveTo(0,sz,jg(),sz*0.92);x.lineTo(jg(),sz*0.08);x.quadraticCurveTo(0,0,sz*0.08,0);x.fill();
+    x.fillStyle='#f1e9da';x.font='700 '+Math.round(sz*0.4)+'px '+SANS;x.textAlign='center';x.textBaseline='middle';x.fillText('숭',sz*0.5,sz*0.29);x.fillText('의',sz*0.5,sz*0.74);for(let k=0;k<26;k++){x.globalAlpha=0.5+P()*0.5;x.beginPath();x.arc(P()*sz,P()*sz,sz*(0.006+P()*0.016),0,TAU);x.fill();}x.restore();},
+  // a touch of ink at one spot of the grid
+  stamp(D,cx,cy,r,v){const gw=this.gw,gh=this.gh,x0=Math.max(1,Math.floor(cx-r-1)),x1=Math.min(gw-2,Math.ceil(cx+r+1)),y0=Math.max(1,Math.floor(cy-r-1)),y1=Math.min(gh-2,Math.ceil(cy+r+1));
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const q=r+0.5-Math.hypot(x-cx,y-cy),a=v*(q<=0?0:q>=1?1:q);if(a>D[y*gw+x])D[y*gw+x]=a;}},
+  // wet ink creeps: easily where there is much of it, hardly where there is little (so its front stays an edge), and only as far as each fibre lets it
+  step(){const gw=this.gw,gh=this.gh,D=this.D,T=this.T,KX=this.KX,KY=this.KY,c=0.18;
+    for(let y=1;y<gh-1;y++){let i=y*gw+1;for(let x=1;x<gw-1;x++,i++){const d=D[i],l=D[i-1],r=D[i+1],u=D[i-gw],b=D[i+gw];if(d<0.002&&l<0.002&&r<0.002&&u<0.002&&b<0.002){T[i]=d;continue;}
+        let m=d>l?d:l,a=(0.05+0.95*m*m)*KX[i-1]*(l-d);m=d>r?d:r;a+=(0.05+0.95*m*m)*KX[i]*(r-d);m=d>u?d:u;a+=(0.05+0.95*m*m)*KY[i-gw]*(u-d);m=d>b?d:b;a+=(0.05+0.95*m*m)*KY[i]*(b-d);T[i]=d+c*a;}}
+    for(let y=1;y<gh-1;y++){const r=y*gw;for(let x=1;x<gw-1;x++)D[r+x]=T[r+x];}},
+  noise(){const N=256,d=new Uint8Array(N*N*4),R=seeded(4242),acc=new Float32Array(N*N);for(let ch=0;ch<4;ch++){acc.fill(0);let amp=0.5,per=8;for(let o=0;o<4;o++){const L=new Float32Array(per*per);for(let i=0;i<L.length;i++)L[i]=R();const s=per/N;
+        for(let y=0;y<N;y++){const fy=y*s,y0=fy|0,ty=fy-y0,wy=ty*ty*(3-2*ty),y1=(y0+1)%per;for(let x=0;x<N;x++){const fx=x*s,x0=fx|0,tx=fx-x0,wx=tx*tx*(3-2*tx),x1=(x0+1)%per;acc[y*N+x]+=amp*((L[y0*per+x0]*(1-wx)+L[y0*per+x1]*wx)*(1-wy)+(L[y1*per+x0]*(1-wx)+L[y1*per+x1]*wx)*wy);}}amp*=0.5;per*=2;}
+      for(let i=0;i<N*N;i++)d[i*4+ch]=Math.min(255,acc[i]/0.9375*255);}return d;},
+  gl(){if(this.noGL||!GL.on())return false;try{const gw=this.gw,gh=this.gh,px=this.px,D=this.D,F=this.F,B=this.B,ST=this.ST;for(let i=0,j=0;i<gw*gh;i++,j+=4){const b=(B[i]>ST[i]?B[i]:ST[i])*255,d=D[i]*255,f=F[i]*255;px[j]=b>255?255:b;px[j+1]=d>255?255:d;px[j+2]=f>255?255:f;}GL.up('inkI',px,gw,gh,'rgba8');
+      if(!GL.T.inkN||!GL.T.inkN.rep){GL.up('inkN',this.noise(),256,256,'rgba8');const gl=GL.gl;gl.bindTexture(gl.TEXTURE_2D,GL.T.inkN.t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);GL.T.inkN.rep=true;}
+      const sz=GL.size();GL.run('ink',GLSRC.ink,null,sz[0],sz[1],{asp:W/H},{I:'inkI',N:'inkN'});ctx.globalCompositeOperation='multiply';GL.show();ctx.globalCompositeOperation='source-over';return true;}catch(e){this.noGL=true;ctx.globalCompositeOperation='source-over';console.warn('ink gl',e);return false;}},
+  // without the graphics chip: the bleeding and the wash as a small soft picture, and the black forms enlarged with a smooth edge over it
+  cpu(){const gw=this.gw,gh=this.gh,n=gw*gh,sm=(a,b,v)=>{v=(v-a)/(b-a);return v<=0?0:v>=1?1:v*v*(3-2*v);};if(!this.lo||this.lo.width!==gw||this.lo.height!==gh){this.lo=mkCanvas(gw,gh);this.im=this.lo.cx.createImageData(gw,gh);this.bd=new Float32Array(n);}const d=this.im.data,D=this.D,F=this.F,B=this.B,ST=this.ST,K=this.K,bd=this.bd;
+    for(let i=0,j=0;i<n;i++,j+=4){const v=D[i],f=F[i],kk=0.75+0.5*K[i],wet=v>0.012?(sm(0.012,0.1,v)*0.13+sm(0.085,0.15,v)*(1-sm(0.15,0.32,v))*0.15+sm(0.15,0.95,v)*0.3)*kk:0,ws=f>0.015?sm(0.015,0.55,f)*0.2*kk:0;d[j]=18;d[j+1]=19;d[j+2]=23;d[j+3]=(1-(1-wet)*(1-ws))*255;bd[i]=(B[i]>ST[i]?B[i]:ST[i])+(K[i]-0.6)*0.12;}
+    this.lo.cx.putImageData(this.im,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(this.lo,0,0,W,H);
+    blur3(bd,this.T,gw,gh);this.bc=upsampleMask(bd,gw,gh,PERF.lv>=2?2:3,0.4,0.58,[18,19,23],this.bc);ctx.globalAlpha=0.95;ctx.drawImage(this.bc,0,0,W,H);ctx.globalAlpha=1;},
+  draw(t,dt){const gw=this.gw,gh=this.gh,n=gw*gh,D=this.D,F=this.F,B=this.B,ST=this.ST,ps=this.ps,w=A.w,h=A.h,rnd=Math.random;if(this.pb.length!==A.n){this.pb=new Float32Array(A.n);this.tmp=new Float32Array(A.n);}const pb=this.pb;pb.set(A.p);blur3(pb,this.tmp,w,h);
+    // Four things are kept for every bit of paper. The figure: black where a person is right now, soaking in within a moment and gone a
+    // moment after they leave. Brush ink: strokes, drops and spatters, which sink away over some seconds. Wet ink: it gathers slowly under
+    // whatever stays (a passer-by leaves hardly any), creeps outward through the fibres, and dries. And the dried wash that drying leaves,
+    // paler still, which fades from the paper in its turn (sooner when the whole sheet is getting grey)
+    const kB=1-Math.exp(-dt/0.09),kBd=1-Math.exp(-dt/0.26),kS=1-Math.exp(-dt/1.3),kE=dt/2.6,kT=Math.exp(-dt/5.5),kF=Math.exp(-dt/lerp(7,3,clamp((this.wash-0.08)/0.2,0,1))),fx=w/gw,fy=h/gh,cand=this.cand;let lead=0,cnt=0,ws=0;cand.length=0;
+    for(let y=0;y<gh;y++){const ay=Math.min(h-1.001,Math.max(0,(y+0.5)*fy-0.5)),y0=ay|0,ty=ay-y0,r0=y0*w,r1=Math.min(h-1,y0+1)*w;
+      for(let x=0;x<gw;x++){const ax=Math.min(w-1.001,Math.max(0,(x+0.5)*fx-0.5)),x0=ax|0,tx=ax-x0,x1=Math.min(w-1,x0+1),i=y*gw+x,mk=(pb[r0+x0]*(1-tx)+pb[r0+x1]*tx)*(1-ty)+(pb[r1+x0]*(1-tx)+pb[r1+x1]*tx)*ty;let s=(mk-0.34)/0.26;s=s<=0?0:s>=1?1:s*s*(3-2*s);
+        const b=B[i];if(s>0||b>0.002)B[i]=b+(s-b)*(s>b?kB:kBd);else if(b!==0)B[i]=0;let st=ST[i];if(st>0.004){st*=kT;ST[i]=st;}else if(st!==0)ST[i]=st=0;
+        let d=D[i];const ev=d*kE,f=F[i]*kF;d-=ev;F[i]=f+ev*0.36*(1-f);ws+=f;const src=s>st?s:st;if(src>0)d+=(1-d)*src*kS;
+        if(s>0){cnt+=s;if(s>0.5&&ps[i]<0.15){lead++;if(cand.length<4)cand.push(i);else if(rnd()<4/lead)cand[(rnd()*4)|0]=i;}}ps[i]=s;D[i]=d;}}
+    this.cov+=(cnt/n-this.cov)*ez(0.2);this.wash=ws/n;const idle=this.cov<0.012;
+    // drops flung off whatever moves fast: from a spot the ink has only just reached, on outward
+    const pS=Math.min(0.22,lead*0.0008*FR);for(const i of cand){if(rnd()>pS)continue;const x=i%gw,y=(i/gw)|0;if(x<2||y<2||x>gw-3||y>gh-3)continue;let ox=ps[i-1]-ps[i+1],oy=ps[i-gw]-ps[i+gw];const ol=Math.hypot(ox,oy);if(ol<0.05){const a=rnd()*TAU;ox=Math.cos(a);oy=Math.sin(a);}else{ox/=ol;oy/=ol;}
+      const ds=2.5+rnd()*rnd()*9,r=0.3+rnd()*rnd()*1.2,px=x+ox*ds+(rnd()-0.5)*2.4,py=y+oy*ds+(rnd()-0.5)*2.4;this.stamp(ST,px,py,r,0.7+rnd()*0.3);this.stamp(D,px,py,r+0.4,0.5);}
+    // ink falling from the brush: a drop lands, with a few specks around it, and blooms (rarer while people are here)
+    this.nd-=dt*(idle?1:0.25);if(this.nd<=0){this.nd=1.8+rnd()*2.8;const r=1.3+rnd()*rnd()*3.2,cx=gw*(0.08+rnd()*0.84),cy=gh*(0.16+rnd()*0.72);this.stamp(ST,cx,cy,r,1);this.stamp(D,cx,cy,r+2,1);for(let k=0,nk=1+(rnd()*4)|0;k<nk;k++){const a=rnd()*TAU,ds=r+1.5+rnd()*5,rr=0.25+rnd()*0.7;this.stamp(ST,cx+Math.cos(a)*ds,cy+Math.sin(a)*ds,rr,0.9);this.stamp(D,cx+Math.cos(a)*ds,cy+Math.sin(a)*ds,rr+0.4,0.6);}}
+    // nobody here: the brush draws by itself, one slow stroke after another: thin as it lands, full in the middle, running dry at the end
+    if(this.br){const b=this.br,u0=b.u;b.u=Math.min(1,b.u+dt/b.dur);const N=Math.max(1,Math.ceil((b.u-u0)*b.len/0.6));for(let k=1;k<=N;k++){const u=u0+(b.u-u0)*k/N,v=1-u,px=v*v*b.x0+2*v*u*b.cx+u*u*b.x1,py=v*v*b.y0+2*v*u*b.cy+u*u*b.y1;this.stamp(ST,px,py,b.w*(0.22+0.78*Math.pow(Math.sin(Math.PI*Math.min(1,u*1.1)),0.6)),0.98-0.5*u*u*u);}if(b.u>=1){this.br=null;this.nb=1+rnd()*2.6;}}
+    else if(idle&&(this.nb-=dt)<=0){const S0=Math.max(gw,gh),len=S0*(0.34+rnd()*0.36),an=(rnd()-0.5)*0.8+(rnd()<0.5?0:Math.PI),x0=gw*(0.5-Math.cos(an)*0.22+(rnd()-0.5)*0.4),y0=gh*(0.5-Math.sin(an)*0.2+(rnd()-0.5)*0.5),x1=x0+Math.cos(an)*len,y1=y0+Math.sin(an)*len*0.8,bd=(rnd()-0.5)*len*0.6;
+      this.br={u:0,dur:1.5+rnd()*2,len,w:2.3+rnd()*3.1,x0,y0,x1,y1,cx:(x0+x1)/2-Math.sin(an)*bd,cy:(y0+y1)/2+Math.cos(an)*bd};}
+    this.acc+=dt;let k=0;while(this.acc>1/90&&k<4){this.step();this.acc-=1/90;k++;}if(this.acc>0.05)this.acc=0;
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(this.paper,0,0,W,H);if(!this.gl())this.cpu();}};
+const MODES=[mShapes,mColorDots,mHalftone,mPixel,mAscii,mWord,mSketch,mCroquis,mContour,mThermal,mDetect,mPoem,mAura,mStack,mBubble,mFluid,mBalloon,mGhost,mKnit,mStained,mMosaic,mSmoke,mLumen,mHanji,mCShadow,mSnow,mNajeon,mRiso,mInk];
 let mode=null;
 function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=Math.max(2,Math.round(w/48));
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){const i=y*w+x,px=(x+0.5)*A.sx,py=(y+0.5)*A.sy;if(A.p[i]>0.4)dots.rect(px-1.5,py-1.5,3,3);if(A.e[i]>0.08){pth.moveTo(px,py);pth.lineTo(px+A.u[i]*A.sx*3,py+A.v[i]*A.sy*3);}}
@@ -2599,14 +2888,25 @@ function drawDebug(){const w=A.w,h=A.h,pth=new Path2D(),dots=new Path2D(),step=M
 const modesEl=$('#modes'),palsEl=$('#pals'),modeName=$('#modeName'),fpsEl=$('#fps'),meterEl=$('#meter i'),statusEl=$('#status'),panel=$('#panel'),panelDim=$('#panelDim'),intro=$('#intro'),introMsg=$('#introMsg'),toastEl=$('#toast'),clearBtn=$('#btnClear');
 let toastT=0; function toast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),2600);}
 function setStatus(t){statusEl.textContent=t;}
-const KEYS='1234567890-=[]\\;\',./`qwerty';
+const KEYS='1234567890-=[]\\;\',./`qwertyuioasd';
 MODES.forEach((m,i)=>{const b=document.createElement('button');b.className='chip';b.setAttribute('role','tab');b.textContent=m.name;b.title=m.desc+(KEYS[i]?' ('+KEYS[i]+')':'');b.addEventListener('click',()=>{setMode(i);showUI();});modesEl.appendChild(b);});
 PALETTES.forEach((p,i)=>{const b=document.createElement('button');b.className='dot';b.style.background='linear-gradient(135deg,'+p.bg+' 50%,'+p.fg[1]+' 50%)';b.title=p.name;b.setAttribute('aria-label','팔레트 '+p.name);b.addEventListener('click',()=>{setPal(i);showUI();});palsEl.appendChild(b);});
+/* 혼잡: is this a busy moment? Many people spread across the picture, or an unbroken stream of them, and all on the move (people who
+   have stopped to play do not count, however many). Measured twice a second from the person field and averaged over some ten
+   seconds; the automatic change of filters uses it to pass over the ones that need someone to stand still */
+const CROWD={v:0,on:false,t:0,prev:null,col:null,runs:0,occ:0,flux:0,
+  tick(now){if(now-this.t<500||!A.n)return;const dt=Math.min(3,(now-this.t)/1000);this.t=now;const w=A.w,h=A.h,n=A.n,p=A.p;if(!this.prev||this.prev.length!==n||this.col.length!==w){this.prev=new Uint8Array(n);this.col=new Uint16Array(w);}const pv=this.prev,col=this.col;col.fill(0);
+    // how many cells hold a person, how many changed in the last half second, and which columns of the picture are taken
+    let cnt=0,ch=0,un=0;for(let y=0,i=0;y<h;y++)for(let x=0;x<w;x++,i++){const b=p[i]>0.5?1:0,o=pv[i];if(b){cnt++;col[x]++;}if(b!==o)ch++;if(b||o)un++;pv[i]=b;}
+    const need=Math.max(2,h*0.06);let runs=0,occ=0,len=0;for(let c=0;c<=w;c++){if(c<w&&col[c]>=need){len++;occ++;}else{if(len>=2)runs++;len=0;}}
+    const ow=occ/w,flux=un>n*0.01?ch/un:0,many=runs>=4||(runs>=3&&ow>=0.4)||ow>=0.65,b=many&&flux>=0.3?1:(cnt>n*0.02&&flux>=0.6?0.7:0);
+    this.runs=runs;this.occ=ow;this.flux=flux;this.v+=(b-this.v)*(1-Math.exp(-dt/10));if(this.on?this.v<0.25:this.v>0.55)this.on=!this.on;}};
 let lastSwitch=0;
 function setMode(i){S.mode=((i%MODES.length)+MODES.length)%MODES.length;mode=MODES[S.mode];if(role!=='sensor')setPerf(perfFor(mode),false);if(role!=='sensor'&&!A.remote)setupAnalyzer();mode.init();wantVideo();fillBg();lastSwitch=performance.now();window.__modeF=frame;save();syncChips();
   const b=modesEl.children[S.mode];if(b&&b.scrollIntoView)try{b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}catch(e){}}
 function isOn(i){const m=MODES[i];return !!m&&!(S.off||[]).includes(m.id);}
-function nextMode(d){const N=MODES.length;let i=S.mode;for(let k=0;k<N;k++){i=((i+d)%N+N)%N;if(isOn(i)){setMode(i);return;}}}
+// the next filter that is switched on. When the change is automatic and the place is crowded, filters that need someone to stand still are passed over
+function nextMode(d,auto){const N=MODES.length,skip=!!auto&&S.crowd!==false&&CROWD.on;for(let pass=skip?0:1;pass<2;pass++){let i=S.mode;for(let k=0;k<N;k++){i=((i+d)%N+N)%N;if(isOn(i)&&!(pass===0&&MODES[i].still)){setMode(i);return;}}}}
 function syncModes(){Array.from(modesEl.children).forEach((b,i)=>{b.hidden=!isOn(i);});}
 function setPal(i){S.pal=((i%PALETTES.length)+PALETTES.length)%PALETTES.length;save();if(mode){mode.init();fillBg();}syncChips();}
 function syncChips(){Array.from(modesEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.mode?'true':'false'));Array.from(palsEl.children).forEach((b,i)=>b.setAttribute('aria-pressed',i===S.pal?'true':'false'));modeName.textContent=mode.name+' · '+pal().name;clearBtn.hidden=!mode.clear;}
@@ -2628,11 +2928,12 @@ seg('#segReact',i=>{S.react=i;});seg('#sReact',i=>{S.react=i;});
 seg('#segTrail',i=>{S.trailp=i;});
 seg('#segDetect',i=>{S.detect=i===0?'motion':'presence';resetBackground();toast(S.detect==='motion'?'움직이는 것만 형태로 봐요':'가만히 있는 사람도 잡아요. 앞을 비우고 배경 다시 잡기를 눌러 주세요');});
 seg('#segAuto',i=>{S.auto=AUTOS[i];lastSwitch=performance.now();});
+seg('#segCrowd',i=>{S.crowd=i===0;toast(S.crowd?'붐빌 때는 쌓기 · 시를 건너뛰어요':'붐벼도 모든 필터를 차례로 보여요');});
 seg('#segStackDist',i=>{S.stackDist=i;});
 seg('#segFit',i=>{S.fit=i===0?'fill':'full';if(!A.remote)resetAnalysis();sendHello();if(mode){mode.init();fillBg();}toast(S.fit==='full'?'카메라 화면 전체가 보여요':'화면을 꽉 채워요 (가장자리는 잘려요)');});
 seg('#segPerf',i=>{S.perf=i===0?'auto':i-1;if(i===0){PERF.by={};perfSave();}applyPerfMode();});
 const swMirror=$('#swMirror');
-function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segFit',S.fit==='fill'?0:1);segSync('#segBl',S.bl==='off'?1:0);segSync('#segNear',S.near?1:0);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
+function syncCtl(){segSync('#segReact',S.react);segSync('#sReact',S.react);segSync('#segTrail',S.trailp);segSync('#segDetect',S.detect==='motion'?0:1);segSync('#segAuto',Math.max(0,AUTOS.indexOf(S.auto)));segSync('#segStackDist',S.stackDist==null?1:S.stackDist);segSync('#segFit',S.fit==='fill'?0:1);segSync('#segBl',S.bl==='off'?1:0);segSync('#segNear',S.near?1:0);segSync('#segCrowd',S.crowd===false?1:0);segSync('#segPerf',S.perf==null||S.perf==='auto'?0:(S.perf|0)+1);
   swMirror.checked=!!S.mirror;swGpu.checked=S.gpu!==false;swBlHw.checked=!!S.blHw;$('#sDetect').textContent=S.detect==='motion'?'감지: 움직임만':'감지: 사람 전체';}
 swMirror.addEventListener('change',()=>{S.mirror=swMirror.checked;resetAnalysis();save();});
 seg('#segNear',i=>{S.near=i===1;toast(S.near?'가까운 사람만 보여요':'멀리 있는 사람도 모두 보여요');});
@@ -2846,9 +3147,10 @@ function loop(now){requestAnimationFrame(loop);if(now-last<(role==='sensor'?14:P
   if(mode)mode.draw(tAcc,dt);
   perfTick(iv,performance.now()-w0);
   if(frame%90===0||frame-(window.__modeF||0)===6)probeTitle();
-  fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps'+(PERF.lv===1?' · 보통':PERF.lv===2?' · 가볍게':'')+(mode&&mode.gl&&!mode.noGL&&S.gpu!==false&&GL.ok?' · 그래픽':'')+((A.remote?BL.rs:BL.s)>=0.3?' · 역광 보정':'');fpsN=0;fpsT=now;}
+  fpsN++;if(now-fpsT>500){fpsEl.textContent=Math.round(fpsN*1000/(now-fpsT))+' fps'+(PERF.lv===1?' · 보통':PERF.lv===2?' · 가볍게':'')+(mode&&mode.gl&&!mode.noGL&&S.gpu!==false&&GL.ok?' · 그래픽':'')+((A.remote?BL.rs:BL.s)>=0.3?' · 역광 보정':'')+(S.auto&&S.crowd!==false&&CROWD.on?' · 붐빔':'');fpsN=0;fpsT=now;}
   if((frame&3)===0)meterEl.style.width=Math.round(A.level*100)+'%';
-  if(S.auto&&now-lastSwitch>S.auto*1000&&!(mode&&mode.busy&&mode.busy()))nextMode(1);}
+  CROWD.tick(now);
+  if(S.auto&&mode&&!(mode.busy&&mode.busy())&&(now-lastSwitch>S.auto*1000||(S.crowd!==false&&CROWD.on&&mode.still&&now-lastSwitch>6000)))nextMode(1,true);}
 
 /* ---------- boot ---------- */
 S.mode=clamp(S.mode|0,0,MODES.length-1);S.react=clamp(S.react|0,0,2);S.trailp=clamp(S.trailp|0,0,2);applyPresets();S.pal=clamp(S.pal|0,0,PALETTES.length-1);S.sens=clamp(S.sens|0,1,10);S.trail=clamp(S.trail|0,1,10);S.gain=clamp(S.gain|0,1,10);
@@ -2871,7 +3173,7 @@ else if(location.hash==='#solo'&&!EMBEDDED){startCamera(S.facing==='environment'
 requestAnimationFrame(t=>{last=t;fpsT=t;lastSwitch=t;loop(t);});
 if('serviceWorker' in navigator&&location.protocol==='https:'&&!EMBEDDED){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 setTimeout(()=>{if(role!=='sensor')STACK.load();},4000);
-window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,BL,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
+window.__gyeol={S,A,SEG,FACE,FM,PEOPLE,TR,STACK,ARMS,BL,CROWD,setMode,setPal,useDemo,MODES,PALETTES,encodePacket,encodePacket3,decodePacket,hideIntro,PERF,setPerf,MC,GL,PM,get mode(){return mode;}};
 })();
 </script>
 <!-- @@content-end -->
